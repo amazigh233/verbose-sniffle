@@ -926,6 +926,7 @@
     if (form.dataset.form === "quote") work = C.quotes.saveFromForm(form);
     if (form.dataset.form === "invoice") work = C.invoices.saveFromForm(form);
     if (form.dataset.form === "installation") work = C.installations.saveFromForm(form);
+    if (form.dataset.form === "workorder") work = C.installations.saveWorkOrderFromForm(form);
     if (form.dataset.form === "product") work = saveProductFromForm(form);
     if (form.dataset.form === "settings") {
       work = S.saveSettings(settingsPayloadFromForm(form)).then(function () {

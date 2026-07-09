@@ -172,6 +172,7 @@ model Installation {
   status        String   @default("ingepland")
   installer     String   @default("")
   notes         String   @default("")
+  workOrder     Json?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   customer      Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)

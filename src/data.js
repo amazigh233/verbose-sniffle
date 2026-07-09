@@ -293,6 +293,7 @@ function invoiceData(item) {
 }
 
 function installationData(item) {
+  const workOrder = item.workOrder && typeof item.workOrder === "object" ? item.workOrder : undefined;
   return stripUndefined({
     id: item.id || undefined,
     customerId: item.customerId,
@@ -304,6 +305,7 @@ function installationData(item) {
     status: item.status || "ingepland",
     installer: item.installer || "",
     notes: item.notes || "",
+    workOrder,
     createdAt: asDate(item.createdAt) || undefined
   });
 }

@@ -1190,6 +1190,19 @@ body:not(.auth-locked) .login-screen {
   height: 5mm;
   border: 1.2px solid #6f8272;
   border-radius: 1mm;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #123c24;
+  font-size: 10pt;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.workorder-check.is-checked i {
+  border-color: #123c24;
+  background: #e7f1d0;
 }
 
 .workorder-check-grid {
@@ -1204,6 +1217,54 @@ body:not(.auth-locked) .login-screen {
 
 .workorder-textarea.small {
   min-height: 16mm;
+}
+
+.workorder-filled-text {
+  min-height: 22mm;
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+
+.workorder-filled-text.small {
+  min-height: 16mm;
+}
+
+.workorder-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+}
+
+.workorder-checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.workorder-checkbox-grid label,
+.workorder-type-row label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  font-weight: 700;
+}
+
+.workorder-checkbox-grid input,
+.workorder-type-row input {
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  accent-color: var(--brand);
+}
+
+.workorder-type-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .workorder-agreement {

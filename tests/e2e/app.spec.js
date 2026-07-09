@@ -82,6 +82,71 @@ test("customer dossier shows documents, installations and workorder actions", as
   await expect(page.locator('select[name="customerId"]')).toHaveValue("c1");
 });
 
+test("installation detail has a fillable mechanic work order", async ({ page }) => {
+  await page.route("**/api/auth/session", async (route) => {
+    await route.fulfill({ json: { authenticated: true, user: { username: "admin" } } });
+  });
+  await page.route("**/api/bootstrap", async (route) => {
+    await route.fulfill({
+      json: {
+        data: {
+          customers: [{
+            id: "c1",
+            firstName: "Test",
+            lastName: "Klant",
+            companyName: "",
+            email: "test@example.com",
+            phone: "0612345678",
+            address: "Straat 1",
+            postalCode: "1234 AB",
+            city: "Utrecht",
+            notes: "",
+            createdAt: "2026-07-01T09:00:00.000Z"
+          }],
+          customerNotes: [],
+          products: [],
+          quotes: [],
+          invoices: [],
+          installations: [{
+            id: "ins1",
+            customerId: "c1",
+            quoteId: "",
+            quoteNumber: "CL-OFF-2026-0001",
+            plannedDate: "2026-07-30",
+            startTime: "09:00",
+            durationHours: 4,
+            status: "ingepland",
+            installer: "Sam",
+            notes: "",
+            workOrder: {
+              types: ["Warmtepomp"],
+              workDone: "Buitenunit geplaatst.",
+              remarks: "",
+              mechanicName: "Sam",
+              mechanicDate: "2026-07-30",
+              customerName: "Test Klant",
+              customerDate: "2026-07-30",
+              agreement: true,
+              checks: { installedTested: true, customerInstruction: true }
+            }
+          }],
+          settings: { companyName: "Climature" },
+          counters: {}
+        }
+      }
+    });
+  });
+
+  await page.goto("/#installation:ins1");
+
+  await expect(page.getByRole("heading", { name: "Werkbon invullen" })).toBeVisible();
+  await expect(page.getByLabel("Warmtepomp")).toBeChecked();
+  await expect(page.getByLabel("Installatie geplaatst en getest")).toBeChecked();
+  await expect(page.getByLabel("Uitleg aan klant gegeven")).toBeChecked();
+  await expect(page.locator('textarea[name="workDone"]')).toHaveValue("Buitenunit geplaatst.");
+  await expect(page.getByRole("button", { name: "Print / PDF werkbon" })).toBeVisible();
+});
+
 test("settings shows advice assumptions and refresh action", async ({ page }) => {
   await page.route("**/api/auth/session", async (route) => {
     await route.fulfill({ json: { authenticated: true, user: { username: "admin" } } });

@@ -49,8 +49,8 @@
     return '<div class="workorder-line"><span>' + S.escapeHtml(label) + '</span><strong>' + S.escapeHtml(value || "") + '</strong></div>';
   }
 
-  function checkbox(label) {
-    return '<span class="workorder-check"><i></i>' + S.escapeHtml(label) + "</span>";
+  function checkbox(label, checked) {
+    return '<span class="workorder-check' + (checked ? " is-checked" : "") + '"><i>' + (checked ? "✓" : "") + '</i>' + S.escapeHtml(label) + "</span>";
   }
 
   function workOrderHeader(settings) {
@@ -74,6 +74,21 @@
     var notes = installation && installation.notes;
     if (!notes) return '<div class="workorder-textarea small"></div>';
     return '<p class="workorder-agreement">' + S.escapeHtml(notes).replace(/\n/g, "<br>") + "</p>";
+  }
+
+  function workOrderValue(installation, key) {
+    var workOrder = installation && installation.workOrder || {};
+    return workOrder[key] || "";
+  }
+
+  function workOrderCheck(installation, key) {
+    var checks = installation && installation.workOrder && installation.workOrder.checks || {};
+    return Boolean(checks[key]);
+  }
+
+  function workOrderType(installation, value) {
+    var types = installation && installation.workOrder && installation.workOrder.types || [];
+    return Array.isArray(types) && types.indexOf(value) >= 0;
   }
 
   function buildWorkOrderHtml(customer, installation) {
@@ -103,29 +118,29 @@
         "</div>",
         fieldLine("Installatieadres", address),
         '<div class="workorder-checks"><span>Type installatie</span>' +
-          checkbox("Warmtepomp") +
-          checkbox("Thuisbatterij") +
-          checkbox("Airconditioning") +
-          checkbox("CV-ketel") +
-          checkbox("Overig") +
+          checkbox("Warmtepomp", workOrderType(installation, "Warmtepomp")) +
+          checkbox("Thuisbatterij", workOrderType(installation, "Thuisbatterij")) +
+          checkbox("Airconditioning", workOrderType(installation, "Airconditioning")) +
+          checkbox("CV-ketel", workOrderType(installation, "CV-ketel")) +
+          checkbox("Overig", workOrderType(installation, "Overig")) +
         "</div>"
       ].join("")),
       workOrderSection("Installatienotities", workOrderNotes(installation)),
-      workOrderSection("Uitgevoerde werkzaamheden", '<div class="workorder-textarea"></div>'),
+      workOrderSection("Uitgevoerde werkzaamheden", '<div class="workorder-filled-text">' + S.escapeHtml(workOrderValue(installation, "workDone")).replace(/\n/g, "<br>") + "</div>"),
       workOrderSection("Oplevercontrole", '<div class="workorder-check-grid">' +
-        checkbox("Installatie geplaatst en getest") +
-        checkbox("Uitleg aan klant gegeven") +
-        checkbox("Veiligheidscontrole uitgevoerd") +
-        checkbox("Documentatie overhandigd") +
-        checkbox("Systeem correct ingesteld") +
-        checkbox("Werkplek schoon opgeleverd") +
+        checkbox("Installatie geplaatst en getest", workOrderCheck(installation, "installedTested")) +
+        checkbox("Uitleg aan klant gegeven", workOrderCheck(installation, "customerInstruction")) +
+        checkbox("Veiligheidscontrole uitgevoerd", workOrderCheck(installation, "safetyCheck")) +
+        checkbox("Documentatie overhandigd", workOrderCheck(installation, "docsDelivered")) +
+        checkbox("Systeem correct ingesteld", workOrderCheck(installation, "systemConfigured")) +
+        checkbox("Werkplek schoon opgeleverd", workOrderCheck(installation, "workplaceClean")) +
       "</div>"),
-      workOrderSection("Opmerkingen / meerwerk", '<div class="workorder-textarea small"></div>'),
+      workOrderSection("Opmerkingen / meerwerk", '<div class="workorder-filled-text small">' + S.escapeHtml(workOrderValue(installation, "remarks")).replace(/\n/g, "<br>") + "</div>"),
       workOrderSection("Akkoord oplevering", '<p class="workorder-agreement">De ondergetekende verklaart dat de werkzaamheden door Climature naar tevredenheid zijn uitgevoerd en dat de installatie werkend is opgeleverd. De klant heeft uitleg ontvangen over bediening, onderhoud en veiligheidsaspecten. Eventuele opmerkingen of meerwerk zijn in dit document vastgelegd.</p>'),
       workOrderSection("Handtekeningen", [
         '<div class="workorder-signatures">',
-        '<div><h3>Monteur (Climature)</h3>' + fieldLine("Handtekening", "") + fieldLine("Naam", installation && installation.installer) + fieldLine("Datum", "") + "</div>",
-        '<div><h3>Klant voor akkoord</h3>' + fieldLine("Handtekening", "") + fieldLine("Naam", S.customerName(customer)) + fieldLine("Datum", "") + "</div>",
+        '<div><h3>Monteur (Climature)</h3>' + fieldLine("Handtekening", "") + fieldLine("Naam", workOrderValue(installation, "mechanicName") || installation && installation.installer) + fieldLine("Datum", S.formatDate(workOrderValue(installation, "mechanicDate"))) + "</div>",
+        '<div><h3>Klant voor akkoord</h3>' + fieldLine("Handtekening", "") + fieldLine("Naam", workOrderValue(installation, "customerName") || S.customerName(customer)) + fieldLine("Datum", S.formatDate(workOrderValue(installation, "customerDate"))) + "</div>",
         "</div>",
         fieldLine("Plaats (optioneel)", customer && customer.city)
       ].join("")),

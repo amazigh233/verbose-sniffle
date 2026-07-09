@@ -137,7 +137,7 @@
         "<td>" + S.escapeHtml(S.customerName(customer)) + (installation.quoteNumber ? '<br><span class="muted">' + S.escapeHtml(installation.quoteNumber) + "</span>" : "") + "</td>",
         '<td><span class="status-pill ' + statusClass(installation.status) + '">' + S.escapeHtml(installation.status || "ingepland") + "</span></td>",
         "<td>" + S.escapeHtml(installation.installer || "-") + "</td>",
-        '<td><div class="button-row"><button class="small-button" data-action="installation-detail" data-id="' + S.escapeHtml(installation.id) + '">Open</button><a class="small-button" target="_blank" rel="noopener" href="' + S.escapeHtml(googleCalendarUrl(installation, customer)) + '">Google Agenda</a><button class="small-button" data-action="installation-edit" data-id="' + S.escapeHtml(installation.id) + '">Bewerk</button></div></td>',
+        '<td><div class="button-row"><button class="small-button" data-action="installation-detail" data-id="' + S.escapeHtml(installation.id) + '">Open</button><button class="small-button" data-action="installation-workorder-print" data-id="' + S.escapeHtml(installation.id) + '">Werkbon</button><a class="small-button" target="_blank" rel="noopener" href="' + S.escapeHtml(googleCalendarUrl(installation, customer)) + '">Google Agenda</a><button class="small-button" data-action="installation-edit" data-id="' + S.escapeHtml(installation.id) + '">Bewerk</button></div></td>',
         "</tr>"
       ].join("");
     }).join("");
@@ -266,10 +266,60 @@
       '<div class="panel">',
       '<div class="panel-head"><div><p class="eyebrow">Installatie</p><h2>' + S.escapeHtml(S.formatDate(installation.plannedDate)) + '</h2></div><span class="status-pill ' + statusClass(installation.status) + '">' + S.escapeHtml(installation.status || "ingepland") + '</span></div>',
       '<div class="detail-list">' + detail("Klant", S.customerName(customer)) + detail("Offerte", installation.quoteNumber || "-") + detail("Starttijd", installation.startTime || "-") + detail("Duur", (installation.durationHours || 4) + " uur") + detail("Monteur", installation.installer || "-") + detail("Notities", installation.notes || "-") + "</div>",
-      '<div class="button-row" style="margin-top:16px;"><a class="primary-button" target="_blank" rel="noopener" href="' + S.escapeHtml(googleCalendarUrl(installation, customer)) + '">Zet in Google Agenda</a><button class="ghost-button" data-action="installation-edit" data-id="' + S.escapeHtml(installation.id) + '">Bewerk</button>' + (installation.quoteId ? '<button class="ghost-button" data-action="quote-detail" data-id="' + S.escapeHtml(installation.quoteId) + '">Open offerte</button>' : "") + '<button class="danger-button" data-action="installation-delete" data-id="' + S.escapeHtml(installation.id) + '">Verwijder</button></div>',
+      '<div class="button-row" style="margin-top:16px;"><a class="primary-button" target="_blank" rel="noopener" href="' + S.escapeHtml(googleCalendarUrl(installation, customer)) + '">Zet in Google Agenda</a><button class="ghost-button" data-action="installation-workorder-print" data-id="' + S.escapeHtml(installation.id) + '">Print werkbon</button><button class="ghost-button" data-action="installation-edit" data-id="' + S.escapeHtml(installation.id) + '">Bewerk</button>' + (installation.quoteId ? '<button class="ghost-button" data-action="quote-detail" data-id="' + S.escapeHtml(installation.quoteId) + '">Open offerte</button>' : "") + '<button class="danger-button" data-action="installation-delete" data-id="' + S.escapeHtml(installation.id) + '">Verwijder</button></div>',
       "</div>",
+      workOrderPanel(installation, customer),
       "</section>"
     ].join("");
+  }
+
+  function workOrderPanel(installation, customer) {
+    var workOrder = installation.workOrder || {};
+    var checks = workOrder.checks || {};
+    var types = Array.isArray(workOrder.types) ? workOrder.types : [];
+    return [
+      '<form class="panel" data-form="workorder" data-id="' + S.escapeHtml(installation.id) + '">',
+      '<div class="panel-head"><div><p class="eyebrow">Monteur</p><h2>Werkbon invullen</h2></div><button class="primary-button" type="submit">Werkbon opslaan</button></div>',
+      '<label class="field">Status<select name="status">' + statusOptions(installation.status || "ingepland") + '</select></label>',
+      '<div class="field" style="margin-top:14px;"><span>Type installatie</span><div class="workorder-type-row">' +
+        typeOption("Warmtepomp", types) +
+        typeOption("Thuisbatterij", types) +
+        typeOption("Airconditioning", types) +
+        typeOption("CV-ketel", types) +
+        typeOption("Overig", types) +
+      "</div></div>",
+      '<label class="field full" style="margin-top:14px;">Uitgevoerde werkzaamheden<textarea name="workDone" rows="5" placeholder="Beschrijf wat er is uitgevoerd">' + S.escapeHtml(workOrder.workDone || "") + "</textarea></label>",
+      '<div class="field" style="margin-top:14px;"><span>Oplevercontrole</span><div class="workorder-checkbox-grid">' +
+        checkOption("installedTested", "Installatie geplaatst en getest", checks) +
+        checkOption("customerInstruction", "Uitleg aan klant gegeven", checks) +
+        checkOption("safetyCheck", "Veiligheidscontrole uitgevoerd", checks) +
+        checkOption("docsDelivered", "Documentatie overhandigd", checks) +
+        checkOption("systemConfigured", "Systeem correct ingesteld", checks) +
+        checkOption("workplaceClean", "Werkplek schoon opgeleverd", checks) +
+      "</div></div>",
+      '<label class="field full" style="margin-top:14px;">Opmerkingen / meerwerk<textarea name="remarks" rows="4" placeholder="Eventuele opmerkingen of meerwerk">' + S.escapeHtml(workOrder.remarks || "") + "</textarea></label>",
+      '<div class="workorder-form-grid" style="margin-top:14px;">',
+      '<label class="field">Naam monteur<input name="mechanicName" value="' + S.escapeHtml(workOrder.mechanicName || installation.installer || "") + '"></label>',
+      '<label class="field">Datum monteur<input name="mechanicDate" type="date" value="' + S.escapeHtml(workOrder.mechanicDate || S.today()) + '"></label>',
+      '<label class="field">Naam klant<input name="customerName" value="' + S.escapeHtml(workOrder.customerName || S.customerName(customer)) + '"></label>',
+      '<label class="field">Datum akkoord klant<input name="customerDate" type="date" value="' + S.escapeHtml(workOrder.customerDate || S.today()) + '"></label>',
+      "</div>",
+      '<div class="workorder-checkbox-grid" style="margin-top:14px;">' + checkbox("agreement", "Klant akkoord met oplevering", Boolean(workOrder.agreement)) + "</div>",
+      '<div class="button-row" style="margin-top:16px;"><button class="ghost-button" type="button" data-action="installation-workorder-print" data-id="' + S.escapeHtml(installation.id) + '">Print / PDF werkbon</button></div>',
+      "</form>"
+    ].join("");
+  }
+
+  function typeOption(value, selected) {
+    return checkbox("types", value, selected.indexOf(value) >= 0, value);
+  }
+
+  function checkOption(name, label, checks) {
+    return checkbox("check_" + name, label, Boolean(checks[name]));
+  }
+
+  function checkbox(name, label, checked, value) {
+    return '<label><input type="checkbox" name="' + S.escapeHtml(name) + '" value="' + S.escapeHtml(value || "1") + '"' + (checked ? " checked" : "") + '><span>' + S.escapeHtml(label) + "</span></label>";
   }
 
   function detail(label, value) {
@@ -310,6 +360,39 @@
     });
   }
 
+  function saveWorkOrderFromForm(form) {
+    var installation = S.getAll("installations").find(function (item) { return item.id === form.dataset.id; });
+    if (!installation) return;
+    var data = new FormData(form);
+    var workOrder = {
+      types: data.getAll("types"),
+      workDone: String(data.get("workDone") || ""),
+      remarks: String(data.get("remarks") || ""),
+      mechanicName: String(data.get("mechanicName") || ""),
+      mechanicDate: String(data.get("mechanicDate") || ""),
+      customerName: String(data.get("customerName") || ""),
+      customerDate: String(data.get("customerDate") || ""),
+      agreement: Boolean(data.get("agreement")),
+      checks: {
+        installedTested: Boolean(data.get("check_installedTested")),
+        customerInstruction: Boolean(data.get("check_customerInstruction")),
+        safetyCheck: Boolean(data.get("check_safetyCheck")),
+        docsDelivered: Boolean(data.get("check_docsDelivered")),
+        systemConfigured: Boolean(data.get("check_systemConfigured")),
+        workplaceClean: Boolean(data.get("check_workplaceClean"))
+      }
+    };
+    var payload = Object.assign({}, installation, {
+      status: String(data.get("status") || installation.status || "ingepland"),
+      workOrder: workOrder
+    });
+    return S.upsert("installations", payload).then(function (saved) {
+      C.app.toast("Werkbon opgeslagen.");
+      C.app.navigate("installation:" + saved.id);
+      return saved;
+    });
+  }
+
   function removeInstallation(id) {
     if (!window.confirm("Installatie verwijderen?")) return;
     return S.remove("installations", id).then(function () {
@@ -325,6 +408,7 @@
     createFromQuote: createFromQuote,
     findByQuote: findByQuote,
     saveFromForm: saveFromForm,
+    saveWorkOrderFromForm: saveWorkOrderFromForm,
     remove: removeInstallation
   };
 }());
