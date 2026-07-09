@@ -2203,8 +2203,19 @@ function showTool(name){
     return true;
   }
 
+  function radioValue(name, fallback){
+    const selected = q(`input[name="${name}"]:checked`);
+    if (selected) return selected.value;
+    const fallbackInput = q(`input[name="${name}"][value="${fallback}"]`) || q(`input[name="${name}"]`);
+    if (fallbackInput) {
+      fallbackInput.checked = true;
+      return fallbackInput.value;
+    }
+    return fallback;
+  }
+
   function togglePvDetails(){
-    const pv = q('input[name="pv"]:checked')?.value;
+    const pv = radioValue('pv', 'ja');
     $('pv-details').style.display = (pv === 'ja') ? '' : 'none';
   }
   function updatePvPreview(){
@@ -2220,7 +2231,7 @@ function showTool(name){
     }
   }
   function toggleEvDetails(){
-    const ev = q('input[name="ev"]:checked')?.value;
+    const ev = radioValue('ev', 'nee');
     $('ev-details').classList.toggle('hidden', ev !== 'ja');
   }
 
@@ -2258,20 +2269,20 @@ function showTool(name){
 
   function berekenAdvies(){
     const stroomJaar = +$('stroom_jaar').value;
-    const personen   = +q('input[name="personen"]:checked').value || 2;
-    const patroon    = q('input[name="patroon"]:checked').value;
+    const personen   = +radioValue('personen', '2') || 2;
+    const patroon    = radioValue('patroon', 'weinig');
 
-    const pv         = q('input[name="pv"]:checked').value;
+    const pv         = radioValue('pv', 'ja');
     const pvAantal   = pv === 'ja' ? (+$('pv_aantal').value || 0) : 0;
     const pvWp       = pv === 'ja' ? (+$('pv_wp').value     || 0) : 0;
     const pvKwp      = (pvAantal * pvWp) / 1000;
     const pvProductie= pvKwp * 900;
 
-    const ev         = q('input[name="ev"]:checked').value;
+    const ev         = radioValue('ev', 'nee');
     const evKwh      = ev === 'ja' ? (+$('ev_kwh').value || 0) : 0;
-    const wp         = q('input[name="wp"]:checked').value;
+    const wp         = radioValue('wp', 'nee');
 
-    const aansluiting = q('input[name="aansluiting"]:checked').value;
+    const aansluiting = radioValue('aansluiting', '1f25');
     const fase        = aansluiting.startsWith('1f') ? '1fase' : '3fase';
 
     const DEFAULTS = defaults();
@@ -2280,12 +2291,12 @@ function showTool(name){
     const epexMarge          = parseFloat($('epex_marge').value)          || DEFAULTS.epex_marge;
     const onbalansPerKwh     = parseFloat($('onbalans_per_kwh').value)    || DEFAULTS.onbalans_per_kwh;
 
-    const contractRaw = q('input[name="contract"]:checked').value;
+    const contractRaw = radioValue('contract', 'dynamic_va');
     const contract = contractRaw === 'vast' ? 'vast' : 'dynamic';
     const viaVa    = contractRaw === 'dynamic_va';
-    const ems      = q('input[name="ems"]:checked').value;
-    const onbalans = q('input[name="onbalans"]:checked').value;
-    const btw      = q('input[name="btw"]:checked').value;
+    const ems      = radioValue('ems', 'ja');
+    const onbalans = radioValue('onbalans', 'ja');
+    const btw      = radioValue('btw', 'ja');
     const btwTeruggave = btw === 'ja';
 
     const verbruikTotaal = stroomJaar + evKwh;
