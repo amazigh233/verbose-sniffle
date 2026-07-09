@@ -137,7 +137,7 @@
         "<td>" + S.escapeHtml(S.customerName(customer)) + (installation.quoteNumber ? '<br><span class="muted">' + S.escapeHtml(installation.quoteNumber) + "</span>" : "") + "</td>",
         '<td><span class="status-pill ' + statusClass(installation.status) + '">' + S.escapeHtml(installation.status || "ingepland") + "</span></td>",
         "<td>" + S.escapeHtml(installation.installer || "-") + "</td>",
-        '<td><div class="button-row"><button class="small-button" data-action="installation-detail" data-id="' + S.escapeHtml(installation.id) + '">Open</button><button class="small-button" data-action="installation-workorder-print" data-id="' + S.escapeHtml(installation.id) + '">Werkbon</button><a class="small-button" target="_blank" rel="noopener" href="' + S.escapeHtml(googleCalendarUrl(installation, customer)) + '">Google Agenda</a><button class="small-button" data-action="installation-edit" data-id="' + S.escapeHtml(installation.id) + '">Bewerk</button></div></td>',
+        '<td><div class="button-row"><button class="small-button" data-action="installation-detail" data-id="' + S.escapeHtml(installation.id) + '">Open</button><button class="small-button" data-action="installation-detail" data-id="' + S.escapeHtml(installation.id) + '">Werkbon invullen</button><a class="small-button" target="_blank" rel="noopener" href="' + S.escapeHtml(googleCalendarUrl(installation, customer)) + '">Google Agenda</a><button class="small-button" data-action="installation-edit" data-id="' + S.escapeHtml(installation.id) + '">Bewerk</button></div></td>',
         "</tr>"
       ].join("");
     }).join("");
