@@ -1,0 +1,203 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Customer {
+  id          String         @id @default(cuid())
+  firstName   String
+  lastName    String
+  companyName String         @default("")
+  email       String
+  phone       String
+  address     String
+  postalCode  String
+  city        String
+  notes       String         @default("")
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  notesItems  CustomerNote[]
+  quotes      Quote[]
+  invoices    Invoice[]
+  installations Installation[]
+  advices     Advice[]
+
+  @@index([email])
+  @@index([postalCode])
+}
+
+model Advice {
+  id            String   @id @default(cuid())
+  customerId    String
+  kind          String
+  title         String   @default("")
+  summary       String   @default("")
+  powerKw       Float    @default(0)
+  investment    Float    @default(0)
+  subsidy       Float    @default(0)
+  yearlySaving  Float    @default(0)
+  paybackYears  Float    @default(0)
+  productName   String   @default("")
+  sourceQuoteId String   @default("")
+  payload       Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  customer      Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+}
+
+model CustomerNote {
+  id         String   @id @default(cuid())
+  customerId String
+  date       String
+  type       String   @default("Notitie")
+  body       String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  category    String
+  brand       String
+  name        String
+  specs       String   @default("")
+  priceExVat  Float
+  vatRate     Float    @default(21)
+  description String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Quote {
+  id              String      @id @default(cuid())
+  quoteNumber     String      @unique
+  customerId      String
+  quoteDate       String
+  validUntil      String
+  status          String      @default("concept")
+  notes           String      @default("")
+  sourceAdviceId  String      @default("")
+  subtotal        Float       @default(0)
+  vat             Float       @default(0)
+  total           Float       @default(0)
+  acceptedAt      DateTime?
+  statusUpdatedAt DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  customer        Customer    @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  lines           QuoteLine[]
+
+  @@index([customerId])
+  @@index([status])
+}
+
+model QuoteLine {
+  id          String   @id @default(cuid())
+  quoteId     String
+  position    Int
+  productId   String   @default("")
+  description String
+  qty         Float
+  unit        String
+  priceExVat  Float
+  vatRate     Float
+  subtotal    Float
+  vat         Float
+  total       Float
+  quote       Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([quoteId])
+}
+
+model Invoice {
+  id                  String        @id @default(cuid())
+  invoiceNumber       String        @unique
+  quoteNumber         String        @default("")
+  customerId          String
+  invoiceDate         String
+  dueDate             String
+  status              String        @default("concept")
+  paymentInstructions String        @default("")
+  notes               String        @default("")
+  subtotal            Float         @default(0)
+  vat                 Float         @default(0)
+  total               Float         @default(0)
+  paidAt              DateTime?
+  statusUpdatedAt     DateTime?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  customer            Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  lines               InvoiceLine[]
+
+  @@index([customerId])
+  @@index([quoteNumber])
+  @@index([status])
+}
+
+model InvoiceLine {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  position    Int
+  productId   String  @default("")
+  description String
+  qty         Float
+  unit        String
+  priceExVat  Float
+  vatRate     Float
+  subtotal    Float
+  vat         Float
+  total       Float
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
+
+model Installation {
+  id            String   @id @default(cuid())
+  customerId    String
+  quoteId       String   @default("")
+  quoteNumber   String   @default("")
+  plannedDate   String
+  startTime     String   @default("09:00")
+  durationHours Float    @default(4)
+  status        String   @default("ingepland")
+  installer     String   @default("")
+  notes         String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  customer      Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  @@index([customerId])
+  @@index([quoteId])
+  @@index([plannedDate])
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model Counter {
+  key       String   @id
+  value     Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+model Session {
+  sid    String   @id
+  sess   Json
+  expire DateTime
+
+  @@index([expire])
+  @@map("session")
+}

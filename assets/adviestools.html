@@ -1,0 +1,2628 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex,nofollow">
+<title>Climature · Adviestools</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* =========================================================
+     HUISSTIJL — CLIMATURE  ·  natuur / organisch
+     Gedeelde basis voor beide tools.
+     ========================================================= */
+  :root {
+    /* Climature website-huisstijl (assets/css/site.css) */
+    --brand-primary:   #123C24;   /* bosgroen */
+    --brand-primary-dk:#0B2F1A;   /* diep bosgroen */
+    --brand-accent:    #B6D72A;   /* lime accent */
+    --brand-accent-dk: #1F6B3A;   /* natuurlijk groen */
+    --brand-navy:      #0B2F1A;
+    --brand-light:     #FAFBF7;   /* off-white achtergrond */
+    --brand-cream:     #FFFFFF;   /* kaart-oppervlak */
+    --leaf-soft:       rgba(182,215,42,0.12);
+    --ok:              #1F6B3A;
+    --warn:            #D7A900;   /* gold */
+    --danger:          #A65A2E;   /* clay */
+    --text:            #102017;   /* ink */
+    --muted:           #5F6F63;
+    --border:          #DDE8DC;   /* line */
+    --radius:          16px;
+    --radius-sm:       8px;
+    --font-head:       'Barlow Condensed', Impact, sans-serif;
+    --font-body:       'IBM Plex Sans', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-mono:       'IBM Plex Mono', ui-monospace, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--text); overflow-x:hidden; -webkit-font-smoothing:antialiased; }
+  body {
+    background:
+      radial-gradient(circle at 10% 2%, rgba(182,215,42,0.13), transparent 24rem),
+      linear-gradient(135deg, #FAFBF7, #F3F8F2 76%);
+    background-attachment: fixed;
+  }
+  ::selection { background: var(--brand-accent); color: var(--text); }
+  @keyframes floatA { 0%,100%{ transform:translate(0,0) scale(1);} 50%{ transform:translate(40px,30px) scale(1.1);} }
+  @keyframes riseIn { from{ opacity:0; transform:translateY(22px);} to{ opacity:1; transform:translateY(0);} }
+  @keyframes boltPulse { 0%,100%{ opacity:.85; filter:drop-shadow(0 0 0 rgba(182,215,42,0)); } 50%{ opacity:1; filter:drop-shadow(0 0 6px rgba(182,215,42,.7)); } }
+  @keyframes wipeIn { from{ clip-path:inset(0 100% 0 0);} to{ clip-path:inset(0 0 0 0);} }
+  @keyframes drawStroke { from{ stroke-dashoffset: 240; } to{ stroke-dashoffset: 0; } }
+  @keyframes leafPop { 0%{ opacity:0; transform:scale(.4) translateY(6px); } 60%{ opacity:1; transform:scale(1.12); } 100%{ opacity:1; transform:scale(1); } }
+  @keyframes spinDash { 0%{ stroke-dashoffset: 188; } 50%{ stroke-dashoffset: 47; } 100%{ stroke-dashoffset: 188; transform:rotate(360deg);} }
+  @keyframes overlayOut { from{ opacity:1; } to{ opacity:0; } }
+  @keyframes pinShake { 0%,100%{ transform:translateX(0);} 20%{ transform:translateX(-9px);} 40%{ transform:translateX(8px);} 60%{ transform:translateX(-6px);} 80%{ transform:translateX(4px);} }
+  @media (prefers-reduced-motion: reduce){ .card.step { animation:none !important; } .cashflow-blok svg { animation:none; } #app-loader .loader-mark path { animation:none !important; stroke-dashoffset:0 !important; } }
+
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 26px 22px 44px; position:relative; z-index:1; }
+  .hidden { display:none !important; }
+
+  /* GEDEELDE HEADER — donkere site-stijl */
+  header.brand-header { display:flex; align-items:center; gap:18px; padding:16px 24px; background:rgba(11,47,26,0.92); -webkit-backdrop-filter:blur(20px) saturate(1.4); backdrop-filter:blur(20px) saturate(1.4); border:1px solid rgba(250,251,247,0.10); border-radius:var(--radius); box-shadow:0 18px 44px rgba(11,47,26,0.28); margin-bottom:16px; position:sticky; top:12px; z-index:30; }
+  header.brand-header .logos { display:flex; align-items:center; gap:12px; flex:1; }
+  header.brand-header .logos .logo-mark { width:38px; height:38px; display:block; flex:none; animation:riseIn .7s ease both; }
+  header.brand-header .logos .lockup { display:flex; flex-direction:column; line-height:1; }
+  header.brand-header .wordmark { font-family:var(--font-head); font-weight:700; font-size:25px; color:var(--brand-light); letter-spacing:.13em; text-transform:uppercase; }
+  header.brand-header .tagline { font-size:10px; font-weight:600; letter-spacing:2.2px; color:var(--brand-accent); margin-top:5px; text-transform:uppercase; font-family:var(--font-mono); }
+  header.brand-header .tool-tag { display:inline-flex; align-items:center; gap:7px; padding:8px 15px; background:rgba(182,215,42,0.14); color:var(--brand-accent); border:1px solid rgba(182,215,42,0.30); border-radius:999px; font-size:11px; font-weight:700; letter-spacing:.6px; white-space:nowrap; font-family:var(--font-mono); text-transform:uppercase; }
+  header.brand-header .tool-tag::before { content:""; width:8px; height:8px; border-radius:50%; background:var(--brand-accent); }
+  @media (max-width:700px){ header.brand-header { flex-direction:column; align-items:flex-start; gap:12px; padding:14px 18px; } }
+
+  /* TOOL-SWITCHER */
+  .tool-switch { display:flex; gap:10px; margin-bottom:22px; flex-wrap:wrap; }
+  .tool-switch .ts-btn { flex:1 1 220px; padding:14px 22px; border-radius:var(--radius-sm); border:1px solid var(--border); background:var(--surface, #fff); color:var(--muted); font-family:var(--font-body); font-weight:700; font-size:15px; cursor:pointer; transition:all .18s; display:flex; align-items:center; justify-content:center; gap:10px; box-shadow:0 8px 22px rgba(16,32,23,0.06); }
+  .tool-switch .ts-btn::before { content:""; width:10px; height:10px; border-radius:50%; background:var(--border); transition:all .18s; }
+  .tool-switch .ts-btn:hover { border-color:var(--brand-accent-dk); color:var(--brand-primary); }
+  .tool-switch .ts-btn.active { background:var(--brand-primary); border-color:var(--brand-primary); color:var(--brand-light); box-shadow:0 14px 30px rgba(18,60,36,0.26); }
+  .tool-switch .ts-btn.active::before { background:var(--brand-accent); }
+
+  .tool-container { margin:0 auto; }
+  #tool-warmtepomp { max-width:860px; margin:0 auto; }
+  #tool-batterij   { max-width:1100px; margin:0 auto; }
+
+  /* =========================================================
+     LOADER + PINCODE  (fullscreen donkergroen)
+     ========================================================= */
+  .gate-screen { position:fixed; inset:0; z-index:1000; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:26px; padding:24px; text-align:center;
+    background:radial-gradient(circle at 50% 32%, #134026, #0B2F1A 70%); color:var(--brand-light); }
+  .gate-screen.fade-out { animation:overlayOut .55s ease forwards; }
+
+  /* Loader */
+  #app-loader .loader-mark { width:120px; height:120px; }
+  #app-loader .loader-mark path.stroke { stroke:var(--brand-light); stroke-width:7; fill:none; stroke-linejoin:round; stroke-linecap:round; stroke-dasharray:240; stroke-dashoffset:240; animation:drawStroke 1.1s cubic-bezier(.6,.05,.2,1) forwards; }
+  #app-loader .loader-mark path.fill { fill:var(--brand-accent); opacity:0; transform-origin:60% 50%; animation:leafPop .6s cubic-bezier(.2,.8,.2,1) forwards; }
+  #app-loader .loader-mark path.fill.f1 { animation-delay:.55s; }
+  #app-loader .loader-mark path.fill.f2 { animation-delay:.75s; }
+  #app-loader .loader-word { font-family:var(--font-head); font-size:34px; font-weight:700; letter-spacing:.16em; text-transform:uppercase; opacity:0; animation:riseIn .6s ease .5s forwards; }
+  #app-loader .loader-sub { font-family:var(--font-mono); font-size:11px; letter-spacing:.32em; text-transform:uppercase; color:var(--brand-accent); opacity:0; animation:riseIn .6s ease .7s forwards; }
+  #app-loader .loader-spin { width:34px; height:34px; }
+  #app-loader .loader-spin circle { fill:none; stroke:rgba(182,215,42,.85); stroke-width:5; stroke-linecap:round; stroke-dasharray:188; transform-origin:center; animation:spinDash 1.3s linear infinite; }
+
+  /* Pincode */
+  #pin-gate .pin-mark { width:54px; height:54px; margin-bottom:2px; }
+  #pin-gate .pin-mark path.stroke { stroke:var(--brand-light); stroke-width:7; fill:none; stroke-linejoin:round; stroke-linecap:round; }
+  #pin-gate .pin-mark path.fill { fill:var(--brand-accent); }
+  #pin-gate .pin-title { font-family:var(--font-head); font-size:30px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; margin:0; }
+  #pin-gate .pin-help { font-size:14px; color:var(--muted-on-dark, rgba(250,251,247,.72)); margin:-12px 0 0; max-width:320px; }
+  #pin-gate .pin-dots { display:flex; gap:16px; margin:4px 0; }
+  #pin-gate .pin-dots .dot { width:16px; height:16px; border-radius:50%; border:2px solid rgba(182,215,42,.55); transition:all .15s; }
+  #pin-gate .pin-dots .dot.filled { background:var(--brand-accent); border-color:var(--brand-accent); box-shadow:0 0 12px rgba(182,215,42,.6); }
+  #pin-gate.shake .pin-dots { animation:pinShake .45s ease; }
+  #pin-gate.shake .pin-dots .dot { border-color:#E58A6A; }
+  #pin-gate .pin-pad { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; width:min(300px,80vw); }
+  #pin-gate .pin-key { aspect-ratio:1; min-height:62px; display:flex; align-items:center; justify-content:center; font-family:var(--font-body); font-size:24px; font-weight:600; color:var(--brand-light); background:rgba(250,251,247,0.06); border:1px solid rgba(250,251,247,0.14); border-radius:var(--radius-sm); cursor:pointer; transition:all .12s; user-select:none; -webkit-tap-highlight-color:transparent; }
+  #pin-gate .pin-key:hover { background:rgba(182,215,42,0.16); border-color:rgba(182,215,42,0.5); }
+  #pin-gate .pin-key:active { transform:scale(.94); }
+  #pin-gate .pin-key.pin-action { font-size:14px; font-family:var(--font-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--brand-accent); }
+  #pin-gate .pin-disclaimer { font-size:11px; font-family:var(--font-mono); letter-spacing:.04em; color:rgba(250,251,247,.45); max-width:340px; margin:6px 0 0; line-height:1.5; }
+
+  /* =========================================================
+     TOOL 1 — WARMTEPOMP  (scoped onder #tool-warmtepomp)
+     ========================================================= */
+  #tool-warmtepomp {
+    h2, h3, .result-hero .big { font-family: var(--font-head); font-weight:600; }
+
+    .progress { display:flex; align-items:flex-start; justify-content:space-between; gap:4px; margin-bottom:20px; padding:0 4px; }
+    .progress .stp { flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; position:relative; }
+    .progress .stp::before { content:""; position:absolute; top:15px; left:-50%; width:100%; height:2px; background:var(--border); z-index:0; }
+    .progress .stp:first-child::before { display:none; }
+    .progress .stp .num { position:relative; z-index:1; width:32px; height:32px; border-radius:50%; background:#fff; border:2px solid var(--border); color:var(--muted); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; transition:all .2s; }
+    .progress .stp .cap { font-size:10.5px; color:var(--muted); font-weight:600; text-align:center; line-height:1.2; }
+    .progress .stp.active .num { background:var(--brand-primary); border-color:var(--brand-primary); color:#fff; box-shadow:0 0 0 4px rgba(30,86,49,0.15); }
+    .progress .stp.active .cap { color:var(--brand-primary); }
+    .progress .stp.done .num { background:var(--brand-primary); border-color:var(--brand-primary); color:#fff; }
+    .progress .stp.done::before, .progress .stp.active::before { background:var(--brand-primary); }
+    @media (max-width:640px){ .progress .stp .cap { display:none; } .progress .stp::before { top:15px; } }
+
+    .card { background:var(--brand-cream); border-radius:var(--radius); padding:32px 34px; box-shadow:0 14px 40px rgba(33,64,36,0.10); border:1px solid var(--border); position:relative; overflow:hidden; }
+    .card.step { animation:riseIn .5s cubic-bezier(.22,.61,.36,1) both; }
+    .card.step::after { content:""; position:absolute; right:-40px; top:-40px; width:150px; height:150px; background:var(--leaf-soft); border-radius:0 0 0 100%; opacity:.55; pointer-events:none; }
+    .card > * { position:relative; z-index:1; }
+    .card h2 { margin:0 0 6px; color:var(--brand-primary); font-size:27px; line-height:1.15; letter-spacing:-0.2px; }
+    .card .subtitle { color:var(--muted); margin:0 0 24px; font-size:15px; }
+
+    .field { margin-bottom:18px; }
+    .field label { display:block; font-weight:600; margin-bottom:6px; font-size:14px; }
+    .field .hint { font-size:12px; color:var(--muted); margin-top:4px; }
+    .field input[type="number"], .field input[type="text"], .field select { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:12px; font-size:15px; background:#fff; }
+    .field input:focus, .field select:focus { outline: 2px solid var(--brand-accent); border-color:var(--brand-accent); }
+
+    .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    @media (max-width:600px){ .grid-2 { grid-template-columns:1fr; } }
+
+    .check-group { display:flex; flex-direction:column; gap:9px; }
+    .check-group label { display:flex; align-items:flex-start; gap:11px; padding:13px 15px; border:1.5px solid var(--border); border-radius:13px; cursor:pointer; font-weight:500; background:#fff; transition:all .15s; }
+    .check-group label:hover { border-color:var(--brand-primary); background:#F6FBFA; }
+    .check-group input { margin-top:3px; accent-color:var(--brand-primary); }
+    .check-group label:has(input:checked) { border-color:var(--brand-primary); background:#F0F9F7; }
+    .check-group input:checked + span { color:var(--brand-primary); font-weight:600; }
+
+    .radio-pills { display:flex; flex-wrap:wrap; gap:10px; }
+    .radio-pills label { display:inline-flex; align-items:center; gap:9px; padding:12px 18px 12px 14px; border:1.5px solid var(--border); border-radius:13px; cursor:pointer; font-size:14px; font-weight:500; background:#fff; transition:all .15s; }
+    .radio-pills label:hover { border-color:var(--brand-primary); }
+    .radio-pills label::before { content:""; width:18px; height:18px; border-radius:50%; border:2px solid var(--border); flex:none; transition:all .15s; }
+    .radio-pills input { display:none; }
+    .radio-pills label:has(input:checked) { border-color:var(--brand-primary); background:#F0F9F7; color:var(--brand-primary); font-weight:700; }
+    .radio-pills label:has(input:checked)::before { border-color:var(--brand-primary); background:radial-gradient(circle, var(--brand-primary) 0 5px, #fff 6px); }
+
+    .btn-row { display:flex; justify-content:space-between; align-items:center; margin-top:30px; gap:12px; }
+    button { padding:13px 26px; border-radius:var(--radius-sm); border:none; font-size:15px; font-weight:800; cursor:pointer; transition:all .15s; font-family:inherit; }
+    .btn-primary { background:var(--brand-accent-dk); color:var(--brand-light); box-shadow:0 14px 34px rgba(31,107,58,0.28); }
+    .btn-primary:hover { background:var(--brand-primary); transform:translateY(-1px); }
+    .btn-ghost   { background:transparent; color:var(--brand-primary); border:1px solid var(--border); }
+    .btn-ghost:hover { border-color:var(--brand-accent-dk); background:rgba(31,107,58,0.08); }
+    .btn-accent  { background:var(--brand-accent); color:var(--text); box-shadow:0 8px 20px rgba(182,215,42,0.34); }
+    .btn-accent:hover { background:var(--brand-accent-dk); color:var(--brand-light); }
+
+    .discount-bar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:14px 16px; border:1px solid var(--border); border-radius:14px; background:#FFFBE8; margin:0 0 18px; }
+    .discount-bar strong { color:var(--brand-primary); }
+    .discount-bar small { color:var(--muted); font-weight:600; }
+    .btn-discount { display:inline-flex; align-items:center; gap:8px; background:var(--warn); color:#fff; box-shadow:0 10px 22px rgba(166,90,46,0.22); }
+    .btn-discount .bang { display:inline-grid; place-items:center; width:22px; height:22px; border-radius:999px; background:#fff; color:var(--warn); font-weight:900; }
+    .price-old { display:inline-block; margin-right:8px; color:var(--muted); text-decoration:line-through; font-size:12px; font-weight:600; }
+
+    .result-hero { padding:28px 30px; border-radius:var(--radius); margin-bottom:20px; position:relative; overflow:hidden; box-shadow:0 14px 34px rgba(33,64,36,0.18); }
+    .result-hero::before { content:""; position:absolute; right:-60px; top:-60px; width:200px; height:200px; background:radial-gradient(circle, rgba(255,255,255,.18), transparent 70%); animation:floatA 16s ease-in-out infinite; }
+    .result-hero > * { position:relative; z-index:1; }
+    .result-hero.allelectric { background:linear-gradient(135deg, var(--brand-primary-dk), var(--brand-primary)); color:#fff; }
+    .result-hero.hybride     { background:linear-gradient(135deg, var(--brand-navy), var(--brand-primary)); color:#fff; }
+    .result-hero.blok        { background:linear-gradient(135deg, #8a2f2f, var(--danger)); color:#fff; }
+    .result-hero h3 { margin:0 0 6px; font-size:14px; opacity:.85; text-transform:uppercase; letter-spacing:1px; }
+    .result-hero .big { font-size:28px; font-weight:700; margin:0; }
+    .result-hero .sub { margin:8px 0 0; opacity:.9; font-size:15px; }
+
+    .result-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:20px; }
+    @media (max-width:700px){ .result-grid { grid-template-columns:1fr; } }
+    .tile { background:var(--brand-cream); border:1px solid var(--border); border-radius:16px; padding:18px; transition:transform .18s, box-shadow .18s; }
+    .tile:hover { transform:translateY(-3px); box-shadow:0 10px 22px rgba(33,64,36,0.10); }
+    .tile .label { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; font-weight:700; }
+    .tile .value { font-family:var(--font-head); font-size:27px; font-weight:600; color:var(--brand-primary); margin:5px 0 0; }
+    .tile .value.small { font-size:18px; }
+
+    .reasoning { background:#FAFAF8; border-left:3px solid var(--brand-accent); padding:14px 18px; border-radius:4px; margin-bottom:16px; font-size:14px; line-height:1.6; }
+    .reasoning h4 { margin:0 0 8px; color:var(--brand-primary); font-size:15px; }
+    .reasoning ul { margin:6px 0 0; padding-left:20px; }
+
+    .cashflow-blok svg { width:100%; height:auto; display:block; animation:wipeIn 1.1s cubic-bezier(.4,0,.2,1) both; }
+    .cashflow-blok .cf-legenda { display:flex; gap:18px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin-top:12px; }
+    .cashflow-blok .cf-legenda span { display:inline-flex; align-items:center; gap:6px; }
+    .cashflow-blok .cf-dot { width:11px; height:11px; border-radius:3px; display:inline-block; }
+    .cashflow-blok .cf-uitleg { font-size:13px; color:var(--text); line-height:1.55; margin:12px 0 0; }
+
+    .ob-section { margin-bottom:18px; }
+    .ob-section:last-child { margin-bottom:0; }
+    .ob-section h5 { margin:0 0 6px; font-size:13px; color:var(--brand-primary); text-transform:uppercase; letter-spacing:1px; font-weight:700; }
+    .ob-section p  { margin:0 0 6px; font-size:14px; line-height:1.6; }
+    .ob-section .ob-row { display:flex; justify-content:space-between; padding:4px 0; font-size:14px; border-bottom:1px dashed var(--border); }
+    .ob-section .ob-row:last-child { border-bottom:none; }
+    .ob-section .ob-row.total { font-weight:700; color:var(--brand-primary); border-top:2px solid var(--border); border-bottom:none; padding-top:8px; margin-top:4px; }
+    .ob-section .ob-row.pos { color:var(--ok); }
+    .ob-section .ob-row.neg { color:var(--danger); }
+
+    .flag { padding:12px 16px; border-radius:8px; margin-bottom:10px; font-size:14px; }
+    .flag.warn   { background:#FFF4E0; border-left:4px solid var(--warn); }
+    .flag.danger { background:#FDECEC; border-left:4px solid var(--danger); }
+    .flag.ok     { background:#E8F5EE; border-left:4px solid var(--ok); }
+
+    .isde-disclaimer { background:#FAFAF8; border-left:3px solid var(--muted); border-radius:6px; padding:10px 14px; font-size:12px; color:var(--muted); line-height:1.55; margin-top:14px; }
+    .isde-disclaimer strong { color:var(--text); }
+
+    .keuze-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:10px; }
+    @media (max-width:600px){ .keuze-grid { grid-template-columns:1fr; } }
+    .keuze-card { background:#fff; border:2px solid var(--border); border-radius:10px; padding:16px; position:relative; }
+    .keuze-card.veilig { border-color:var(--brand-accent); }
+    .keuze-card.budget { border-color:var(--warn); }
+    .keuze-card h5 { margin:8px 0 4px; font-size:15px; color:var(--brand-primary); }
+    .keuze-card .badge { display:inline-block; padding:3px 8px; border-radius:4px; font-size:10px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; background:#F5E6A8; color:#7a5a00; }
+    .keuze-card .badge.badge-accent { background:var(--brand-accent); color:#fff; }
+    .keuze-card .kw-pill { display:inline-block; padding:2px 8px; background:var(--brand-primary); color:#fff; border-radius:4px; font-size:12px; font-weight:600; margin-right:8px; }
+    .keuze-card .prijs { display:inline-block; font-weight:700; color:var(--brand-primary); font-size:14px; }
+    .keuze-card ul { margin:10px 0 0; padding-left:18px; font-size:13px; color:var(--text); line-height:1.5; }
+    .keuze-card ul li { margin-bottom:4px; }
+
+    .print-only { display:none; }
+  }
+
+  /* =========================================================
+     TOOL 2 — THUISBATTERIJ  (scoped onder #tool-batterij)
+     Erft de Climature-kleuren via gedeelde :root.
+     ========================================================= */
+  #tool-batterij {
+    font-family: var(--font-body); color: var(--text);
+
+    h2, .sales-hero-amount, .verdienst-card .bedrag, .verdienst-card .titel + .bedrag { font-family: var(--font-head); }
+
+    .progress { display:flex; gap:6px; margin-bottom:16px; }
+    .progress div { flex:1; height:6px; border-radius:3px; background:#E3E1DC; }
+    .progress div.active { background:var(--brand-primary); }
+    .progress div.done   { background:var(--brand-accent); }
+
+    .card { background:var(--brand-cream); border:1px solid var(--border); border-radius:var(--radius); padding:28px; box-shadow:0 14px 40px rgba(33,64,36,0.10); }
+    .card h2 { margin:0 0 4px; color:var(--brand-primary); font-size:24px; font-weight:600; }
+    .card .subtitle { color:var(--muted); margin:0 0 20px; font-size:14px; }
+
+    .field { margin-bottom:18px; }
+    .field label { display:block; font-weight:600; margin-bottom:6px; font-size:14px; }
+    .field .hint { font-size:12px; color:var(--muted); margin-top:4px; }
+    .field input[type="number"], .field input[type="text"], .field select { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:12px; font-size:15px; background:#fff; }
+    .field input:focus, .field select:focus { outline: 2px solid var(--brand-accent); border-color:var(--brand-accent); }
+
+    .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    @media (max-width:600px){ .grid-2 { grid-template-columns:1fr; } }
+
+    .radio-pills { display:flex; flex-wrap:wrap; gap:8px; }
+    .radio-pills label { padding:10px 16px; border:1.5px solid var(--border); border-radius:999px; cursor:pointer; font-size:14px; background:#fff; transition:all .15s; }
+    .radio-pills label:hover { border-color:var(--brand-primary); }
+    .radio-pills input { display:none; }
+    .radio-pills label:has(input:checked) { background:var(--brand-primary); border-color:var(--brand-primary); color:#fff; }
+
+    .btn-row { display:flex; justify-content:space-between; margin-top:28px; gap:12px; }
+    button { padding:12px 24px; border-radius:var(--radius-sm); border:none; font-size:15px; font-weight:800; cursor:pointer; transition:all .15s; font-family:var(--font-body); }
+    .btn-primary { background:var(--brand-accent-dk); color:var(--brand-light); box-shadow:0 14px 34px rgba(31,107,58,0.28); }
+    .btn-primary:hover { background:var(--brand-primary); transform:translateY(-1px); }
+    .btn-ghost   { background:transparent; color:var(--brand-primary); border:1px solid var(--border); }
+    .btn-ghost:hover { border-color:var(--brand-accent-dk); background:rgba(31,107,58,0.08); }
+    .btn-accent  { background:var(--brand-accent); color:var(--text); box-shadow:0 8px 20px rgba(182,215,42,0.34); }
+    .btn-accent:hover { background:var(--brand-accent-dk); color:var(--brand-light); }
+
+    .result-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:20px; }
+    @media (max-width:700px){ .result-grid { grid-template-columns:1fr; } }
+    .tile { background:var(--brand-cream); border:1px solid var(--border); border-radius:16px; padding:16px; }
+    .tile .label { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
+    .tile .value { font-size:24px; font-weight:700; color:var(--brand-primary); margin:4px 0 0; }
+
+    .reasoning { background:#FAFAF8; border-left:3px solid var(--brand-accent); padding:14px 18px; border-radius:4px; margin-bottom:16px; font-size:14px; line-height:1.6; }
+    .reasoning h4 { margin:0 0 8px; color:var(--brand-primary); font-size:15px; }
+
+    .ob-section { margin-bottom:18px; }
+    .ob-section:last-child { margin-bottom:0; }
+    .ob-section h5 { margin:0 0 6px; font-size:13px; color:var(--brand-primary); text-transform:uppercase; letter-spacing:1px; font-weight:700; }
+    .ob-section p  { margin:0 0 6px; font-size:14px; line-height:1.6; }
+    .ob-section .ob-row { display:flex; justify-content:space-between; padding:4px 0; font-size:14px; border-bottom:1px dashed var(--border); }
+    .ob-section .ob-row:last-child { border-bottom:none; }
+    .ob-section .ob-row.total { font-weight:700; color:var(--brand-primary); border-top:2px solid var(--border); border-bottom:none; padding-top:8px; margin-top:4px; }
+    .ob-section .ob-row.pos { color:var(--ok); }
+    .ob-section .ob-row.neg { color:var(--danger); }
+
+    .flag { padding:12px 16px; border-radius:8px; margin-bottom:10px; font-size:14px; }
+    .flag.warn   { background:#FFF4E0; border-left:4px solid var(--warn); }
+    .flag.danger { background:#FDECEC; border-left:4px solid var(--danger); }
+    .flag.ok     { background:#E8F5EE; border-left:4px solid var(--ok); }
+
+    .sales-hero { background:linear-gradient(135deg, var(--brand-primary-dk), var(--brand-primary)); color:#fff; padding:32px 28px; border-radius:var(--radius); margin-bottom:20px; box-shadow:0 14px 34px rgba(33,64,36,0.18); position:relative; overflow:hidden; }
+    .sales-hero::before { content:""; position:absolute; right:-60px; top:-60px; width:200px; height:200px; background:radial-gradient(circle, rgba(255,255,255,.16), transparent 70%); }
+    .sales-hero > * { position:relative; z-index:1; }
+    .sales-hero-eyebrow { font-size:12px; text-transform:uppercase; letter-spacing:1.5px; opacity:.85; font-weight:700; display:block; margin-bottom:8px; }
+    .sales-hero-range { display:flex; align-items:baseline; flex-wrap:wrap; gap:8px; }
+    .sales-hero-amount { font-size:44px; font-weight:700; color:var(--brand-accent); line-height:1; letter-spacing:-1px; }
+    .sales-hero-divider { font-size:24px; font-weight:300; opacity:.7; padding:0 4px; }
+    .sales-hero-period { font-size:18px; opacity:.85; font-weight:500; margin-left:6px; }
+    .sales-hero-tvt { display:inline-block; margin-top:14px; padding:8px 14px; background:rgba(255,255,255,0.14); border-radius:10px; font-size:14px; font-weight:600; }
+    .sales-hero-tvt strong { color:var(--brand-accent); }
+    .sales-hero-sub { margin:18px 0 0; font-size:15px; opacity:.92; line-height:1.5; }
+
+    .result-section { margin-bottom:24px; }
+    .section-title { font-size:14px; color:var(--brand-primary); text-transform:uppercase; letter-spacing:1.5px; font-weight:700; margin:0 0 12px; }
+
+    .verdiensten-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:0 0 14px; }
+    @media (max-width:780px){ .verdiensten-grid { grid-template-columns:1fr; } }
+    .verdienst-card { background:var(--brand-cream); border:1px solid var(--border); border-radius:16px; padding:20px 22px; position:relative; overflow:hidden; transition:transform .15s, box-shadow .18s; }
+    .verdienst-card:hover { transform:translateY(-2px); box-shadow:0 10px 22px rgba(33,64,36,0.10); }
+    .verdienst-card .icon { width:38px; height:38px; background:var(--leaf-soft); border-radius:10px; display:flex; align-items:center; justify-content:center; margin-bottom:12px; }
+    .verdienst-card .icon svg { width:22px; height:22px; }
+    .verdienst-card .titel { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; font-weight:700; margin-bottom:4px; }
+    .verdienst-card .bedrag { font-size:28px; font-weight:700; color:var(--brand-primary); margin:0 0 4px; line-height:1; letter-spacing:-0.5px; }
+    .verdienst-card .bedrag-suffix { font-size:13px; color:var(--muted); font-weight:500; }
+    .verdienst-card .uitleg { font-size:13px; color:var(--text); line-height:1.45; margin:8px 0 0; }
+    .verdienst-card.inactive { opacity:.5; background:#FAFAFA; }
+    .verdienst-card.inactive .bedrag { color:#999; }
+
+    .verdiensten-disclaimer { font-size:12px; color:var(--muted); padding:12px 14px; background:#FAFAF8; border-left:3px solid var(--brand-accent); border-radius:6px; margin-bottom:10px; line-height:1.5; }
+    .verdiensten-disclaimer strong { color:var(--brand-primary); }
+    .verdiensten-disclaimer.warning { background:#FFF4E0; border-left-color:var(--warn); color:var(--text); margin-bottom:24px; }
+    .verdiensten-disclaimer.warning strong { color:#8C5A00; }
+    .verdiensten-disclaimer.warning u { text-decoration:none; border-bottom:2px solid var(--warn); padding-bottom:1px; }
+
+    .ob-cards-grid { display:grid; gap:12px; }
+    .ob-card { background:var(--brand-cream); border:1px solid var(--border); border-radius:14px; padding:16px 18px; position:relative; overflow:hidden; }
+    .ob-card-num { position:absolute; left:-1px; top:-1px; bottom:-1px; width:36px; background:var(--brand-primary); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:14px; }
+    .ob-card-body { padding-left:32px; }
+    .ob-card h6 { margin:0 0 6px; font-size:13px; color:var(--brand-primary); text-transform:uppercase; letter-spacing:1px; font-weight:700; }
+    .ob-card p { margin:0 0 6px; font-size:14px; line-height:1.55; color:var(--text); }
+    .ob-card p:last-child { margin-bottom:0; }
+    .ob-card .ob-row { display:flex; justify-content:space-between; padding:5px 0; font-size:13px; border-bottom:1px solid #F2EFE4; }
+    .ob-card .ob-row:last-of-type { border-bottom:none; }
+    .ob-card .ob-row.total { font-weight:700; color:var(--brand-primary); border-top:1px solid var(--border); border-bottom:none; padding-top:8px; margin-top:4px; }
+
+    .options-table { width:100%; border-collapse:separate; border-spacing:0; margin:0; font-size:14px; background:var(--brand-cream); border-radius:16px; overflow:hidden; box-shadow:0 8px 24px rgba(33,64,36,0.08); }
+    .options-table th { text-align:left; padding:14px 16px; background:var(--brand-primary); color:#fff; font-size:11px; text-transform:uppercase; letter-spacing:.6px; font-weight:600; white-space:nowrap; }
+    .options-table th.right, .options-table td.right { text-align:right; }
+    .options-table td { padding:16px; border-bottom:1px solid var(--border); vertical-align:middle; position:relative; }
+    .options-table tr:last-child td { border-bottom:none; }
+    .options-table tr.highlight-min   td:first-child { box-shadow:inset 4px 0 0 var(--warn); }
+    .options-table tr.highlight-best  td:first-child { box-shadow:inset 4px 0 0 var(--ok); }
+    .options-table tr.highlight-best  td { background:#F4FAF0; }
+    .options-table tr.below-min       td { color:#A8A8A8; background:#FAFAF7; }
+    .options-table tr.below-min       td:first-child .row-name { color:#A8A8A8; }
+    .options-table .row-name { font-weight:700; color:var(--brand-primary); font-size:15px; display:block; line-height:1.3; margin-bottom:4px; }
+    .options-table .row-cap  { font-size:12px; color:var(--muted); font-weight:500; margin-top:6px; display:block; }
+    .options-table .row-investering-bruto { font-size:11px; color:var(--muted); font-weight:400; display:block; text-decoration:line-through; }
+    .options-table .row-badges { display:flex; gap:4px; flex-wrap:wrap; margin-top:0; }
+    .options-table .badge-row { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; }
+    .badge-min  { background:#FEF3DC; color:#8C5A00; border:1px solid #F0D78F; }
+    .badge-best { background:#E5F7EA; color:#1F7A36; border:1px solid #95DAA5; }
+    .badge-popular { background:var(--brand-primary); color:#fff; border:1px solid var(--brand-primary); }
+    .badge-too-small { background:#EEE; color:#888; border:1px solid #DDD; }
+    .options-table .total-amount { font-weight:800; color:var(--ok); font-size:16px; }
+    .options-table .tvt-amount { font-weight:700; color:var(--brand-primary); font-size:15px; }
+    .options-table tr.below-min .total-amount { color:#A8A8A8; }
+    .options-table tr.below-min .tvt-amount   { color:#A8A8A8; }
+    .options-legend { font-size:12px; color:var(--muted); margin-top:12px; padding:8px 12px; background:#FAFAF8; border-radius:6px; }
+    .options-legend .badge-row { margin:0 4px 0 0; display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; }
+  }
+
+  /* =========================================================
+     PRINT
+     ========================================================= */
+  @media print {
+    @page { size: A4 portrait; margin: 14mm 14mm 18mm 14mm; }
+    html, body { background:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .wrap { max-width:none; padding:0; }
+    header.brand-header, .tool-switch, #app-loader, #pin-gate { display:none !important; }
+
+    #tool-warmtepomp .progress,
+    #tool-warmtepomp .btn-row,
+    #tool-warmtepomp #btn-print,
+    #tool-warmtepomp #btn-restart,
+    #tool-warmtepomp .step:not([data-step="7"]) { display:none !important; }
+    #tool-warmtepomp .step[data-step="7"] { display:block !important; }
+    #tool-warmtepomp .print-only { display:block !important; }
+    #tool-warmtepomp .print-cover { display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid var(--brand-primary); padding-bottom:8mm; margin-bottom:8mm; }
+    #tool-warmtepomp .print-cover-logos { display:flex; gap:5mm; align-items:center; }
+    #tool-warmtepomp .print-cover-logos .print-logo { height:13mm; width:13mm; }
+    #tool-warmtepomp .print-cover-meta { text-align:right; }
+    #tool-warmtepomp .print-cover-title { font-size:18pt; font-weight:800; color:var(--brand-primary); letter-spacing:-0.3px; }
+    #tool-warmtepomp .print-cover-adres { font-size:11pt; color:var(--text); margin-top:2mm; font-weight:600; }
+    #tool-warmtepomp .print-cover-date { font-size:10pt; color:var(--muted); margin-top:1mm; }
+    #tool-warmtepomp .card { box-shadow:none !important; padding:0; border:none; background:transparent; }
+    #tool-warmtepomp .card h2 { font-size:16pt; color:var(--brand-primary); margin-bottom:2mm; }
+    #tool-warmtepomp .result-hero { background:#F4F6FA !important; color:var(--brand-primary) !important; border:1px solid var(--border); padding:6mm; page-break-inside:avoid; }
+    #tool-warmtepomp .result-hero h3 { color:var(--muted) !important; font-size:8pt; }
+    #tool-warmtepomp .result-hero .big { color:var(--brand-primary) !important; font-size:22pt; }
+    #tool-warmtepomp .result-hero .sub { color:var(--text) !important; font-size:11pt; }
+    #tool-warmtepomp .result-grid { grid-template-columns:repeat(3,1fr); gap:3mm; page-break-inside:avoid; margin-bottom:6mm; }
+    #tool-warmtepomp .tile { border:1px solid var(--border); padding:4mm; background:#FAFAFA; }
+    #tool-warmtepomp .reasoning, #tool-warmtepomp .ob-section, #tool-warmtepomp .keuze-card, #tool-warmtepomp .keuze-grid { page-break-inside:avoid; }
+    #tool-warmtepomp .print-footer { position:fixed; bottom:5mm; left:14mm; right:14mm; text-align:center; font-size:8pt; color:var(--muted); border-top:1px solid var(--border); padding-top:3mm; }
+
+    #tool-batterij .progress, #tool-batterij .btn-row, #tool-batterij #btn-print, #tool-batterij #btn-restart { display:none !important; }
+    #tool-batterij .card { box-shadow:none; padding:0; background:transparent; border:none; }
+    #tool-batterij .options-table, #tool-batterij .verdienst-card, #tool-batterij .ob-card, #tool-batterij .sales-hero { page-break-inside:avoid; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ LAADSCHERM (logo-animatie) ============ -->
+<div class="gate-screen" id="app-loader" role="status" aria-label="Climature wordt geladen">
+  <svg class="loader-mark" viewBox="0 0 110 110" fill="none" aria-hidden="true">
+    <path class="stroke" d="M27 56 L27 90 L83 90 L83 56"/>
+    <path class="stroke" d="M19 59 L55 30 L91 59"/>
+    <path class="fill f1" d="M61 40 C61 23 76 15 92 13 C88 28 77 38 61 40 Z"/>
+    <path class="fill f2" d="M60 49 L42 73 L54 73 L48 92 L72 62 L59 62 L66 49 Z"/>
+  </svg>
+  <div class="loader-word">Climature</div>
+  <div class="loader-sub">Adviestools</div>
+  <svg class="loader-spin" viewBox="0 0 60 60" aria-hidden="true"><circle cx="30" cy="30" r="26"/></svg>
+</div>
+
+<!-- ============ PINCODE-SCHERM ============ -->
+<div class="gate-screen hidden" id="pin-gate" aria-hidden="true">
+  <svg class="pin-mark" viewBox="0 0 110 110" fill="none" aria-hidden="true">
+    <path class="stroke" d="M27 56 L27 90 L83 90 L83 56"/>
+    <path class="stroke" d="M19 59 L55 30 L91 59"/>
+    <path class="fill" d="M61 40 C61 23 76 15 92 13 C88 28 77 38 61 40 Z"/>
+    <path class="fill" d="M60 49 L42 73 L54 73 L48 92 L72 62 L59 62 L66 49 Z"/>
+  </svg>
+  <h1 class="pin-title">Toegangscode</h1>
+  <p class="pin-help">Voer de 4-cijferige pincode in om de Climature adviestools te openen.</p>
+  <div class="pin-dots" id="pin-dots">
+    <span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+  </div>
+  <div class="pin-pad" id="pin-pad">
+    <div class="pin-key" data-key="1">1</div>
+    <div class="pin-key" data-key="2">2</div>
+    <div class="pin-key" data-key="3">3</div>
+    <div class="pin-key" data-key="4">4</div>
+    <div class="pin-key" data-key="5">5</div>
+    <div class="pin-key" data-key="6">6</div>
+    <div class="pin-key" data-key="7">7</div>
+    <div class="pin-key" data-key="8">8</div>
+    <div class="pin-key" data-key="9">9</div>
+    <div class="pin-key pin-action" data-key="clear">Wis</div>
+    <div class="pin-key" data-key="0">0</div>
+    <div class="pin-key pin-action" data-key="back" aria-label="Wissen">⌫</div>
+  </div>
+  <p class="pin-disclaimer">Let op: deze pincode is een eenvoudige toegangsdrempel in de browser, geen beveiliging van gevoelige gegevens.</p>
+</div>
+
+<div class="wrap">
+
+  <!-- GEDEELDE HEADER -->
+  <header class="brand-header">
+    <div class="logos">
+      <svg class="logo-mark" viewBox="0 0 110 110" fill="none" aria-hidden="true">
+        <path d="M27 56 L27 90 L83 90 L83 56" stroke="#FAFBF7" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
+        <path d="M19 59 L55 30 L91 59" stroke="#FAFBF7" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
+        <path d="M61 40 C61 23 76 15 92 13 C88 28 77 38 61 40 Z" fill="#B6D72A"/>
+        <path d="M60 49 L42 73 L54 73 L48 92 L72 62 L59 62 L66 49 Z" fill="#B6D72A"/>
+      </svg>
+      <div class="lockup">
+        <span class="wordmark">Climature</span>
+        <span class="tagline">Kracht uit de natuur</span>
+      </div>
+    </div>
+    <span class="tool-tag" id="active-tool-tag">Adviestools</span>
+  </header>
+
+  <!-- TOOL-SWITCHER -->
+  <div class="tool-switch">
+    <button class="ts-btn active" data-tool="warmtepomp" onclick="showTool('warmtepomp')">Warmtepomp Advies</button>
+    <button class="ts-btn" data-tool="batterij" onclick="showTool('batterij')">Thuisbatterij Advies</button>
+  </div>
+
+  <!-- ===================================================================
+       TOOL 1 — WARMTEPOMP ADVIESTOOL
+       =================================================================== -->
+  <div class="tool-container" id="tool-warmtepomp">
+
+    <!-- PRINT-COVER -->
+    <div class="print-only print-cover">
+      <div class="print-cover-logos">
+        <svg class="print-logo" viewBox="0 0 110 110" fill="none" aria-hidden="true">
+          <path d="M27 56 L27 90 L83 90 L83 56" stroke="#123C24" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
+          <path d="M19 59 L55 30 L91 59" stroke="#123C24" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
+          <path d="M61 40 C61 23 76 15 92 13 C88 28 77 38 61 40 Z" fill="#1F6B3A"/>
+          <path d="M60 49 L42 73 L54 73 L48 92 L72 62 L59 62 L66 49 Z" fill="#1F6B3A"/>
+        </svg>
+        <div style="line-height:1;">
+          <div style="font-family:'Barlow Condensed',Impact,sans-serif; font-weight:700; font-size:18pt; letter-spacing:.12em; text-transform:uppercase; color:#123C24;">Climature</div>
+          <div style="font-family:'IBM Plex Mono',monospace; font-size:7pt; font-weight:600; letter-spacing:2px; color:#1F6B3A; margin-top:1mm; text-transform:uppercase;">Kracht uit de natuur</div>
+        </div>
+      </div>
+      <div class="print-cover-meta">
+        <div class="print-cover-title">Warmtepomp Advies</div>
+        <div class="print-cover-adres" id="print-cover-adres"></div>
+        <div class="print-cover-date" id="print-cover-date"></div>
+      </div>
+    </div>
+    <div class="print-only print-footer">
+      Persoonlijk warmtepomp-advies · Climature · <span id="print-footer-date"></span>
+    </div>
+
+    <!-- STEPPER -->
+    <div class="progress" id="progress">
+      <div class="stp active"><span class="num">1</span><span class="cap">Gegevens</span></div>
+      <div class="stp"><span class="num">2</span><span class="cap">Woning</span></div>
+      <div class="stp"><span class="num">3</span><span class="cap">Isolatie</span></div>
+      <div class="stp"><span class="num">4</span><span class="cap">Verbruik</span></div>
+      <div class="stp"><span class="num">5</span><span class="cap">Verwarming</span></div>
+      <div class="stp"><span class="num">6</span><span class="cap">Tarieven</span></div>
+      <div class="stp"><span class="num">7</span><span class="cap">Advies</span></div>
+    </div>
+
+    <!-- STAP 1 -->
+    <div class="card step" data-step="1">
+      <h2>Waar mogen we uw advies naartoe sturen?</h2>
+      <p class="subtitle">We stemmen het advies af op uw woning en omgeving. Uw gegevens blijven privé.</p>
+      <div class="field">
+        <label>Straat en huisnummer</label>
+        <input type="text" id="klant_adres" placeholder="bv. Dorpsstraat 12" style="max-width:500px;" />
+      </div>
+      <div class="field">
+        <label>Woonplaats</label>
+        <input type="text" id="klant_plaats" placeholder="bv. Utrecht" style="max-width:500px;" />
+      </div>
+      <div class="btn-row">
+        <span></span>
+        <button class="btn-primary" onclick="WP.nextStep(1)">Volgende →</button>
+      </div>
+    </div>
+
+    <!-- STAP 2 -->
+    <div class="card step hidden" data-step="2">
+      <h2>Vertel ons over uw woning</h2>
+      <p class="subtitle">Type, bouwjaar en grootte bepalen hoeveel warmte uw huis nodig heeft.</p>
+      <div class="grid-2">
+        <div class="field">
+          <label>Type woning</label>
+          <select id="woningtype">
+            <option value="tussenwoning">Tussenwoning</option>
+            <option value="hoekwoning">Hoekwoning</option>
+            <option value="2onder1kap">2-onder-1-kap</option>
+            <option value="vrijstaand">Vrijstaand</option>
+            <option value="appartement">Appartement</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Bouwjaar</label>
+          <input type="number" id="bouwjaar" min="1900" max="2026" placeholder="bv. 1985" />
+        </div>
+        <div class="field">
+          <label>Gebruiksoppervlak (m²)</label>
+          <input type="number" id="oppervlak" min="20" max="1000" placeholder="bv. 130" />
+          <div class="hint">Verwarmd woonoppervlak — niet de kaveloppervlakte.</div>
+        </div>
+        <div class="field">
+          <label>Aantal personen in huishouden</label>
+          <input type="number" id="personen" min="1" max="12" placeholder="bv. 4" />
+        </div>
+      </div>
+      <div class="field">
+        <label>Is dit een monument of beschermd dorpsgezicht?</label>
+        <div class="radio-pills">
+          <label><input type="radio" name="monument" value="nee"><span>Nee</span></label>
+          <label><input type="radio" name="monument" value="ja"><span>Ja</span></label>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-ghost" onclick="WP.prevStep(2)">← Terug</button>
+        <button class="btn-primary" onclick="WP.nextStep(2)">Volgende →</button>
+      </div>
+    </div>
+
+    <!-- STAP 3 -->
+    <div class="card step hidden" data-step="3">
+      <h2>Hoe goed houdt uw woning de warmte vast?</h2>
+      <p class="subtitle">Hoe beter geïsoleerd, hoe lager de aanvoertemperatuur — en hoe zuiniger de warmtepomp draait.</p>
+      <div class="field">
+        <label>Energielabel (indien bekend)</label>
+        <div class="radio-pills">
+          <label><input type="radio" name="label" value="onbekend"><span>Onbekend</span></label>
+          <label><input type="radio" name="label" value="A"><span>A / A+ of beter</span></label>
+          <label><input type="radio" name="label" value="B"><span>B</span></label>
+          <label><input type="radio" name="label" value="C"><span>C</span></label>
+          <label><input type="radio" name="label" value="D"><span>D</span></label>
+          <label><input type="radio" name="label" value="EFG"><span>E / F / G</span></label>
+        </div>
+      </div>
+      <div class="field">
+        <label>Aanwezige isolatie</label>
+        <div class="check-group">
+          <label><input type="checkbox" id="iso_dak"><span>Dakisolatie</span></label>
+          <label><input type="checkbox" id="iso_spouw"><span>Spouw- / gevelisolatie</span></label>
+          <label><input type="checkbox" id="iso_vloer"><span>Vloerisolatie</span></label>
+          <label><input type="checkbox" id="iso_hr"><span>HR++ of triple glas</span></label>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-ghost" onclick="WP.prevStep(3)">← Terug</button>
+        <button class="btn-primary" onclick="WP.nextStep(3)">Volgende →</button>
+      </div>
+    </div>
+
+    <!-- STAP 4 -->
+    <div class="card step hidden" data-step="4">
+      <h2>Wat verbruikt u nu?</h2>
+      <p class="subtitle">Uw huidige gasverbruik is de basis voor de besparingsberekening. Kijk even op uw jaarafrekening.</p>
+      <div class="field">
+        <label>Gasverbruik per jaar (m³)</label>
+        <input type="number" id="gas" min="0" max="10000" placeholder="bv. 1600" style="max-width:300px;" />
+        <div class="hint">Jaarlijks gasverbruik volgens energienota.</div>
+      </div>
+      <div class="field">
+        <label>Wordt er op gas gekookt?</label>
+        <div class="radio-pills">
+          <label><input type="radio" name="kokengas" value="nee"><span>Nee (inductie/elektrisch)</span></label>
+          <label><input type="radio" name="kokengas" value="ja"><span>Ja</span></label>
+        </div>
+        <div class="hint">Bij koken op gas houden we ca. 50 m³/jaar aan; dit gaat niet weg bij warmtepomp zonder nieuw kooktoestel.</div>
+      </div>
+      <div class="field">
+        <label>Warm tapwater</label>
+        <div class="radio-pills">
+          <label><input type="radio" name="tapwater" value="cv"><span>Via cv-ketel</span></label>
+          <label><input type="radio" name="tapwater" value="boiler"><span>Elektrische boiler</span></label>
+          <label><input type="radio" name="tapwater" value="zonneboiler"><span>Zonneboiler</span></label>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-ghost" onclick="WP.prevStep(4)">← Terug</button>
+        <button class="btn-primary" onclick="WP.nextStep(4)">Volgende →</button>
+      </div>
+    </div>
+
+    <!-- STAP 5 -->
+    <div class="card step hidden" data-step="5">
+      <h2>Hoe wordt uw warmte nu afgegeven?</h2>
+      <p class="subtitle">Het afgiftesysteem bepaalt of een hybride of volledig elektrische warmtepomp het beste past.</p>
+      <div class="field">
+        <label>Afgiftesysteem</label>
+        <div class="radio-pills">
+          <label><input type="radio" name="afgifte" value="vloer"><span>Volledig vloerverwarming</span></label>
+          <label><input type="radio" name="afgifte" value="vloer_beneden"><span>Vloerverwarming beneden + radiatoren boven</span></label>
+          <label><input type="radio" name="afgifte" value="lt_radiatoren"><span>LT-radiatoren (nieuw/overgedimensioneerd)</span></label>
+          <label><input type="radio" name="afgifte" value="radiatoren"><span>Standaard radiatoren</span></label>
+          <label><input type="radio" name="afgifte" value="convectoren"><span>Convectoren / oud systeem</span></label>
+        </div>
+      </div>
+      <div class="field">
+        <label>Ruimte voor buitenunit?</label>
+        <div class="radio-pills">
+          <label><input type="radio" name="buitenunit" value="ja"><span>Ja (tuin/plat dak/zijgevel)</span></label>
+          <label><input type="radio" name="buitenunit" value="twijfel"><span>Twijfelachtig</span></label>
+          <label><input type="radio" name="buitenunit" value="nee"><span>Nee, geen plaats</span></label>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-ghost" onclick="WP.prevStep(5)">← Terug</button>
+        <button class="btn-primary" onclick="WP.nextStep(5)">Volgende →</button>
+      </div>
+    </div>
+
+    <!-- STAP 6 -->
+    <div class="card step hidden" data-step="6">
+      <h2>Tarieven &amp; uw energiepakket</h2>
+      <p class="subtitle">Laatste stap — hiermee rekenen we uw besparing en terugverdientijd uit.</p>
+      <div class="hint" style="margin-bottom:14px; padding:11px 14px; background:#F0F9F7; border-left:3px solid var(--brand-primary); border-radius:8px;">
+        ℹ De tarieven zijn vooringevuld met Nederlandse gemiddelden — pas ze gerust aan. De investering en ISDE-subsidie bepalen we automatisch op basis van het best passende model.
+      </div>
+      <div id="tarieven-source" class="hint" style="margin:-4px 0 14px; color:var(--muted);"></div>
+      <h3 style="margin:4px 0 10px; font-size:15px; color:var(--brand-primary); text-transform:uppercase; letter-spacing:1px;">Tarieven</h3>
+      <div class="grid-2">
+        <div class="field">
+          <label>Gasprijs (€/m³)</label>
+          <input type="number" id="prijs_gas" step="0.01" placeholder="Automatisch ingevuld" />
+          <div class="hint">Gemiddelde inclusief belasting; komt uit de portaalinstellingen.</div>
+        </div>
+        <div class="field">
+          <label>Stroomprijs (€/kWh)</label>
+          <input type="number" id="prijs_stroom" step="0.01" placeholder="Automatisch ingevuld" />
+          <div class="hint">Vast tarief. Dynamic/EMS-kortingen vul je hieronder in.</div>
+        </div>
+        <div class="field">
+          <label>Jaarlijkse stijging gasprijs (%)</label>
+          <input type="number" id="stijging_gas" step="0.5" placeholder="Automatisch ingevuld" />
+          <div class="hint">Beheerbare aanname uit de portaalinstellingen.</div>
+        </div>
+        <div class="field">
+          <label>Jaarlijkse stijging stroomprijs (%)</label>
+          <input type="number" id="stijging_stroom" step="0.5" placeholder="Automatisch ingevuld" />
+          <div class="hint">Beheerbare aanname uit de portaalinstellingen.</div>
+        </div>
+      </div>
+      <h3 style="margin:24px 0 10px; font-size:15px; color:var(--brand-primary); text-transform:uppercase; letter-spacing:1px;">Energiepakket bij installatie</h3>
+      <p class="subtitle" style="margin-top:-8px;">Deze onderdelen worden samen met uw warmtepomp geïnstalleerd en verlagen uw stroomkosten.</p>
+      <div class="field">
+        <label>Zonnepanelen (bij pakket inbegrepen of al aanwezig?)</label>
+        <div class="radio-pills">
+          <label><input type="radio" name="pv" value="nee"  onchange="WP.togglePvDetails()"><span>Geen zonnepanelen</span></label>
+          <label><input type="radio" name="pv" value="ja" onchange="WP.togglePvDetails()"><span>PV inbegrepen / aanwezig</span></label>
+        </div>
+      </div>
+      <div id="pv-details" style="padding:14px; background:#FAFAF8; border-radius:10px; margin-bottom:18px;">
+        <div class="grid-2">
+          <div class="field" style="margin-bottom:8px;">
+            <label>Aantal panelen</label>
+            <input type="number" id="pv_aantal" min="1" max="60" placeholder="bv. 12" oninput="WP.updatePvPreview()" />
+          </div>
+          <div class="field" style="margin-bottom:8px;">
+            <label>Wp per paneel</label>
+            <input type="number" id="pv_wp" min="200" max="700" placeholder="bv. 430" step="10" oninput="WP.updatePvPreview()" />
+            <div class="hint">Moderne panelen: 400–450 Wp.</div>
+          </div>
+        </div>
+        <div id="pv-calc-preview" style="padding:8px 12px; background:#F0F9F7; border-left:3px solid var(--brand-primary); border-radius:6px; font-size:13px; margin-top:6px;"></div>
+      </div>
+      <div class="field">
+        <label>Dynamic energiecontract (wordt afgesloten bij pakket)?</label>
+        <div class="radio-pills">
+          <label><input type="radio" name="contract" value="vast"><span>Nee, vast tarief</span></label>
+          <label><input type="radio" name="contract" value="dynamic"><span>Ja, dynamic (uurprijzen)</span></label>
+        </div>
+      </div>
+      <div class="field">
+        <label>EMS-aansturing (bij pakket inbegrepen)?</label>
+        <div class="radio-pills">
+          <label><input type="radio" name="ems" value="nee"><span>Geen EMS</span></label>
+          <label><input type="radio" name="ems" value="ja"><span>Ja, WP via EMS</span></label>
+        </div>
+        <div class="hint">EMS laat WP draaien op goedkoopste uren + max eigen PV-verbruik.</div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-ghost" onclick="WP.prevStep(6)">← Terug</button>
+        <button class="btn-accent" onclick="WP.berekenAdvies()">Bereken advies →</button>
+      </div>
+    </div>
+
+    <!-- STAP 7 — RESULTAAT -->
+    <div class="card step hidden" data-step="7" id="result">
+      <h2>Uw warmtepomp-advies</h2>
+      <p class="subtitle">Persoonlijk samengesteld door Climature op basis van uw woning en verbruik.</p>
+      <div id="flags"></div>
+      <div class="discount-bar">
+        <button class="btn-discount" type="button" onclick="WP.setKorting()">Voorstel aanpassen <span class="bang">!</span></button>
+        <strong id="korting-label">Geen aanpassing toegepast</strong>
+        <small>Maximaal 15%</small>
+      </div>
+      <div class="result-hero" id="hero">
+        <h3 id="hero-label">Aanbeveling</h3>
+        <p class="big"   id="hero-title">—</p>
+        <p class="sub"   id="hero-sub">—</p>
+      </div>
+      <div class="result-grid">
+        <div class="tile">
+          <div class="label">Benodigd vermogen</div>
+          <div class="value" id="tile-kw">— kW</div>
+        </div>
+        <div class="tile">
+          <div class="label">Jaarlijkse besparing</div>
+          <div class="value" id="tile-besparing">— €</div>
+        </div>
+        <div class="tile">
+          <div class="label">Terugverdientijd</div>
+          <div class="value" id="tile-tvt">— jr</div>
+        </div>
+      </div>
+      <div class="reasoning" id="cashflow-reasoning" style="background:#fff; border-left:none; border:1px solid var(--border);">
+        <h4>Zo verdient u uw investering terug</h4>
+        <div class="cashflow-blok" id="cashflow-blok"></div>
+      </div>
+      <div class="reasoning">
+        <h4>Onderbouwing</h4>
+        <div id="onderbouwing"></div>
+      </div>
+      <div class="reasoning" id="product-block">
+        <h4>Aanbevolen warmtepomp &amp; investering</h4>
+        <div id="product-advies"></div>
+        <div class="isde-disclaimer">
+          <strong>ISDE-subsidie:</strong> De ISDE is een directe overheidsregeling via <strong>RVO</strong>. Climature ondersteunt u bij de aanvraag, maar is geen subsidieadviseur en niet verantwoordelijk voor het uiteindelijke subsidiebedrag; de getoonde bedragen zijn richtlijnen.
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-ghost"   onclick="WP.prevStep(7)">← Terug</button>
+        <div>
+          <button class="btn-accent"  id="btn-portaal" style="display:none" onclick="opslaanInPortaal(window.WP_LAATSTE)">Opslaan in portaal</button>
+          <button class="btn-ghost"   id="btn-print" onclick="WP.printPdf()">PDF opslaan</button>
+          <button class="btn-primary" id="btn-restart" onclick="WP.restart()">Nieuw advies</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================
+       TOOL 2 — THUISBATTERIJ ADVIESTOOL
+       =================================================================== -->
+  <div class="tool-container hidden" id="tool-batterij">
+
+    <!-- PROGRESS BAR -->
+    <div class="progress" id="progress">
+      <div class="active"></div><div></div><div></div><div></div><div></div><div></div>
+    </div>
+
+    <!-- STAP 1 -->
+    <div class="card step" data-step="1">
+      <h2>Stap 1 · Stroomverbruik</h2>
+      <p class="subtitle">Basisgegevens van het huidige stroomverbruik.</p>
+      <div class="field">
+        <label>Jaarlijks stroomverbruik (kWh)</label>
+        <input type="number" id="stroom_jaar" min="500" max="50000" placeholder="bv. 3500" style="max-width:300px;" />
+        <div class="hint">Volgens jaarafrekening, exclusief teruglevering.</div>
+      </div>
+      <div class="field">
+        <label>Aantal personen in huishouden</label>
+        <div class="radio-pills">
+          <label><input type="radio" name="personen" value="2" checked><span>2</span></label>
+          <label><input type="radio" name="personen" value="3"><span>3</span></label>
+          <label><input type="radio" name="personen" value="4"><span>4</span></label>
+          <label><input type="radio" name="personen" value="5"><span>5+</span></label>
+        </div>
+      </div>
+      <div class="field">
+        <label>Verbruikspatroon overdag</label>
+        <div class="radio-pills">
+          <label><input type="radio" name="patroon" value="weinig" checked><span>Overdag weinig thuis (werk uit huis)</span></label>
+          <label><input type="radio" name="patroon" value="gemiddeld"><span>Wisselend / hybride</span></label>
+          <label><input type="radio" name="patroon" value="veel"><span>Overdag veel thuis</span></label>
+        </div>
+        <div class="hint">Bepaalt direct PV-verbruik vs overschot.</div>
+      </div>
+      <div class="btn-row">
+        <span></span>
+        <button class="btn-primary" onclick="BAT.nextStep(1)">Volgende →</button>
+      </div>
+    </div>
+
+    <!-- STAP 2 -->
+    <div class="card step hidden" data-step="2">
+      <h2>Stap 2 · Zonnepanelen</h2>
+      <p class="subtitle">Bepaalt PV-overschot en arbitragepotentie van de batterij.</p>
+      <div class="field">
+        <label>Zonnepanelen?</label>
+        <div class="radio-pills">
+          <label><input type="radio" name="pv" value="nee" onchange="BAT.togglePvDetails()"><span>Geen zonnepanelen</span></label>
+          <label><input type="radio" name="pv" value="ja" checked onchange="BAT.togglePvDetails()"><span>Ja / wordt geïnstalleerd</span></label>
+        </div>
+      </div>
+      <div id="pv-details" style="padding:14px; background:#FAFAF8; border-radius:10px; margin-bottom:18px;">
+        <div class="grid-2">
+          <div class="field" style="margin-bottom:8px;">
+            <label>Aantal panelen</label>
+            <input type="number" id="pv_aantal" min="1" max="60" value="14" oninput="BAT.updatePvPreview()" />
+          </div>
+          <div class="field" style="margin-bottom:8px;">
+            <label>Wp per paneel</label>
+            <input type="number" id="pv_wp" min="200" max="700" value="430" step="10" oninput="BAT.updatePvPreview()" />
+            <div class="hint">Moderne panelen: 400–450 Wp.</div>
+          </div>
+        </div>
+        <div id="pv-calc-preview" style="padding:8px 12px; background:#F0F9F7; border-left:3px solid var(--brand-accent); border-radius:4px; font-size:13px; margin-top:6px;"></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-ghost" onclick="BAT.prevStep(2)">← Terug</button>
+        <button class="btn-primary" onclick="BAT.nextStep(2)">Volgende →</button>
+      </div>
+    </div>
+
+    <!-- STAP 3 -->
+    <div class="card step hidden" data-step="3">
+      <h2>Stap 3 · Grootverbruikers</h2>
+      <p class="subtitle">Beïnvloedt verbruikspatroon en optimale batterij-grootte.</p>
+      <div class="field">
+        <label>Elektrische auto?</label>
+        <div class="radio-pills">
+          <label><input type="radio" name="ev" value="nee" checked onchange="BAT.toggleEvDetails()"><span>Geen EV</span></label>
+          <label><input type="radio" name="ev" value="ja" onchange="BAT.toggleEvDetails()"><span>Ja, EV thuis laden</span></label>
+        </div>
+      </div>
+      <div id="ev-details" class="hidden" style="padding:14px; background:#FAFAF8; border-radius:10px; margin-bottom:18px;">
+        <div class="field" style="margin-bottom:0;">
+          <label>Geschatte EV-laadenergie per jaar (kWh)</label>
+          <input type="number" id="ev_kwh" min="0" max="20000" value="3500" />
+          <div class="hint">Gem. NL-rijder: 12.000 km × 0,18 kWh = ~2.200 kWh; intensieve rijder ~5.000 kWh.</div>
+        </div>
+      </div>
+      <div class="field">
+        <label>Warmtepomp?</label>
+        <div class="radio-pills">
+          <label><input type="radio" name="wp" value="nee" checked><span>Geen warmtepomp</span></label>
+          <label><input type="radio" name="wp" value="ja"><span>Ja / komt erbij</span></label>
+        </div>
+        <div class="hint">WP verbruikt fors stroom in winter; batterij dekt minder van WP-pieken.</div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-ghost" onclick="BAT.prevStep(3)">← Terug</button>
+        <button class="btn-primary" onclick="BAT.nextStep(3)">Volgende →</button>
+      </div>
+    </div>
+
+    <!-- STAP 4 -->
+    <div class="card step hidden" data-step="4">
+      <h2>Stap 4 · Aansluiting</h2>
+      <p class="subtitle">Bepaalt maximaal laad/ontlaadvermogen en welke batterij-serie geschikt is.</p>
+      <div class="field">
+        <label>Type aansluiting</label>
+        <div class="radio-pills">
+          <label><input type="radio" name="aansluiting" value="1f25" checked><span>1-fase (standaard)</span></label>
+          <label><input type="radio" name="aansluiting" value="3f25"><span>3-fase 25A</span></label>
+          <label><input type="radio" name="aansluiting" value="3f35"><span>3-fase 35A</span></label>
+          <label><input type="radio" name="aansluiting" value="3f40"><span>3-fase 40A of zwaarder</span></label>
+        </div>
+        <div class="hint">3-fase is gangbaar bij EV-laden of warmtepomp.</div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-ghost" onclick="BAT.prevStep(4)">← Terug</button>
+        <button class="btn-primary" onclick="BAT.nextStep(4)">Volgende →</button>
+      </div>
+    </div>
+
+    <!-- STAP 5 -->
+    <div class="card step hidden" data-step="5">
+      <h2>Stap 5 · Tarieven &amp; verdienmodel</h2>
+      <p class="subtitle">De batterij verdient op drie manieren — alle parameters zijn voor­ingevuld.</p>
+      <div class="hint" style="margin-bottom:14px; padding:10px 12px; background:#F0F9F7; border-left:3px solid var(--brand-accent); border-radius:4px;">
+        ℹ De drie verdienstromen: <strong>terugleverkosten besparen</strong> + <strong>EPEX-arbitrage</strong> + <strong>onbalansvergoeding</strong>. Pas de defaults aan op basis van de werkelijke leveranciers- en aggregator-tarieven van de klant.
+      </div>
+      <div id="tarieven-source" class="hint" style="margin:-4px 0 14px; color:var(--muted);"></div>
+      <h3 style="margin:4px 0 10px; font-size:15px; color:var(--brand-primary); text-transform:uppercase; letter-spacing:1px;">Tarieven</h3>
+      <div class="grid-2">
+        <div class="field">
+          <label>Stroomprijs (€/kWh, vast tarief)</label>
+          <input type="number" id="prijs_stroom" step="0.01" />
+        </div>
+        <div class="field">
+          <label>Terugleverkosten leverancier (€/kWh)</label>
+          <input type="number" id="prijs_terugleverkosten" step="0.01" />
+          <div class="hint">Beheerbare aanname; pas aan op het contract van de klant.</div>
+        </div>
+      </div>
+      <h3 style="margin:24px 0 10px; font-size:15px; color:var(--brand-primary); text-transform:uppercase; letter-spacing:1px;">Energie-opzet</h3>
+      <div class="field">
+        <label>Dynamic energiecontract?</label>
+        <div class="radio-pills">
+          <label><input type="radio" name="contract" value="vast"><span>Nee, vast tarief</span></label>
+          <label><input type="radio" name="contract" value="dynamic_extern"><span>Dynamic via andere aanbieder</span></label>
+          <label><input type="radio" name="contract" value="dynamic_va" checked><span>Dynamic via Climature</span></label>
+        </div>
+        <div class="hint">Bij contract via Climature is de aggregator-fee voor onbalans <strong id="fee-climature">15%</strong> i.p.v. <strong id="fee-external">25%</strong>.</div>
+      </div>
+      <div class="field">
+        <label>EMS-aansturing batterij?</label>
+        <div class="radio-pills">
+          <label><input type="radio" name="ems" value="nee"><span>Geen EMS</span></label>
+          <label><input type="radio" name="ems" value="ja" checked><span>Ja, EMS stuurt batterij</span></label>
+        </div>
+      </div>
+      <div class="field">
+        <label>Aangesloten op onbalansmarkt (via aggregator)?</label>
+        <div class="radio-pills">
+          <label><input type="radio" name="onbalans" value="nee"><span>Nee</span></label>
+          <label><input type="radio" name="onbalans" value="ja" checked><span>Ja, batterij verhuurd</span></label>
+        </div>
+        <div class="hint">Aggregators (TenneT-platforms): klant ontvangt vergoeding voor flex-vermogen.</div>
+      </div>
+      <div class="field">
+        <label>BTW-teruggave aanvragen?</label>
+        <div class="radio-pills">
+          <label><input type="radio" name="btw" value="nee"><span>Nee</span></label>
+          <label><input type="radio" name="btw" value="ja" checked><span>Ja, terugvorderen</span></label>
+        </div>
+        <div class="hint">Volledige BTW-teruggave (21%) via de Belastingdienst: tot <strong>€ 2.495 direct</strong> terug, het deel daarboven gespreid uitbetaald over 5 jaar. Daarnaast is er altijd een loyaliteitskorting van <strong>€ 1.095 ex BTW</strong> (€ 1.325 incl) — wordt automatisch verrekend.</div>
+      </div>
+      <h3 style="margin:24px 0 10px; font-size:15px; color:var(--brand-primary); text-transform:uppercase; letter-spacing:1px;">Verdienparameters</h3>
+      <div class="grid-2">
+        <div class="field">
+          <label>EPEX-marge gemiddeld (€/kWh)</label>
+          <input type="number" id="epex_marge" step="0.01" />
+          <div class="hint">Beheerbare marktaanname; controleer bij contract/aggregator.</div>
+        </div>
+        <div class="field">
+          <label>Onbalansvergoeding (€/kWh capaciteit/jaar)</label>
+          <input type="number" id="onbalans_per_kwh" step="10" />
+          <div class="hint">Beheerbare aggregator-aanname; niet uit één publieke bron betrouwbaar te verversen.</div>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-ghost" onclick="BAT.prevStep(5)">← Terug</button>
+        <button class="btn-accent" onclick="BAT.berekenAdvies()">Bereken advies →</button>
+      </div>
+    </div>
+
+    <!-- STAP 6 — RESULTAAT -->
+    <div class="card step hidden" data-step="6" id="result">
+      <div id="flags"></div>
+      <div class="discount-bar">
+        <button class="btn-discount" type="button" onclick="BAT.setKorting()">Voorstel aanpassen <span class="bang">!</span></button>
+        <strong id="korting-label">Geen aanpassing toegepast</strong>
+        <small>Maximaal 15%</small>
+      </div>
+      <div class="sales-hero" id="hero">
+        <span class="sales-hero-eyebrow">Verdienpotentieel met thuisbatterij</span>
+        <div class="sales-hero-range">
+          <span class="sales-hero-amount" id="hero-amount-min">€ 0</span>
+          <span class="sales-hero-divider" id="hero-divider">tot</span>
+          <span class="sales-hero-amount" id="hero-amount-max">€ 0</span>
+          <span class="sales-hero-period">per jaar</span>
+        </div>
+        <div class="sales-hero-tvt" id="hero-tvt"></div>
+        <p class="sales-hero-sub" id="hero-sub">Bekijk hieronder welke configuratie het beste past.</p>
+      </div>
+      <div class="result-section">
+        <h3 class="section-title">Hoe verdient de batterij dit terug?</h3>
+        <div class="verdiensten-grid" id="verdiensten-grid"></div>
+        <div class="verdiensten-disclaimer warning">
+          <strong>⚠️ Vereist voor deze opbrengst:</strong> een <u>dynamisch energiecontract dat zowel EPEX-arbitrage als onbalansvergoeding ondersteunt</u>. Aanbieders zoals <strong>Zonneplan</strong> en <strong>Frank Energie</strong> bieden dit niet aan. Bij een vast contract zijn deze inkomstenstromen niet beschikbaar en valt de verdienste vrijwel volledig weg.
+        </div>
+        <div class="verdiensten-disclaimer">
+          <strong>Goed om te weten:</strong> deze bedragen zijn indicatief en gebruiken de actuele aannames uit het portaal. De werkelijke opbrengst kan <strong>hoger uitvallen</strong> bij toenemende netcongestie of grotere prijsspreads, en <strong>lager</strong> bij ongunstigere markt­omstandigheden of mindere EMS-prestaties. EPEX en onbalans delen dezelfde batterij-capaciteit en cannibaliseren elkaar deels.
+        </div>
+      </div>
+      <div class="result-section">
+        <h3 class="section-title">Vergelijking batterij-opties</h3>
+        <div id="product-advies"></div>
+        <div class="options-legend">
+          <span class="badge-row badge-min">MIN</span> minimaal aanbevolen op basis van verbruik &amp; opwek
+          &nbsp;·&nbsp;
+          <span class="badge-row badge-popular">Meest gekozen</span> populairste capaciteit (21 kWh)
+          &nbsp;·&nbsp;
+          <span class="badge-row badge-best">TOP</span> beste terugverdientijd
+        </div>
+      </div>
+      <div class="result-section">
+        <h3 class="section-title">Onderbouwing &amp; berekening</h3>
+        <div class="ob-cards-grid" id="onderbouwing"></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-ghost" onclick="BAT.prevStep(6)">← Terug</button>
+        <div>
+          <button class="btn-accent"  id="btn-portaal" style="display:none" onclick="opslaanInPortaal(window.BAT_LAATSTE)">Opslaan in portaal</button>
+          <button class="btn-ghost"   id="btn-print" onclick="BAT.printPdf()">PDF opslaan</button>
+          <button class="btn-primary" id="btn-restart" onclick="BAT.restart()">Nieuw advies</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =============================================================
+   GLOBAAL — logo + tool-switcher
+   ============================================================= */
+/* Embed-modus: aangeroepen vanuit het bedrijfsportaal (iframe met ?embed=1). */
+var ADVIES_EMBED = (function(){
+  try {
+    var q = new URLSearchParams(window.location.search);
+    if (!q.get('embed')) return { active: false };
+    return {
+      active: true,
+      customerId: q.get('customer') || '',
+      adres: q.get('adres') || '',
+      plaats: q.get('plaats') || ''
+    };
+  } catch(e){ return { active: false }; }
+})();
+
+function opslaanInPortaal(advies){
+  if (!ADVIES_EMBED.active || !advies) return;
+  try {
+    window.parent.postMessage({
+      source: 'climature-advies',
+      customerId: ADVIES_EMBED.customerId,
+      advies: advies
+    }, window.location.origin);
+  } catch(e){ alert('Opslaan in portaal is niet gelukt.'); }
+}
+
+var DEFAULT_ADVIES_AANNAMES = {
+  energy: {
+    gasPrice: 1.45,
+    electricityPrice: 0.30,
+    dynamicElectricityPrice: 0.26,
+    gasAnnualIncrease: 5,
+    electricityAnnualIncrease: 2
+  },
+  battery: {
+    feedInCost: 0.15,
+    epexMargin: 0.22,
+    imbalancePerKwh: 250,
+    aggregatorFeeExternal: 25,
+    aggregatorFeeClimature: 15
+  },
+  warmtepompProducts: {
+    allelectric: [
+      { name: "TC Swiss Ecoline 8KW All Electric",  kw: 8,  priceIncl: 13189, subsidy: 3750 },
+      { name: "TC Swiss Ecoline 12KW All Electric", kw: 12, priceIncl: 14549, subsidy: 4650 }
+    ],
+    hybride: [
+      { name: "TC Swiss Ecoline 8KW Hybride",  kw: 8,  priceIncl: 11835, subsidy: 3025 },
+      { name: "TC Swiss Ecoline 12KW Hybride", kw: 12, priceIncl: 14940, subsidy: 3700 }
+    ]
+  },
+  batteryProducts: {
+    "1fase": [
+      { name: "Climature A10", kwh: 10, priceExVat: 12094 },
+      { name: "Climature A21", kwh: 21, priceExVat: 14594 }
+    ],
+    "3fase": [
+      { name: "Climature T10", kwh: 10, priceExVat: 12094 },
+      { name: "Climature T15", kwh: 15, priceExVat: 13594 },
+      { name: "Climature T21", kwh: 21, priceExVat: 14594 },
+      { name: "Climature T30", kwh: 30, priceExVat: 20094 },
+      { name: "Climature T40", kwh: 40, priceExVat: 24549 }
+    ]
+  },
+  sources: {
+    energy: { label: "Handmatige fallback", period: "", refreshedAt: "" },
+    subsidies: { label: "Handmatige fallback", period: "", refreshedAt: "" },
+    market: { label: "Handmatige aannames", period: "", refreshedAt: "" }
+  }
+};
+
+function cloneAdviesValue(value){
+  return JSON.parse(JSON.stringify(value || {}));
+}
+function isPlainAdviesObject(value){
+  return value && typeof value === 'object' && !Array.isArray(value);
+}
+function mergeAdviesAannames(base, extra){
+  var output = cloneAdviesValue(base);
+  Object.keys(extra || {}).forEach(function(key){
+    var value = extra[key];
+    if (Array.isArray(value)) output[key] = cloneAdviesValue(value);
+    else if (isPlainAdviesObject(value) && isPlainAdviesObject(output[key])) output[key] = mergeAdviesAannames(output[key], value);
+    else if (value !== undefined) output[key] = value;
+  });
+  return output;
+}
+var ADVIES_AANNAMES = mergeAdviesAannames(DEFAULT_ADVIES_AANNAMES, window.ADVIES_AANNAMES || {});
+
+function getAdviesPath(path){
+  return String(path || '').split('.').reduce(function(cursor, part){
+    return cursor && cursor[part] !== undefined ? cursor[part] : undefined;
+  }, ADVIES_AANNAMES);
+}
+function adviesNum(path, fallback){
+  var value = getAdviesPath(path);
+  var parsed = parseFloat(String(value == null ? '' : value).replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+function sourceShortLabel(source, fallback){
+  var label = source && source.label ? String(source.label) : fallback;
+  if (/cbs/i.test(label)) return 'CBS';
+  if (/rvo/i.test(label)) return 'RVO';
+  return label || fallback;
+}
+function adviesBronTekst(kind){
+  var sources = ADVIES_AANNAMES.sources || {};
+  var source = sources[kind] || {};
+  var label = sourceShortLabel(source, kind === 'energy' ? 'Handmatige tarieven' : 'Handmatige aannames');
+  var period = source.period ? ' ' + source.period : '';
+  var prefix = kind === 'energy' ? 'Tarieven laatst bijgewerkt: ' : kind === 'subsidies' ? 'Subsidies: ' : 'Marktaannames: ';
+  var stale = '';
+  if (source.refreshedAt) {
+    var ageDays = (Date.now() - new Date(source.refreshedAt).getTime()) / 86400000;
+    if (Number.isFinite(ageDays) && ageDays > 45) stale = ' · ouder dan 45 dagen';
+  }
+  return prefix + label + period + stale;
+}
+function setAdviesInput(root, id, value, fallback){
+  var input = root && root.querySelector('#' + id);
+  if (!input) return;
+  var next = Number.isFinite(value) ? value : fallback;
+  if (input.dataset.userEdited === '1') return;
+  input.value = next;
+}
+function markAdviesInputs(root){
+  if (!root) return;
+  root.querySelectorAll('input[type="number"]').forEach(function(input){
+    input.addEventListener('input', function(){ input.dataset.userEdited = '1'; });
+  });
+}
+function setAdviesAannames(input){
+  ADVIES_AANNAMES = mergeAdviesAannames(DEFAULT_ADVIES_AANNAMES, input || {});
+  window.ADVIES_AANNAMES = ADVIES_AANNAMES;
+  if (window.WP && window.WP.applyAssumptions) window.WP.applyAssumptions();
+  if (window.BAT && window.BAT.applyAssumptions) window.BAT.applyAssumptions();
+}
+window.addEventListener('message', function(event){
+  var data = event && event.data;
+  if (!data || data.source !== 'climature-advice-assumptions') return;
+  setAdviesAannames(data.adviceAssumptions || {});
+});
+
+function showTool(name){
+  document.querySelectorAll('.tool-container').forEach(c => c.classList.add('hidden'));
+  document.getElementById('tool-'+name).classList.remove('hidden');
+  document.querySelectorAll('.ts-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === name));
+  document.getElementById('active-tool-tag').textContent = (name === 'warmtepomp') ? 'Warmtepomp Advies' : 'Thuisbatterij Advies';
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+/* ===== Laadscherm (logo-animatie) + pincode-gate (code 0000) ===== */
+(function(){
+  const PINCODE = '0000';
+  const SS_KEY  = 'climature_unlocked';
+  const loader  = document.getElementById('app-loader');
+  const gate    = document.getElementById('pin-gate');
+  const dotsEl  = document.getElementById('pin-dots');
+  const padEl   = document.getElementById('pin-pad');
+  const reduce  = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let entry = '';
+
+  function lockScroll(on){ document.body.style.overflow = on ? 'hidden' : ''; }
+
+  function hide(el){
+    if(!el) return;
+    el.classList.add('fade-out');
+    setTimeout(()=>{ el.classList.add('hidden'); el.classList.remove('fade-out'); }, 550);
+  }
+  function renderDots(){
+    dotsEl.querySelectorAll('.dot').forEach((d,i)=> d.classList.toggle('filled', i < entry.length));
+  }
+  function unlock(){
+    try { sessionStorage.setItem(SS_KEY, '1'); } catch(e){}
+    gate.setAttribute('aria-hidden','true');
+    document.removeEventListener('keydown', onKey);
+    hide(gate);
+    lockScroll(false);
+  }
+  function wrong(){
+    gate.classList.add('shake');
+    setTimeout(()=>{ gate.classList.remove('shake'); entry=''; renderDots(); }, 480);
+  }
+  function press(k){
+    if (k === 'clear'){ entry=''; renderDots(); return; }
+    if (k === 'back'){ entry = entry.slice(0,-1); renderDots(); return; }
+    if (!/^[0-9]$/.test(k) || entry.length >= 4) return;
+    entry += k; renderDots();
+    if (entry.length === 4){
+      setTimeout(()=>{ if (entry === PINCODE) unlock(); else wrong(); }, 140);
+    }
+  }
+  function onKey(e){
+    if (gate.classList.contains('hidden')) return;
+    if (e.key >= '0' && e.key <= '9') press(e.key);
+    else if (e.key === 'Backspace'){ e.preventDefault(); press('back'); }
+    else if (e.key === 'Escape') press('clear');
+  }
+  function showGate(){
+    gate.classList.remove('hidden');
+    gate.setAttribute('aria-hidden','false');
+    document.addEventListener('keydown', onKey);
+    renderDots();
+  }
+  if (padEl){
+    padEl.addEventListener('click', (e)=>{
+      const k = e.target.closest('.pin-key');
+      if (k) press(k.dataset.key);
+    });
+  }
+
+  function prefillEmbed(){
+    if (!ADVIES_EMBED.active) return;
+    var adres = document.getElementById('klant_adres');
+    var plaats = document.getElementById('klant_plaats');
+    if (adres && ADVIES_EMBED.adres) adres.value = ADVIES_EMBED.adres;
+    if (plaats && ADVIES_EMBED.plaats) plaats.value = ADVIES_EMBED.plaats;
+  }
+
+  function afterLoader(){
+    hide(loader);
+    // In embed-modus is het portaal al geauthenticeerd: sla de pincode-gate over.
+    if (ADVIES_EMBED.active){
+      lockScroll(false);
+      prefillEmbed();
+      return;
+    }
+    let unlocked = false;
+    try { unlocked = sessionStorage.getItem(SS_KEY) === '1'; } catch(e){}
+    if (unlocked) lockScroll(false);
+    else setTimeout(showGate, reduce ? 40 : 250);
+  }
+
+  const minTime = reduce ? 300 : 1500;
+  const start   = performance.now();
+  let done = false;
+  function go(){
+    if (done) return; done = true;
+    setTimeout(afterLoader, Math.max(0, minTime - (performance.now() - start)));
+  }
+  lockScroll(true);
+  if (document.readyState === 'complete') go();
+  else window.addEventListener('load', go);
+})();
+
+/* =============================================================
+   TOOL 1 — WARMTEPOMP  (namespace WP, DOM scoped op #tool-warmtepomp)
+   ============================================================= */
+(function(){
+  const root = document.getElementById('tool-warmtepomp');
+  const $  = id  => root.querySelector('#'+id);
+  const q  = sel => root.querySelector(sel);
+  const qa = sel => root.querySelectorAll(sel);
+
+  const PRIJS_INDUCTIE = 700;
+  const MAX_KORTING_PERCENT = 15;
+
+  const FALLBACK_PRODUCTEN = {
+    allelectric: [
+      { naam: "TC Swiss Ecoline 8KW All Electric",  kw: 8,  prijs: 13189, subsidie: 3750, toelichting: "Incl. INN 200L boilertank & 100L buffervat – compleet geïnstalleerd." },
+      { naam: "TC Swiss Ecoline 12KW All Electric", kw: 12, prijs: 14549, subsidie: 4650, toelichting: "Incl. INN 200L boilertank & 100L buffervat – compleet geïnstalleerd." }
+    ],
+    hybride: [
+      { naam: "TC Swiss Ecoline 8KW Hybride",  kw: 8,  prijs: 11835, subsidie: 3025, toelichting: "Incl. 100L buffervat. Gekoppeld aan HR-ketel voor piekvraag & tapwater." },
+      { naam: "TC Swiss Ecoline 12KW Hybride", kw: 12, prijs: 14940, subsidie: 3700, toelichting: "Incl. 100L buffervat. Voor grotere woningen of hoger gasverbruik." }
+    ]
+  };
+
+  function warmtepompProducten(){
+    const assumptions = ADVIES_AANNAMES.warmtepompProducts || {};
+    function mapProduct(type, product, index){
+      const fallback = (FALLBACK_PRODUCTEN[type] || [])[index] || {};
+      return {
+        naam: product.name || product.naam || fallback.naam || '',
+        kw: parseFloat(product.kw || fallback.kw || 0),
+        prijs: parseFloat(product.priceIncl || product.prijs || fallback.prijs || 0),
+        subsidie: parseFloat(product.subsidy || product.subsidie || fallback.subsidie || 0),
+        toelichting: product.toelichting || fallback.toelichting || ''
+      };
+    }
+    return {
+      allelectric: ((assumptions.allelectric || FALLBACK_PRODUCTEN.allelectric).map(function(product, index){ return mapProduct('allelectric', product, index); })).filter(function(product){ return product.kw; }),
+      hybride: ((assumptions.hybride || FALLBACK_PRODUCTEN.hybride).map(function(product, index){ return mapProduct('hybride', product, index); })).filter(function(product){ return product.kw; })
+    };
+  }
+
+  function vindProduct(advies, kwTarget){
+    const producten = warmtepompProducten();
+    const lijn = advies === 'allelectric' ? producten.allelectric : producten.hybride;
+    const model = lijn.find(p => p.kw === kwTarget) || lijn[lijn.length-1];
+    if (!model) return null;
+    return { kw: model.kw, naam: model.naam, prijs_incl: model.prijs, subsidie: model.subsidie, toelichting: model.toelichting };
+  }
+
+  function defaults(){
+    return {
+      prijs_gas: adviesNum('energy.gasPrice', 1.45),
+      stijging_gas: adviesNum('energy.gasAnnualIncrease', 5),
+      stijging_stroom: adviesNum('energy.electricityAnnualIncrease', 2),
+      prijs_stroom: adviesNum('energy.electricityPrice', 0.30)
+    };
+  }
+
+  let currentStep = 1;
+  let kortingPercent = 0;
+
+  function parseKorting(value){
+    const parsed = parseFloat(String(value || '').replace(',', '.'));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function updateKortingLabel(){
+    const label = $('korting-label');
+    if (!label) return;
+    label.textContent = kortingPercent > 0
+      ? `${kortingPercent.toString().replace('.', ',')}% persoonlijke aanpassing toegepast`
+      : 'Geen aanpassing toegepast';
+  }
+
+  function setKorting(){
+    const value = window.prompt('Aanpassing in procenten (maximaal 15%)', kortingPercent || '');
+    if (value === null) return;
+    const parsed = parseKorting(value);
+    if (parsed === null || parsed < 0){
+      alert('Vul een geldig percentage in.');
+      return;
+    }
+    if (parsed > MAX_KORTING_PERCENT) alert('Maximaal 15%. Ik zet de aanpassing op 15%.');
+    kortingPercent = Math.min(MAX_KORTING_PERCENT, Math.max(0, Math.round(parsed * 10) / 10));
+    berekenAdvies();
+  }
+
+  function kortingBedrag(bedrag){
+    return Math.round(Math.max(0, bedrag || 0) * (kortingPercent / 100));
+  }
+
+  function prijsNaKorting(bedrag){
+    return Math.max(0, Math.round((bedrag || 0) - kortingBedrag(bedrag)));
+  }
+
+  function prijsHtml(bedrag){
+    const prijs = Math.round(bedrag || 0);
+    const naKorting = prijsNaKorting(prijs);
+    if (!kortingPercent) return `€ ${prijs.toLocaleString('nl-NL')}`;
+    return `<span class="price-old">€ ${prijs.toLocaleString('nl-NL')}</span>€ ${naKorting.toLocaleString('nl-NL')}`;
+  }
+
+  function showStep(n){
+    qa('.step').forEach(el => el.classList.add('hidden'));
+    q(`.step[data-step="${n}"]`).classList.remove('hidden');
+    const bars = qa('#progress div');
+    bars.forEach((b,i) => {
+      b.classList.remove('active','done');
+      if (i+1 < n) b.classList.add('done');
+      if (i+1 === n) b.classList.add('active');
+    });
+    currentStep = n;
+    window.scrollTo({top:0, behavior:'smooth'});
+  }
+  function nextStep(from){
+    if(!validateStep(from)) return;
+    if (from === 5) prefillStep6();
+    showStep(from+1);
+  }
+  function prevStep(from){ showStep(from-1); }
+
+  function prefillStep6(){
+    const DEFAULTS = defaults();
+    const pg = $('prijs_gas'), ps = $('prijs_stroom'), sg = $('stijging_gas'), ss = $('stijging_stroom');
+    if (!pg.value) pg.value = DEFAULTS.prijs_gas;
+    if (!ps.value) ps.value = DEFAULTS.prijs_stroom;
+    if (sg && !sg.value) sg.value = DEFAULTS.stijging_gas;
+    if (ss && !ss.value) ss.value = DEFAULTS.stijging_stroom;
+    updateAssumptionSource();
+  }
+  function applyAssumptions(){
+    const source = $('tarieven-source');
+    if (source) source.textContent = adviesBronTekst('energy');
+    const DEFAULTS = defaults();
+    setAdviesInput(root, 'prijs_gas', DEFAULTS.prijs_gas, 1.45);
+    setAdviesInput(root, 'prijs_stroom', DEFAULTS.prijs_stroom, 0.30);
+    setAdviesInput(root, 'stijging_gas', DEFAULTS.stijging_gas, 5);
+    setAdviesInput(root, 'stijging_stroom', DEFAULTS.stijging_stroom, 2);
+  }
+  function updateAssumptionSource(){
+    const source = $('tarieven-source');
+    if (source) source.textContent = adviesBronTekst('energy') + ' · ' + adviesBronTekst('subsidies');
+  }
+  function restart(){
+    kortingPercent = 0;
+    updateKortingLabel();
+    qa('input[type="number"],input[type="text"]').forEach(i => i.value = '');
+    qa('input[type="checkbox"]').forEach(i => i.checked = false);
+    showStep(1);
+  }
+
+  const REQUIRED_RADIOS = {
+    1: [], 2: ['monument'], 3: ['label'], 4: ['kokengas','tapwater'],
+    5: ['afgifte','buitenunit'], 6: ['pv','contract','ems']
+  };
+
+  function validateStep(n){
+    if (n===2){
+      const opp = +$('oppervlak').value, bj = +$('bouwjaar').value, personen = +$('personen').value;
+      if (!opp || opp<20)         { alert('Vul een geldig oppervlak in.');  return false; }
+      if (!bj  || bj<1800)        { alert('Vul een geldig bouwjaar in.');   return false; }
+      if (!personen || personen<1){ alert('Vul het aantal personen in.');   return false; }
+    }
+    if (n===4){
+      const gasRaw = $('gas').value;
+      if (gasRaw === '' || gasRaw === null) { alert('Vul gasverbruik in (0 mag ook).'); return false; }
+      const gas = +gasRaw;
+      if (isNaN(gas) || gas < 0)            { alert('Vul een geldig gasverbruik in.');  return false; }
+    }
+    if (n===6){
+      const pv = q('input[name="pv"]:checked')?.value;
+      if (pv === 'ja'){
+        const aantal = +$('pv_aantal').value, wp = +$('pv_wp').value;
+        if (!aantal || !wp){ alert('Vul aantal panelen en Wp per paneel in.'); return false; }
+      }
+    }
+    const groepen = REQUIRED_RADIOS[n] || [];
+    for (const naam of groepen){
+      const gekozen = q(`input[name="${naam}"]:checked`);
+      if (!gekozen){
+        const lbl = q(`input[name="${naam}"]`)?.closest('.field')?.querySelector('label')?.textContent || naam;
+        alert(`Maak een keuze: "${lbl.replace(/\s+$/, '').replace(/\?$/, '')}".`);
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function berekenAdvies(){
+    if (!validateStep(6)) return;
+
+    const woningtype = $('woningtype').value;
+    const bouwjaar   = +$('bouwjaar').value;
+    const opp        = +$('oppervlak').value;
+    const personen   = +$('personen').value || 2;
+    const monument   = q('input[name="monument"]:checked').value;
+
+    const label      = q('input[name="label"]:checked').value;
+    const iso_dak    = $('iso_dak').checked;
+    const iso_spouw  = $('iso_spouw').checked;
+    const iso_vloer  = $('iso_vloer').checked;
+    const iso_hr     = $('iso_hr').checked;
+    const iso_count  = [iso_dak,iso_spouw,iso_vloer,iso_hr].filter(Boolean).length;
+
+    const gasRaw     = +$('gas').value;
+    const kokengas   = q('input[name="kokengas"]:checked').value;
+    const tapwater   = q('input[name="tapwater"]:checked').value;
+    const gasVerwarm = Math.max(0, gasRaw - (kokengas==='ja' ? 50 : 0) - (tapwater==='cv' ? (personen*50) : 0));
+
+    const afgifte    = q('input[name="afgifte"]:checked').value;
+    const buitenunit = q('input[name="buitenunit"]:checked').value;
+
+    const prijsGas       = parseFloat($('prijs_gas').value)    || 0;
+    const stijgingGas    = (parseFloat($('stijging_gas')?.value)    || 5) / 100;
+    const stijgingStroom = (parseFloat($('stijging_stroom')?.value) || 2) / 100;
+    const prijsStroom    = parseFloat($('prijs_stroom').value) || 0;
+
+    const flags = [];
+    let blok = false;
+    if (buitenunit === 'nee') {
+      flags.push({type:'danger', text:'<strong>Geen ruimte voor buitenunit.</strong> Warmtepomp-installatie is in huidige situatie niet mogelijk. Bekijk of split-opstelling of gevelmontage een optie is.'});
+      blok = true;
+    }
+    if (monument === 'ja' && iso_count < 2) {
+      flags.push({type:'danger', text:'<strong>Monument zonder adequate isolatie.</strong> Warmtepomp is nu niet zinvol — eerst isolatieplan maken (binnen-isolatie, monumentglas).'});
+      blok = true;
+    }
+    if (gasRaw > 0 && gasRaw < 800) {
+      flags.push({type:'warn', text:'<strong>Gasverbruik onder 800 m³.</strong> Rendement warmtepomp beperkt — TVT wordt mogelijk langer dan 15 jaar. Check of gasverbruik representatief is.'});
+    }
+    if (gasRaw > 3500) {
+      flags.push({type:'warn', text:'<strong>Zeer hoog gasverbruik (>3500 m³).</strong> Eerst isoleren voordat warmtepomp financieel aantrekkelijk wordt — warmtepomp zou overgedimensioneerd moeten worden.'});
+    }
+
+    let wPerM2 = 85;
+    if (iso_count >= 4 || label==='A')       wPerM2 = 35;
+    else if (iso_count === 3 || label==='B') wPerM2 = 45;
+    else if (iso_count === 2 || label==='C') wPerM2 = 60;
+    else if (iso_count === 1 || label==='D') wPerM2 = 75;
+    else if (label==='EFG')                   wPerM2 = 100;
+    if (bouwjaar >= 2010)      wPerM2 = Math.min(wPerM2, 40);
+    else if (bouwjaar >= 1992) wPerM2 = Math.min(wPerM2, 55);
+    else if (bouwjaar >= 1975) wPerM2 = Math.min(wPerM2, 75);
+
+    const kwViaOpp = (opp * wPerM2) / 1000;
+    const kwViaGas = gasVerwarm > 0 ? gasVerwarm * 0.005 : kwViaOpp;
+    const kwTransmissie = (kwViaOpp * 0.6 + kwViaGas * 0.4);
+    const kwTapwaterPiek = tapwater === 'zonneboiler' ? 0.5 : 1.5;
+    const kwMarge = 0.10;
+    const kwTussentotaal = (kwTransmissie + kwTapwaterPiek) * (1 + kwMarge);
+    const kwExtraReserve = kwTussentotaal < 11 ? 1.3 : 0;
+    const kwBenodigd = Math.max(3, Math.round( (kwTussentotaal + kwExtraReserve) * 10 ) / 10);
+
+    let score = 0;
+    score += Math.min(40, iso_count * 10);
+    if (label==='A') score += 10;
+    else if (label==='B') score += 5;
+    else if (label==='EFG') score -= 15;
+
+    const afgifteScore = { vloer: 35, vloer_beneden: 30, lt_radiatoren: 32, radiatoren: 18, convectoren: 0 };
+    score += afgifteScore[afgifte] || 0;
+
+    if (bouwjaar >= 2010)      score += 15;
+    else if (bouwjaar >= 1992) score += 10;
+    else if (bouwjaar >= 1975) score += 5;
+
+    if (tapwater === 'zonneboiler') score += 10;
+    else if (tapwater === 'boiler') score += 5;
+
+    const pv       = q('input[name="pv"]:checked')?.value       || 'ja';
+    const contract = q('input[name="contract"]:checked')?.value || 'dynamic';
+    const ems      = q('input[name="ems"]:checked')?.value      || 'ja';
+
+    const pvAantal = pv === 'ja' ? (+$('pv_aantal').value || 0) : 0;
+    const pvWp     = pv === 'ja' ? (+$('pv_wp').value     || 0) : 0;
+    const pvKwp    = (pvAantal * pvWp) / 1000;
+    const pvProductie = pvKwp * 900;
+
+    const volledigModern = (pv === 'ja' && pvKwp > 0 && contract === 'dynamic' && ems === 'ja');
+
+    let setupBonus = 0;
+    if (pv === 'ja' && pvKwp > 0) setupBonus += 4;
+    if (contract === 'dynamic')    setupBonus += 4;
+    if (ems === 'ja')               setupBonus += 4;
+    if (volledigModern)             setupBonus += 3;
+
+    const scoreTotaal = Math.max(0, Math.min(100, score + setupBonus));
+    const advies = scoreTotaal >= 55 ? 'allelectric' : 'hybride';
+
+    const productLijnen   = warmtepompProducten();
+    const productLijn    = advies === 'allelectric' ? productLijnen.allelectric : productLijnen.hybride;
+    const productLijnSorted = [...productLijn].sort((a,b) => a.kw - b.kw);
+    const kwBeschikbaar  = productLijnSorted.map(p => p.kw);
+    let kwGroter;
+    if (kwBenodigd <= 9.0)       kwGroter = 8;
+    else if (kwBenodigd <= 15.0) kwGroter = 12;
+    else                         kwGroter = 12;
+    if (!kwBeschikbaar.includes(kwGroter)){
+      kwGroter = kwBeschikbaar.find(k => k >= kwBenodigd) ?? kwBeschikbaar[kwBeschikbaar.length-1];
+    }
+    const kwKleiner = [...kwBeschikbaar].reverse().find(k => k < kwGroter && k < kwBenodigd);
+
+    const productPassend = vindProduct(advies, kwGroter);
+    const productGroter  = productPassend;
+    const productKleiner = kwKleiner ? vindProduct(advies, kwKleiner) : null;
+
+    const investering   = productPassend?.prijs_incl || 0;
+    const subsidie      = productPassend?.subsidie   || 0;
+    const extraInductie = (advies === 'allelectric' && kokengas === 'ja') ? PRIJS_INDUCTIE : 0;
+    const brutoInvestering = investering + extraInductie;
+    const extraKorting = kortingBedrag(brutoInvestering);
+
+    const scopMap = { vloer: 4.2, vloer_beneden: 3.9, lt_radiatoren: 3.9, radiatoren: 3.1, convectoren: 2.7 };
+    let scop_ae = scopMap[afgifte] || 3.3;
+    if (iso_count <= 1 && afgifte === 'radiatoren') scop_ae -= 0.2;
+    const scop_hyb = 4.2;
+    const hybDek   = 0.75;
+
+    const kwhVerwarmingHuidig = gasVerwarm * 9.77;
+    let gasRest, kwhExtra;
+    if (advies === 'allelectric'){
+      gasRest  = 0;
+      kwhExtra = kwhVerwarmingHuidig / scop_ae + (tapwater==='cv' ? (personen*50*9.77)/scop_ae : 0);
+    } else {
+      gasRest  = gasRaw - (gasVerwarm * hybDek);
+      kwhExtra = (kwhVerwarmingHuidig * hybDek) / scop_hyb;
+    }
+    gasRest = Math.max(0, gasRest);
+
+    let pvDekking = 0;
+    if (pvKwp > 0 && kwhExtra > 0){
+      const ratio = pvProductie / kwhExtra;
+      if      (ratio >= 2.0) pvDekking = 0.40;
+      else if (ratio >= 1.5) pvDekking = 0.35;
+      else if (ratio >= 1.0) pvDekking = 0.30;
+      else if (ratio >= 0.7) pvDekking = 0.25;
+      else if (ratio >= 0.4) pvDekking = 0.18;
+      else                    pvDekking = ratio * 0.4;
+      if (ems !== 'ja') pvDekking *= 0.5;
+    }
+
+    let restPrijs;
+    if (contract === 'dynamic' && ems === 'ja') restPrijs = Math.min(0.15, prijsStroom * 0.55);
+    else if (contract === 'dynamic')              restPrijs = Math.max(0.05, prijsStroom * 0.80);
+    else if (ems === 'ja')                         restPrijs = Math.max(0.10, prijsStroom * 0.92);
+    else                                            restPrijs = prijsStroom;
+
+    let effStroomPrijs = pvDekking * 0 + (1 - pvDekking) * restPrijs;
+    if (volledigModern) effStroomPrijs = Math.min(effStroomPrijs, 0.10);
+
+    const stroomKostenWP = kwhExtra * effStroomPrijs;
+    const kwhUitNet      = kwhExtra * (1 - pvDekking);
+    const vastrechtGas = advies === 'allelectric' ? 240 : 0;
+
+    const kostenHuidig = gasRaw * prijsGas;
+    const kostenNieuw  = gasRest * prijsGas + stroomKostenWP;
+    const besparing    = kostenHuidig - kostenNieuw + vastrechtGas;
+
+    const nettoInvestering = Math.max(0, brutoInvestering - extraKorting - subsidie);
+
+    const gasBesparingY1 = (gasRaw - gasRest) * prijsGas + vastrechtGas;
+    const stroomExtraY1  = stroomKostenWP;
+    function tvtCompound(){
+      if (nettoInvestering <= 0) return null;
+      if (gasBesparingY1 - stroomExtraY1 <= 0) return null;
+      let cum = 0;
+      for (let jaar = 1; jaar <= 30; jaar++){
+        const gasJ    = gasBesparingY1 * Math.pow(1 + stijgingGas, jaar - 1);
+        const stroomJ = stroomExtraY1  * Math.pow(1 + stijgingStroom, jaar - 1);
+        const besparingJ = gasJ - stroomJ;
+        const cumPrev = cum;
+        cum += besparingJ;
+        if (cum >= nettoInvestering){
+          const fractie = (nettoInvestering - cumPrev) / besparingJ;
+          return jaar - 1 + fractie;
+        }
+      }
+      return null;
+    }
+    const tvt = tvtCompound();
+
+    const hero = $('hero');
+    hero.className = 'result-hero ' + (blok ? 'blok' : advies);
+
+    if (blok){
+      $('hero-label').textContent = 'Advies';
+      $('hero-title').textContent = 'Eerst randvoorwaarden oplossen';
+      $('hero-sub').textContent   = 'Zie blokkades hieronder; nog geen warmtepomp adviseren.';
+    } else if (advies === 'allelectric'){
+      $('hero-label').textContent = 'Aanbeveling';
+      $('hero-title').textContent = 'All-electric warmtepomp';
+      $('hero-sub').textContent   = `Deze woning is geschikt om volledig van het gas te gaan. Zie de onderbouwing hieronder voor de redenering.`;
+    } else {
+      $('hero-label').textContent = 'Aanbeveling';
+      $('hero-title').textContent = 'Hybride warmtepomp';
+      $('hero-sub').textContent   = `Hybride is hier de veilige keuze. De warmtepomp doet het meeste werk, de HR-ketel bijstookt bij piekvraag.`;
+    }
+
+    $('tile-kw').textContent        = kwBenodigd.toFixed(1) + ' kW';
+    $('tile-besparing').textContent = prijsGas && prijsStroom ? '€ ' + Math.round(besparing).toLocaleString('nl-NL') : '— invul prijzen';
+    $('tile-tvt').textContent       = tvt ? tvt.toFixed(1).replace('.',',') + ' jr' : '—';
+
+    $('flags').innerHTML = flags.map(f => `<div class="flag ${f.type}">${f.text}</div>`).join('');
+    updateKortingLabel();
+
+    // Vastleggen voor terugkoppeling naar het bedrijfsportaal (embed-modus).
+    window.WP_LAATSTE = {
+      kind: 'warmtepomp',
+      title: blok ? 'Warmtepomp-advies' : (advies === 'allelectric' ? 'All-electric warmtepomp' : 'Hybride warmtepomp'),
+      productName: (productPassend && productPassend.naam) || '',
+      powerKw: kwBenodigd,
+      investment: Math.max(0, brutoInvestering - extraKorting),
+      subsidy: subsidie,
+      yearlySaving: (prijsGas && prijsStroom) ? Math.round(besparing) : 0,
+      paybackYears: tvt ? +tvt.toFixed(1) : 0,
+      summary: 'Warmtepomp-advies: ' + (blok ? 'randvoorwaarden eerst oplossen' : (advies === 'allelectric' ? 'all-electric' : 'hybride'))
+        + '. Benodigd vermogen ' + kwBenodigd.toFixed(1) + ' kW'
+        + ((prijsGas && prijsStroom) ? ', indicatieve besparing € ' + Math.round(besparing).toLocaleString('nl-NL') + '/jaar' : '')
+        + (tvt ? ', terugverdientijd ' + tvt.toFixed(1) + ' jaar' : '') + '.'
+    };
+    var wpKnop = $('btn-portaal');
+    if (wpKnop) wpKnop.style.display = (ADVIES_EMBED.active && !blok) ? '' : 'none';
+
+    const fmt = (n) => '€ ' + Math.round(n).toLocaleString('nl-NL');
+    const adviesTekst = advies === 'allelectric' ? 'all-electric warmtepomp' : 'hybride warmtepomp';
+    const afgifteOmschrijving = afgifteLabel(afgifte);
+    const afgifteGeschikt = afgifteScore[afgifte] >= 25;
+    const scoreLabel =
+      blok                  ? 'niet geschikt'         :
+      scoreTotaal >= 80     ? 'zeer geschikt'         :
+      scoreTotaal >= 55     ? 'geschikt'              :
+      scoreTotaal >= 35     ? 'geschikt na isolatie'  :
+                              'beperkt geschikt';
+    const joinEn = (arr) => arr.length <= 1 ? (arr[0] || '') : arr.slice(0,-1).join(', ') + ' en ' + arr[arr.length-1];
+
+    const s1 = `
+      <div class="ob-section">
+        <h5>1 · Situatie van de woning</h5>
+        <p>U woont in een <strong>${woningtype}</strong> uit ${bouwjaar} van <strong>${opp} m²</strong> met ${personen} bewoner${personen===1?'':'s'}. Uw woning heeft ${iso_count} van de 4 isolatie-elementen${label!=='onbekend' ? ` en energielabel ${label}` : ''}, en de warmte wordt afgegeven via ${afgifteOmschrijving}.</p>
+      </div>`;
+
+    const redenen = [];
+    if (afgifteGeschikt)       redenen.push('het afgiftesysteem werkt op lage temperatuur');
+    else                        redenen.push('het afgiftesysteem vraagt om aanpassing of hybride benadering');
+    if (iso_count >= 3)          redenen.push('de woning is goed geïsoleerd');
+    else if (iso_count >= 1)     redenen.push('de woning is deels geïsoleerd');
+    else                          redenen.push('de isolatie is beperkt');
+    if (bouwjaar >= 1992)        redenen.push('de bouwperiode biedt een gunstige uitgangspositie');
+    if (volledigModern)          redenen.push('bij dit pakket worden zonnepanelen, een dynamic contract en EMS-sturing meegeleverd, waardoor stroom fors goedkoper is dan gas');
+
+    const s2 = `
+      <div class="ob-section">
+        <h5>2 · Waarom een ${adviesTekst}?</h5>
+        <p>Op basis van de woning en het energiepakket is deze situatie <strong>${scoreLabel}</strong> voor een all-electric warmtepomp. Belangrijkste redenen: ${joinEn(redenen)}.</p>
+        ${advies==='hybride' ? '<p><em>Hybride is de veilige keuze; later upgradebaar naar volledig elektrisch wanneer isolatie/afgifte wordt verbeterd.</em></p>' : ''}
+        ${(advies==='allelectric' && kokengas==='ja') ? '<p style="padding:10px 12px; background:#FFF4E0; border-left:3px solid var(--warn); border-radius:4px; font-size:13px;"><strong>Let op:</strong> u kookt nu op gas. Om volledig gasloos te gaan is een inductiekookplaat nodig (ca. €500–€900 extra investering) — anders blijft de gasaansluiting + vastrecht in stand.</p>' : ''}
+      </div>`;
+
+    const s3 = `
+      <div class="ob-section">
+        <h5>3 · Benodigd vermogen warmtepomp</h5>
+        <p>Gedimensioneerd op de <strong>koudste winterdag</strong> (NL-norm: −10°C buiten, 20°C binnen). Naast transmissieverlies houden we rekening met tapwater-pieken en COP-degradatie bij extreme kou.</p>
+        <div class="ob-row"><span>Transmissieverlies oppervlak (${opp} m² × ${wPerM2} W/m²)</span><span>${kwViaOpp.toFixed(1)} kW</span></div>
+        ${gasRaw>0 ? `<div class="ob-row"><span>Transmissieverlies via gasverbruik (${Math.round(gasVerwarm)} m³/jr)</span><span>${kwViaGas.toFixed(1)} kW</span></div>` : ''}
+        <div class="ob-row"><span>Gewogen transmissieverlies (60% oppervlak + 40% gas)</span><span><strong>${kwTransmissie.toFixed(1)} kW</strong></span></div>
+        <div class="ob-row"><span>+ Tapwater-piek (${tapwater === 'zonneboiler' ? 'zonneboiler' : 'douche/keuken via WP'})</span><span><strong>+ ${kwTapwaterPiek.toFixed(1)} kW</strong></span></div>
+        <div class="ob-row"><span>+ Veiligheidsmarge 10% (COP-degradatie −10°C)</span><span><strong>+ ${(((kwTransmissie + kwTapwaterPiek) * kwMarge)).toFixed(1)} kW</strong></span></div>
+        ${kwExtraReserve > 0 ? `<div class="ob-row"><span>+ Extra reserve (toekomst-bestendig dimensioneren)</span><span><strong>+ ${kwExtraReserve.toFixed(1)} kW</strong></span></div>` : ''}
+        <div class="ob-row total"><span>Benodigd piekvermogen</span><span>${kwBenodigd.toFixed(1)} kW</span></div>
+        <p style="margin-top:8px;">Wij adviseren u de <strong>${productPassend?.naam || '—'}</strong> (${productPassend?.kw || '—'} kW). Dit is het kleinste model uit ons assortiment dat dit piekvermogen veilig kan leveren.</p>
+      </div>`;
+
+    const setupItems = [];
+    if (pv === 'ja' && pvKwp > 0) setupItems.push(`${pvAantal} panelen van ${pvWp} Wp (= ${pvKwp.toFixed(1)} kWp, ~${Math.round(pvProductie).toLocaleString('nl-NL')} kWh/jaar opwekking)`);
+    if (contract === 'dynamic')    setupItems.push('dynamic energiecontract (uurprijzen)');
+    if (ems === 'ja')               setupItems.push('EMS die de warmtepomp stuurt op goedkope/PV-uren');
+
+    const effPrijsTxt = effStroomPrijs.toFixed(3).replace('.',',');
+
+    let s4 = '';
+    if (advies === 'allelectric' && setupItems.length){
+      s4 = `
+        <div class="ob-section">
+          <h5>4 · Stroomverbruik warmtepomp & PV-dekking</h5>
+          <p>Uw nieuwe warmtepomp verbruikt naar verwachting circa <strong>${Math.round(kwhExtra).toLocaleString('nl-NL')} kWh per jaar</strong> (verwarming + warm tapwater).</p>
+          <p>Bij dit pakket wordt meegeleverd: ${joinEn(setupItems)}.</p>
+          <p>Via het EMS gaat ongeveer <strong>${Math.round(pvDekking*100)}%</strong> van het WP-verbruik direct uit de eigen zonnepanelen (= ${Math.round(kwhExtra - kwhUitNet).toLocaleString('nl-NL')} kWh gratis). De resterende <strong>${Math.round(kwhUitNet).toLocaleString('nl-NL')} kWh</strong> wordt op de goedkoopste uren uit het net gehaald.</p>
+          <p>Gemiddelde effectieve stroomprijs voor de WP: <strong>€ ${effPrijsTxt}/kWh</strong>${volledigModern ? ' (door combinatie van PV + dynamic + EMS + buffer)' : ''} — vergeleken met een vaste prijs van € ${prijsStroom.toFixed(2).replace('.',',')}/kWh.</p>
+        </div>`;
+    } else if (advies === 'allelectric') {
+      s4 = `
+        <div class="ob-section">
+          <h5>4 · Stroomverbruik warmtepomp</h5>
+          <p>Uw nieuwe warmtepomp verbruikt naar verwachting circa <strong>${Math.round(kwhExtra).toLocaleString('nl-NL')} kWh per jaar</strong>. Zonder zonnepanelen, dynamic tarief of EMS rekenen we met de volledige stroomprijs van € ${prijsStroom.toFixed(2).replace('.',',')}/kWh.</p>
+        </div>`;
+    } else {
+      s4 = `
+        <div class="ob-section">
+          <h5>4 · Verdeling gas en stroom bij hybride</h5>
+          <p>De warmtepomp dekt ongeveer <strong>75%</strong> van de warmtevraag (${Math.round(kwhExtra).toLocaleString('nl-NL')} kWh stroom). De HR-ketel bijstookt op de koudste dagen; er resteert ongeveer <strong>${Math.round(gasRest)} m³ gas per jaar</strong> (incl. tapwater/koken).</p>
+        </div>`;
+    }
+
+    let s5 = '';
+    if (prijsGas && prijsStroom){
+      const regelGasWeg      = advies==='allelectric' ? gasRaw * prijsGas : (gasVerwarm * hybDek) * prijsGas;
+      const regelStroomExtra = stroomKostenWP;
+      const regelVastrecht   = vastrechtGas;
+      s5 = `
+        <div class="ob-section">
+          <h5>5 · Jaarlijkse besparing</h5>
+          <div class="ob-row pos"><span>Gasbesparing (${advies==='allelectric' ? `${gasRaw} m³ volledig weg` : `~${Math.round(gasVerwarm*hybDek)} m³ verschuift naar WP`})</span><span>+ ${fmt(regelGasWeg)}</span></div>
+          ${regelVastrecht>0 ? `<div class="ob-row pos"><span>Vastrecht gasaansluiting vervalt</span><span>+ ${fmt(regelVastrecht)}</span></div>` : ''}
+          <div class="ob-row neg"><span>Extra stroomkosten WP (${Math.round(kwhExtra).toLocaleString('nl-NL')} kWh × €${effPrijsTxt})</span><span>− ${fmt(regelStroomExtra)}</span></div>
+          <div class="ob-row total"><span>Netto besparing per jaar</span><span>${fmt(besparing)}</span></div>
+        </div>`;
+    }
+
+    let s6 = '';
+    if (tvt){
+      s6 = `
+        <div class="ob-section">
+          <h5>6 · Investering &amp; terugverdientijd</h5>
+          <div class="ob-row"><span>${productPassend?.naam || 'Installatie'} (incl. BTW)</span><span><strong>${fmt(investering)}</strong></span></div>
+          ${extraInductie > 0 ? `<div class="ob-row"><span>Inductiekookplaat (gasloos koken)</span><span>+ ${fmt(extraInductie)}</span></div>` : ''}
+          ${extraKorting > 0 ? `<div class="ob-row pos"><span>Persoonlijke aanpassing (${kortingPercent.toString().replace('.', ',')}%, max. 15%)</span><span>− ${fmt(extraKorting)}</span></div>` : ''}
+          <div class="ob-row pos"><span>ISDE-subsidie (indicatie)</span><span>− ${fmt(subsidie)}</span></div>
+          <div class="ob-row total"><span>Netto investering</span><span>${fmt(nettoInvestering)}</span></div>
+          <p style="margin-top:10px;">Bij een besparing van <strong>${fmt(besparing)} per jaar</strong> (jaar 1) en een verwachte jaarlijkse stijging van <strong>${(stijgingGas*100).toFixed(1).replace('.',',')}%</strong> voor gas en <strong>${(stijgingStroom*100).toFixed(1).replace('.',',')}%</strong> voor stroom, is uw investering terugverdiend in <strong>${tvt.toFixed(1).replace('.',',')} jaar</strong>.</p>
+          <p style="font-size:12px; color:var(--muted); margin-top:6px;">Omdat gas sneller stijgt dan stroom, groeit uw jaarlijkse besparing mee — de werkelijke terugverdientijd is daarom korter dan bij een statische berekening. ${adviesBronTekst('energy')}.</p>
+        </div>`;
+    }
+
+    $('onderbouwing').innerHTML = s1 + s2 + s3 + s4 + s5 + s6;
+
+    const LEVENSDUUR_WP = 20;
+    const cfBlok = $('cashflow-blok');
+    if (cfBlok){
+      if (tvt && nettoInvestering > 0){
+        cfBlok.innerHTML = bouwCashflowGrafiekWP(nettoInvestering, gasBesparingY1, stroomExtraY1, stijgingGas, stijgingStroom, LEVENSDUUR_WP, tvt, productPassend?.naam || 'warmtepomp');
+        $('cashflow-reasoning').style.display = '';
+      } else {
+        $('cashflow-reasoning').style.display = 'none';
+      }
+    }
+
+    const prodBlok = $('product-block');
+    if (!productLijnSorted || productLijnSorted.length === 0){
+      $('product-advies').innerHTML =
+        `<p>Benodigd vermogen: <strong>${kwBenodigd.toFixed(1)} kW</strong>.<br>` +
+        `<em>Vul de Climature-modellen in bij Advies-aannames om automatisch een model te laten voorstellen.</em></p>`;
+    } else {
+      const toonKeuze = productKleiner
+        && (productGroter.kw - productKleiner.kw >= 2)
+        && (kwBenodigd - productKleiner.kw >= 0.3)
+        && (kwBenodigd < productGroter.kw);
+
+      const inductieRow = extraInductie > 0
+        ? `<div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Inductiekookplaat (nodig om gas volledig af te sluiten)</span><strong>+ € ${extraInductie.toLocaleString('nl-NL')}</strong></div>`
+        : '';
+      const finBlok = `
+        <div style="background:var(--brand-light); padding:14px 16px; border-radius:8px; margin:12px 0 14px; font-size:14px;">
+          <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Investering installatie (incl. BTW, 5 mtr leiding)</span><strong>€ ${investering.toLocaleString('nl-NL')}</strong></div>
+          ${inductieRow}
+          ${extraKorting > 0 ? `<div style="display:flex; justify-content:space-between; margin-bottom:4px; color:var(--ok);"><span>Persoonlijke aanpassing (${kortingPercent.toString().replace('.', ',')}%, max. 15%)</span><strong>− € ${extraKorting.toLocaleString('nl-NL')}</strong></div>` : ''}
+          <div style="display:flex; justify-content:space-between; margin-bottom:4px; padding-top:4px; border-top:1px dashed var(--border);"><span>ISDE-subsidie (o.b.v. leverancierslijst)</span><strong style="color:var(--ok);">− € ${subsidie.toLocaleString('nl-NL')}</strong></div>
+          <div style="display:flex; justify-content:space-between; padding-top:6px; border-top:2px solid var(--border); margin-top:4px;"><span><strong>Netto investering</strong></span><strong style="color:var(--brand-primary); font-size:16px;">€ ${nettoInvestering.toLocaleString('nl-NL')}</strong></div>
+        </div>
+      `;
+
+      let html = '';
+      if (toonKeuze){
+        const prijsVerschil = (productGroter.prijs_incl || 0) - (productKleiner.prijs_incl || 0);
+        const tekort = (kwBenodigd - productKleiner.kw).toFixed(1);
+        const bijstook = advies === 'allelectric'
+          ? 'Elektrisch bijverwarmen bij extreme kou (&lt;-5°C); SCOP iets lager'
+          : 'HR-ketel springt iets vaker bij op koudste dagen';
+        html += `
+          <div class="flag warn" style="margin-bottom:14px;">
+            <strong>Let op — vermogen (${kwBenodigd.toFixed(1)} kW) valt tussen de ${productKleiner.kw} kW en ${productGroter.kw} kW modellen.</strong><br>
+            Bespreek met de klant welke optie het beste past. Beide zijn technisch haalbaar; de keuze is een afweging tussen investering en comfortmarge.
+          </div>
+          <div class="keuze-grid">
+            <div class="keuze-card budget">
+              <div class="badge">Budget${prijsVerschil>0 ? ` · bespaart € ${prijsVerschil.toLocaleString('nl-NL')}` : ''}</div>
+              <h5>${productKleiner.naam}</h5>
+              <div><span class="kw-pill">${productKleiner.kw} kW</span><span class="prijs">${prijsHtml(productKleiner.prijs_incl)}</span></div>
+              <ul>
+                <li>~${tekort} kW krap op extreem koude dagen</li>
+                <li>${bijstook}</li>
+                <li>${productKleiner.toelichting || ''}</li>
+              </ul>
+            </div>
+            <div class="keuze-card veilig">
+              <div class="badge badge-accent">Aanbevolen</div>
+              <h5>${productGroter.naam}</h5>
+              <div><span class="kw-pill">${productGroter.kw} kW</span><span class="prijs">${prijsHtml(productGroter.prijs_incl)}</span></div>
+              <ul>
+                <li>Dekt ook -10°C zonder bijstook</li>
+                <li>Hogere SCOP (minder pieken op max vermogen)</li>
+                <li>${productGroter.toelichting || ''}</li>
+              </ul>
+            </div>
+          </div>
+          <p style="font-size:13px; color:var(--muted); margin-top:12px;">Financiële gegevens hieronder zijn berekend op de aanbevolen keuze (${productGroter.naam}).</p>
+        `;
+      } else {
+        html = `<p style="font-size:15px;"><strong>${productPassend.naam}</strong> — ${productPassend.kw} kW.<br><span style="color:var(--muted); font-size:14px;">${productPassend.toelichting||''}</span></p>`;
+      }
+      html += finBlok;
+      $('product-advies').innerHTML = html;
+    }
+    if (blok) prodBlok.style.display = 'none'; else prodBlok.style.display = '';
+
+    showStep(7);
+    ['tile-kw','tile-besparing','tile-tvt'].forEach((id,i)=> setTimeout(()=>countUpEl($(id)), 120+i*90));
+  }
+
+  function countUpEl(el){
+    if(!el) return;
+    const full = el.textContent;
+    const m = full.match(/-?\d[\d.]*(,\d+)?/);
+    if(!m){ return; }
+    const numStr = m[0];
+    const target = parseFloat(numStr.replace(/\./g,'').replace(',','.'));
+    if(isNaN(target)) return;
+    const decimals = numStr.includes(',') ? numStr.split(',')[1].length : 0;
+    const pre = full.slice(0, m.index), post = full.slice(m.index + numStr.length);
+    const dur = 900, t0 = performance.now();
+    function tick(now){
+      const p = Math.min(1,(now-t0)/dur), eased = 1-Math.pow(1-p,3);
+      el.textContent = pre + (target*eased).toLocaleString('nl-NL',{minimumFractionDigits:decimals,maximumFractionDigits:decimals}) + post;
+      if(p<1) requestAnimationFrame(tick); else el.textContent = full;
+    }
+    requestAnimationFrame(tick);
+  }
+
+  function printPdf(){
+    const straat = ($('klant_adres')?.value  || '').trim();
+    const plaats = ($('klant_plaats')?.value || '').trim();
+    const adresVol = [straat, plaats].filter(Boolean).join(', ');
+    const pca = $('print-cover-adres');
+    if (pca) pca.textContent = adresVol;
+    const datum = new Date().toLocaleDateString('nl-NL').replace(/-/g, '-');
+    const adresClean = adresVol.replace(/[\\/:*?"<>|]/g, '').trim().replace(/\s+/g, ' ');
+    const titel = adresClean ? `Warmtepomp Advies ${adresClean} ${datum}` : `Warmtepomp Advies ${datum}`;
+    const oudTitel = document.title;
+    document.title = titel;
+    window.print();
+    setTimeout(() => { document.title = oudTitel; }, 1500);
+  }
+
+  function bouwCashflowGrafiekWP(investering, gasBesparingY1, stroomExtraY1, stijgingGas, stijgingStroom, levensduur, tvt, naam){
+    const punten = [{ jaar:0, cum:-investering }];
+    let cum = -investering;
+    for (let j=1; j<=levensduur; j++){
+      const besparingJ = gasBesparingY1*Math.pow(1+stijgingGas,j-1) - stroomExtraY1*Math.pow(1+stijgingStroom,j-1);
+      cum += besparingJ;
+      punten.push({ jaar:j, cum });
+    }
+    const maxCum = Math.max(0, ...punten.map(p=>p.cum));
+    const minCum = Math.min(0, ...punten.map(p=>p.cum));
+    const span = (maxCum-minCum)||1;
+    const W=660,H=320,padL=80,padR=20,padT=28,padB=46;
+    const plotW=W-padL-padR, plotH=H-padT-padB;
+    const yFor=(v)=>padT+plotH*(1-(v-minCum)/span);
+    const zeroY=yFor(0);
+    const n=punten.length;
+    const slot=plotW/n;
+    const barW=Math.min(slot*0.72, 26);
+    const fmtEuro=(n)=>(n<0?'−':'')+'€ '+Math.abs(Math.round(n)).toLocaleString('nl-NL');
+    let bars='';
+    punten.forEach((p,i)=>{
+      const cx=padL+slot*i+slot/2;
+      const x=cx-barW/2;
+      const y1=yFor(p.cum);
+      const top=Math.min(zeroY,y1), h=Math.max(1.5,Math.abs(y1-zeroY));
+      const kleur=p.cum<0?'#A65A2E':'#1F6B3A';
+      bars+=`<rect x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="2.5" fill="${kleur}"/>`;
+    });
+    const stap=levensduur<=12?2:5;
+    let xlabels='';
+    punten.forEach((p,i)=>{
+      if (p.jaar % stap === 0 || p.jaar===levensduur){
+        const cx=padL+slot*i+slot/2;
+        xlabels+=`<text x="${cx.toFixed(1)}" y="${H-20}" text-anchor="middle" font-size="11" fill="#5F6F63">${p.jaar}</text>`;
+      }
+    });
+    let beMarker='';
+    if (tvt && tvt<=levensduur){
+      const cx=padL + slot*tvt + slot/2;
+      beMarker=`<line x1="${cx.toFixed(1)}" y1="${padT-4}" x2="${cx.toFixed(1)}" y2="${H-padB}" stroke="#123C24" stroke-width="1.5" stroke-dasharray="4 4"/>
+        <text x="${cx.toFixed(1)}" y="${padT-10}" text-anchor="middle" font-size="12" font-weight="700" fill="#123C24">Terugverdiend: ${tvt.toFixed(1).replace('.',',')} jr</text>`;
+    }
+    const eind=punten[punten.length-1].cum;
+    const svg=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Cashflow staafdiagram">
+      <line x1="${padL}" y1="${zeroY.toFixed(1)}" x2="${W-padR}" y2="${zeroY.toFixed(1)}" stroke="#DDE8DC" stroke-width="1.5"/>
+      <text x="${padL-8}" y="${zeroY+4}" text-anchor="end" font-size="11" fill="#5F6F63">€ 0</text>
+      <text x="${padL-8}" y="${yFor(minCum)+10}" text-anchor="end" font-size="11" fill="#A65A2E">${fmtEuro(minCum)}</text>
+      <text x="${padL-8}" y="${yFor(maxCum)+2}" text-anchor="end" font-size="11" fill="#1F6B3A">${fmtEuro(maxCum)}</text>
+      <text x="${(padL+plotW/2).toFixed(1)}" y="${H-4}" text-anchor="middle" font-size="11" fill="#5F6F63">Jaren</text>
+      ${bars}${xlabels}${beMarker}
+    </svg>`;
+    const uitleg=`U start met een netto-investering van <strong>${fmtEuro(investering)}</strong> (rode staven). De staven worden elk jaar korter naarmate u terugverdient en kleuren <strong>groen</strong> zodra u in de plus staat — na <strong>${tvt?tvt.toFixed(1).replace('.',','):'—'} jaar</strong>. Over de levensduur van ${levensduur} jaar houdt u naar verwachting <strong>${fmtEuro(eind)}</strong> netto over.`;
+    return `${svg}
+      <div class="cf-legenda">
+        <span><span class="cf-dot" style="background:#A65A2E;"></span> Nog niet terugverdiend</span>
+        <span><span class="cf-dot" style="background:#1F6B3A;"></span> Winst</span>
+        <span><span class="cf-dot" style="background:#123C24;"></span> Break-even punt</span>
+      </div>
+      <p class="cf-uitleg">${uitleg}</p>`;
+  }
+
+  function afgifteLabel(v){
+    return {
+      vloer:           'volledige vloerverwarming',
+      vloer_beneden:   'vloerverwarming beneden + radiatoren boven',
+      lt_radiatoren:   'LT-radiatoren',
+      radiatoren:      'standaard radiatoren',
+      convectoren:     'convectoren / oud systeem'
+    }[v] || v;
+  }
+
+  function togglePvDetails(){
+    const pv = q('input[name="pv"]:checked')?.value;
+    $('pv-details').style.display = (pv === 'ja') ? '' : 'none';
+  }
+  function updatePvPreview(){
+    const aantal = +$('pv_aantal').value || 0;
+    const wp     = +$('pv_wp').value     || 0;
+    const kwp    = (aantal * wp) / 1000;
+    const prod   = Math.round(kwp * 900);
+    const el = $('pv-calc-preview');
+    if (el) {
+      el.innerHTML = kwp > 0
+        ? `<strong>${kwp.toFixed(2)} kWp</strong> totaal — ca. <strong>${prod.toLocaleString('nl-NL')} kWh/jaar</strong> productie (NL-gemiddelde).`
+        : 'Vul aantal panelen en Wp in.';
+    }
+  }
+
+  // init
+  markAdviesInputs(root);
+  applyAssumptions();
+  updatePvPreview();
+  togglePvDetails();
+  const d = new Date().toLocaleDateString('nl-NL', { day:'numeric', month:'long', year:'numeric' });
+  if ($('print-cover-date'))  $('print-cover-date').textContent = d;
+  if ($('print-footer-date')) $('print-footer-date').textContent = d;
+
+  window.WP = { nextStep, prevStep, berekenAdvies, restart, printPdf, togglePvDetails, updatePvPreview, setKorting, applyAssumptions };
+})();
+
+/* =============================================================
+   TOOL 2 — THUISBATTERIJ  (namespace BAT, DOM scoped op #tool-batterij)
+   ============================================================= */
+(function(){
+  const root = document.getElementById('tool-batterij');
+  const $  = id  => root.querySelector('#'+id);
+  const q  = sel => root.querySelector(sel);
+  const qa = sel => root.querySelectorAll(sel);
+
+  const FALLBACK_PRODUCTEN = {
+    '1fase': [
+      { naam: "Climature A10", kwh: 10, prijs_ex_btw: 12094, toelichting: "1-fase 10 kWh — instap voor gemiddeld huishouden." },
+      { naam: "Climature A21", kwh: 21, prijs_ex_btw: 14594, toelichting: "1-fase 21 kWh — maximaal op 1-fase aansluiting; sweet spot voor terugverdientijd." }
+    ],
+    '3fase': [
+      { naam: "Climature T10", kwh: 10, prijs_ex_btw: 12094, toelichting: "3-fase Tower 10 kWh — instapper voor 3-fase." },
+      { naam: "Climature T15", kwh: 15, prijs_ex_btw: 13594, toelichting: "3-fase Tower 15 kWh — middenklasse, balans tussen prijs en opbrengst." },
+      { naam: "Climature T21", kwh: 21, prijs_ex_btw: 14594, toelichting: "3-fase Tower 21 kWh — voor zware verbruikers (EV + WP)." },
+      { naam: "Climature T30", kwh: 30, prijs_ex_btw: 20094, toelichting: "3-fase Tower 30 kWh — voor grote opbrengst via arbitrage + onbalans." },
+      { naam: "Climature T40", kwh: 40, prijs_ex_btw: 24549, toelichting: "3-fase Tower 40 kWh — maximale capaciteit voor optimale terugverdientijd." }
+    ]
+  };
+
+  function batterijProducten(){
+    const assumptions = ADVIES_AANNAMES.batteryProducts || {};
+    function mapProduct(type, product, index){
+      const fallback = (FALLBACK_PRODUCTEN[type] || [])[index] || {};
+      return {
+        naam: product.name || product.naam || fallback.naam || '',
+        kwh: parseFloat(product.kwh || fallback.kwh || 0),
+        prijs_ex_btw: parseFloat(product.priceExVat || product.prijs_ex_btw || fallback.prijs_ex_btw || 0),
+        toelichting: product.toelichting || fallback.toelichting || ''
+      };
+    }
+    return {
+      '1fase': ((assumptions['1fase'] || FALLBACK_PRODUCTEN['1fase']).map(function(product, index){ return mapProduct('1fase', product, index); })).filter(function(product){ return product.kwh; }),
+      '3fase': ((assumptions['3fase'] || FALLBACK_PRODUCTEN['3fase']).map(function(product, index){ return mapProduct('3fase', product, index); })).filter(function(product){ return product.kwh; })
+    };
+  }
+
+  function defaults(){
+    return {
+      prijs_stroom: adviesNum('energy.electricityPrice', 0.30),
+      prijs_terugleverkosten: adviesNum('battery.feedInCost', 0.15),
+      epex_marge: adviesNum('battery.epexMargin', 0.22),
+      onbalans_per_kwh: adviesNum('battery.imbalancePerKwh', 250),
+      aggregatorFeeExternal: adviesNum('battery.aggregatorFeeExternal', 25),
+      aggregatorFeeClimature: adviesNum('battery.aggregatorFeeClimature', 15)
+    };
+  }
+
+  const PRIJS_NOODSTROOM      = 1999;
+  const BTW_TARIEF            = 0.21;
+  const BTW_DIRECT_LIMIET     = 2495;
+  const LOYAL_KORTING_EX_BTW  = 1095;
+  const MAX_KORTING_PERCENT   = 15;
+
+  let currentStep = 1;
+  let kortingPercent = 0;
+
+  function parseKorting(value){
+    const parsed = parseFloat(String(value || '').replace(',', '.'));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function updateKortingLabel(){
+    const label = $('korting-label');
+    if (!label) return;
+    label.textContent = kortingPercent > 0
+      ? `${kortingPercent.toString().replace('.', ',')}% persoonlijke aanpassing toegepast`
+      : 'Geen aanpassing toegepast';
+  }
+
+  function setKorting(){
+    const value = window.prompt('Aanpassing in procenten (maximaal 15%)', kortingPercent || '');
+    if (value === null) return;
+    const parsed = parseKorting(value);
+    if (parsed === null || parsed < 0){
+      alert('Vul een geldig percentage in.');
+      return;
+    }
+    if (parsed > MAX_KORTING_PERCENT) alert('Maximaal 15%. Ik zet de aanpassing op 15%.');
+    kortingPercent = Math.min(MAX_KORTING_PERCENT, Math.max(0, Math.round(parsed * 10) / 10));
+    berekenAdvies();
+  }
+
+  function kortingBedrag(bedrag){
+    return Math.round(Math.max(0, bedrag || 0) * (kortingPercent / 100));
+  }
+
+  function showStep(n){
+    qa('.step').forEach(el => el.classList.add('hidden'));
+    q(`.step[data-step="${n}"]`).classList.remove('hidden');
+    const bars = qa('#progress div');
+    bars.forEach((b,i) => {
+      b.classList.remove('active','done');
+      if (i+1 < n) b.classList.add('done');
+      if (i+1 === n) b.classList.add('active');
+    });
+    currentStep = n;
+    window.scrollTo({top:0, behavior:'smooth'});
+  }
+  function nextStep(from){ if(validateStep(from)) showStep(from+1); }
+  function prevStep(from){ showStep(from-1); }
+  function restart(){
+    kortingPercent = 0;
+    updateKortingLabel();
+    qa('input[type="number"]').forEach(i => {
+      if (!['prijs_stroom','prijs_terugleverkosten','epex_marge','onbalans_per_kwh','pv_aantal','pv_wp','ev_kwh'].includes(i.id)) i.value = '';
+    });
+    applyAssumptions();
+    showStep(1);
+  }
+
+  function applyAssumptions(){
+    const DEFAULTS = defaults();
+    const source = $('tarieven-source');
+    if (source) source.textContent = adviesBronTekst('energy') + ' · ' + adviesBronTekst('market');
+    setAdviesInput(root, 'prijs_stroom', DEFAULTS.prijs_stroom, 0.30);
+    setAdviesInput(root, 'prijs_terugleverkosten', DEFAULTS.prijs_terugleverkosten, 0.15);
+    setAdviesInput(root, 'epex_marge', DEFAULTS.epex_marge, 0.22);
+    setAdviesInput(root, 'onbalans_per_kwh', DEFAULTS.onbalans_per_kwh, 250);
+    const feeClimature = $('fee-climature');
+    const feeExternal = $('fee-external');
+    if (feeClimature) feeClimature.textContent = DEFAULTS.aggregatorFeeClimature + '%';
+    if (feeExternal) feeExternal.textContent = DEFAULTS.aggregatorFeeExternal + '%';
+  }
+
+  function validateStep(n){
+    if (n===1){
+      const verbruik = +$('stroom_jaar').value;
+      if (!verbruik || verbruik<300) { alert('Vul een geldig jaarverbruik in.'); return false; }
+    }
+    return true;
+  }
+
+  function togglePvDetails(){
+    const pv = q('input[name="pv"]:checked')?.value;
+    $('pv-details').style.display = (pv === 'ja') ? '' : 'none';
+  }
+  function updatePvPreview(){
+    const aantal = +$('pv_aantal').value || 0;
+    const wp     = +$('pv_wp').value     || 0;
+    const kwp    = (aantal * wp) / 1000;
+    const prod   = Math.round(kwp * 900);
+    const el = $('pv-calc-preview');
+    if (el) {
+      el.innerHTML = kwp > 0
+        ? `<strong>${kwp.toFixed(2)} kWp</strong> totaal — ca. <strong>${prod.toLocaleString('nl-NL')} kWh/jaar</strong> productie (NL-gemiddelde).`
+        : 'Vul aantal panelen en Wp in.';
+    }
+  }
+  function toggleEvDetails(){
+    const ev = q('input[name="ev"]:checked')?.value;
+    $('ev-details').classList.toggle('hidden', ev !== 'ja');
+  }
+
+  function berekenOpbrengstVoorCapaciteit(kwh, ctx){
+    const epexActief     = (ctx.contract === 'dynamic' && ctx.ems === 'ja');
+    const onbalansActief = (ctx.onbalans === 'ja');
+    const beide          = epexActief && onbalansActief;
+    const epexFactor     = beide ? 0.45 : 1.00;
+    const onbalansFactor = beide ? 0.45 : 1.00;
+    const onbalansFee = ctx.viaVa ? ctx.aggregatorFeeClimature : ctx.aggregatorFeeExternal;
+    const onbalansNetFactor = Math.max(0, 1 - (onbalansFee / 100));
+    const cycliPerDag = ctx.wp === 'ja' ? 2.0 : 1.4;
+
+    const dagenOverschot = 200;
+    const dagOverschot   = ctx.pvOverschot / dagenOverschot;
+    const opslagPerDag   = Math.min(kwh * 0.85, dagOverschot);
+    const realisatieFactor = 0.70;
+    const opgeslagenJaar = opslagPerDag * dagenOverschot * realisatieFactor;
+    const besparingTeruglever = opgeslagenJaar * ctx.prijsTerugleverkst;
+
+    let opbrengstEpex = 0;
+    if (epexActief){
+      opbrengstEpex = kwh * cycliPerDag * ctx.epexMarge * 365 * 0.85 * epexFactor;
+    } else if (ctx.contract === 'dynamic'){
+      opbrengstEpex = kwh * cycliPerDag * ctx.epexMarge * 365 * 0.85 * 0.30;
+    }
+
+    const opbrengstOnbalans = onbalansActief
+      ? kwh * ctx.onbalansPerKwh * onbalansFactor * onbalansNetFactor
+      : 0;
+
+    const totaal = besparingTeruglever + opbrengstEpex + opbrengstOnbalans;
+    return { besparingTeruglever, opbrengstEpex, opbrengstOnbalans, totaal, opgeslagenJaar, beide };
+  }
+
+  function berekenAdvies(){
+    const stroomJaar = +$('stroom_jaar').value;
+    const personen   = +q('input[name="personen"]:checked').value || 2;
+    const patroon    = q('input[name="patroon"]:checked').value;
+
+    const pv         = q('input[name="pv"]:checked').value;
+    const pvAantal   = pv === 'ja' ? (+$('pv_aantal').value || 0) : 0;
+    const pvWp       = pv === 'ja' ? (+$('pv_wp').value     || 0) : 0;
+    const pvKwp      = (pvAantal * pvWp) / 1000;
+    const pvProductie= pvKwp * 900;
+
+    const ev         = q('input[name="ev"]:checked').value;
+    const evKwh      = ev === 'ja' ? (+$('ev_kwh').value || 0) : 0;
+    const wp         = q('input[name="wp"]:checked').value;
+
+    const aansluiting = q('input[name="aansluiting"]:checked').value;
+    const fase        = aansluiting.startsWith('1f') ? '1fase' : '3fase';
+
+    const DEFAULTS = defaults();
+    const prijsStroom        = parseFloat($('prijs_stroom').value)        || DEFAULTS.prijs_stroom;
+    const prijsTerugleverkst = parseFloat($('prijs_terugleverkosten').value) || DEFAULTS.prijs_terugleverkosten;
+    const epexMarge          = parseFloat($('epex_marge').value)          || DEFAULTS.epex_marge;
+    const onbalansPerKwh     = parseFloat($('onbalans_per_kwh').value)    || DEFAULTS.onbalans_per_kwh;
+
+    const contractRaw = q('input[name="contract"]:checked').value;
+    const contract = contractRaw === 'vast' ? 'vast' : 'dynamic';
+    const viaVa    = contractRaw === 'dynamic_va';
+    const ems      = q('input[name="ems"]:checked').value;
+    const onbalans = q('input[name="onbalans"]:checked').value;
+    const btw      = q('input[name="btw"]:checked').value;
+    const btwTeruggave = btw === 'ja';
+
+    const verbruikTotaal = stroomJaar + evKwh;
+    const dagVerbruik    = verbruikTotaal / 365;
+    const directFrac = patroon === 'veel' ? 0.40 : patroon === 'gemiddeld' ? 0.30 : 0.22;
+    const pvDirect   = pv === 'ja' ? Math.min(pvProductie * directFrac, verbruikTotaal) : 0;
+    const pvOverschot= pv === 'ja' ? Math.max(0, pvProductie - pvDirect) : 0;
+    const dagOverschot = pvOverschot / 200;
+
+    const flags = [];
+    if (fase === '1fase' && (wp === 'ja' || ev === 'ja')){
+      flags.push({type:'warn', text:'<strong>1-fase aansluiting + WP/EV.</strong> Overweeg upgrade naar 3-fase voordat je een grote batterij plaatst — anders is laad/ontlaadvermogen beperkt tot ~5,5 kW.'});
+    }
+    if (pv === 'nee' && ems !== 'ja' && contract !== 'dynamic' && onbalans !== 'ja'){
+      flags.push({type:'danger', text:'<strong>Geen PV, geen dynamic, geen EMS, geen onbalans.</strong> Batterij heeft bij deze klant geen verdienmodel — geen advies mogelijk.'});
+    }
+    if (contract !== 'dynamic' && ems === 'ja'){
+      flags.push({type:'warn', text:'<strong>EMS zonder dynamic contract.</strong> Arbitrage-potentie is fors lager (~70% minder); overweeg overstap naar dynamic tarief.'});
+    }
+
+    const avondFrac = patroon === 'veel' ? 0.80 : patroon === 'gemiddeld' ? 0.65 : 0.50;
+    const avondVerbruik = dagVerbruik * avondFrac;
+    const minimumKwh = Math.max(5, avondVerbruik);
+
+    const ctx = { pvOverschot, prijsTerugleverkst, contract, ems, epexMarge, onbalans, onbalansPerKwh, wp, viaVa, aggregatorFeeExternal: DEFAULTS.aggregatorFeeExternal, aggregatorFeeClimature: DEFAULTS.aggregatorFeeClimature };
+    const producten = batterijProducten();
+    const lijn = producten[fase] || [];
+    const opties = lijn.map(prod => {
+      const r = berekenOpbrengstVoorCapaciteit(prod.kwh, ctx);
+      const exBtw         = prod.prijs_ex_btw;
+      const brutoInclBtw  = Math.round(exBtw * (1 + BTW_TARIEF));
+      const loyaalIncl    = Math.round(LOYAL_KORTING_EX_BTW * (1 + BTW_TARIEF));
+      const naLoyaal      = brutoInclBtw - loyaalIncl;
+      const extraKortingIncl = kortingBedrag(naLoyaal);
+      const naKorting        = Math.max(0, naLoyaal - extraKortingIncl);
+      const btwBedrag  = btwTeruggave ? Math.round(naKorting * (BTW_TARIEF / (1 + BTW_TARIEF))) : 0;
+      const prijsNetto = naKorting - btwBedrag;
+      const tvt        = r.totaal > 0 ? prijsNetto / r.totaal : null;
+      const winst10jr  = r.totaal * 10;
+      const isMin = prod.kwh >= minimumKwh && !lijn.some(p => p.kwh >= minimumKwh && p.kwh < prod.kwh);
+      return { ...prod, ...r, exBtw, brutoInclBtw, loyaalIncl, naLoyaal, extraKortingIncl, naKorting, btwBedrag, prijsNetto, tvt, winst10jr, isMin, belowMin: prod.kwh < minimumKwh };
+    });
+
+    const validOpties = opties.filter(o => !o.belowMin);
+    const optiesMetTvt = validOpties.filter(o => o.tvt);
+    let bestTvtKwh = null;
+    if (optiesMetTvt.length){
+      bestTvtKwh = optiesMetTvt.reduce((best, o) => (best === null || o.tvt < best.tvt ? o : best), null).kwh;
+    }
+
+    const fmt = (n) => '€ ' + Math.round(n).toLocaleString('nl-NL');
+    const joinEn = (arr) => arr.length<=1 ? (arr[0]||'') : arr.slice(0,-1).join(', ') + ' en ' + arr[arr.length-1];
+
+    const sortedOnOpbrengst = [...validOpties].sort((a,b) => a.totaal - b.totaal);
+    const minOpbr = sortedOnOpbrengst[0]                          || opties[0];
+    const maxOpbr = sortedOnOpbrengst[sortedOnOpbrengst.length-1] || opties[opties.length-1];
+
+    const heroAmtMin = $('hero-amount-min');
+    const heroAmtMax = $('hero-amount-max');
+    const heroDiv    = $('hero-divider');
+    const heroTvtEl  = $('hero-tvt');
+
+    if (minOpbr.kwh === maxOpbr.kwh){
+      heroAmtMin.textContent = '€ ' + Math.round(maxOpbr.totaal).toLocaleString('nl-NL');
+      heroDiv.style.display = 'none';
+      heroAmtMax.style.display = 'none';
+    } else {
+      heroAmtMin.textContent = '€ ' + Math.round(minOpbr.totaal).toLocaleString('nl-NL');
+      heroAmtMax.textContent = '€ ' + Math.round(maxOpbr.totaal).toLocaleString('nl-NL');
+      heroDiv.style.display = '';
+      heroAmtMax.style.display = '';
+    }
+
+    const winst10Min = minOpbr.winst10jr || 0;
+    const winst10Max = maxOpbr.winst10jr || 0;
+    if (winst10Min || winst10Max){
+      heroTvtEl.style.display = '';
+      heroTvtEl.innerHTML = winst10Min === winst10Max
+        ? `Netto winst na 10 jaar: <strong>${fmt(winst10Max)}</strong>`
+        : `Netto winst na 10 jaar: <strong>${fmt(winst10Min)} tot ${fmt(winst10Max)}</strong>`;
+    } else {
+      heroTvtEl.style.display = 'none';
+    }
+
+    $('hero-sub').innerHTML =
+      `Het verdienpotentieel hangt af van de gekozen capaciteit. Vanaf <strong>${minimumKwh.toFixed(0)} kWh</strong> dekt de batterij het avondverbruik van de klant. Hoe groter de capaciteit, hoe meer extra opbrengst via arbitrage en onbalansvergoeding.`;
+
+    const cardData = [
+      {
+        key: 'teruglever',
+        titel: 'Terugleverkosten besparen',
+        icon: '<svg viewBox="0 0 24 24" fill="none" stroke="#1F6B3A" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>',
+        max: maxOpbr.besparingTeruglever, min: minOpbr.besparingTeruglever,
+        uitleg: pvOverschot > 0
+          ? `PV-overschot wordt opgeslagen in plaats van teruggeleverd; dit voorkomt de leveranciersheffing van €${prijsTerugleverkst.toFixed(2).replace('.',',')}/kWh.`
+          : 'Niet van toepassing zonder zonnepanelen.',
+        actief: pvOverschot > 0
+      },
+      {
+        key: 'epex',
+        titel: 'EPEX-arbitrage',
+        icon: '<svg viewBox="0 0 24 24" fill="none" stroke="#1F6B3A" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>',
+        max: maxOpbr.opbrengstEpex, min: minOpbr.opbrengstEpex,
+        uitleg: contract === 'dynamic'
+          ? `Met dynamic tarief en EMS koopt de batterij stroom op goedkope uren en levert op dure uren — gemiddelde marge €${epexMarge.toFixed(2).replace('.',',')}/kWh.`
+          : 'Vereist dynamic energiecontract; nu inactief.',
+        actief: contract === 'dynamic'
+      },
+      {
+        key: 'onbalans',
+        titel: 'Onbalansvergoeding',
+        icon: '<svg viewBox="0 0 24 24" fill="none" stroke="#1F6B3A" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-9 4 18 3-9h4"/></svg>',
+        max: maxOpbr.opbrengstOnbalans, min: minOpbr.opbrengstOnbalans,
+        uitleg: onbalans === 'ja'
+          ? `Aggregator zet de batterij in op de imbalance-markt en betaalt vergoeding voor flex-vermogen (bruto €${onbalansPerKwh}/kWh capaciteit/jaar; netto na ${viaVa ? DEFAULTS.aggregatorFeeClimature : DEFAULTS.aggregatorFeeExternal}% platform-fee).`
+          : 'Vereist aansluiting op aggregator-platform; nu inactief.',
+        actief: onbalans === 'ja'
+      }
+    ];
+
+    $('verdiensten-grid').innerHTML = cardData.map(c => `
+      <div class="verdienst-card ${c.actief ? '' : 'inactive'}">
+        <div class="icon">${c.icon}</div>
+        <div class="titel">${c.titel}</div>
+        <div class="bedrag">${c.actief ? fmt(c.max) : '€ 0'} <span class="bedrag-suffix">/ jaar</span></div>
+        ${c.actief && c.min !== c.max ? `<div style="font-size:12px; color:var(--muted); margin-bottom:6px;">vanaf ${fmt(c.min)} bij kleinste optie</div>` : ''}
+        <p class="uitleg">${c.uitleg}</p>
+      </div>
+    `).join('');
+
+    $('flags').innerHTML = flags.map(f => `<div class="flag ${f.type}">${f.text}</div>`).join('');
+    updateKortingLabel();
+
+    // Vastleggen voor terugkoppeling naar het bedrijfsportaal (embed-modus).
+    const batBlok = flags.some(f => f.type === 'danger');
+    const gekozenBat = opties.find(o => o.kwh === bestTvtKwh) || opties.find(o => o.isMin) || opties.find(o => !o.belowMin) || opties[0];
+    if (gekozenBat){
+      window.BAT_LAATSTE = {
+        kind: 'thuisbatterij',
+        title: 'Thuisbatterij ' + gekozenBat.kwh + ' kWh',
+        productName: gekozenBat.naam || '',
+        powerKw: 0,
+        investment: Math.max(0, gekozenBat.naKorting),
+        subsidy: 0,
+        yearlySaving: Math.round(gekozenBat.totaal || 0),
+        paybackYears: gekozenBat.tvt ? +gekozenBat.tvt.toFixed(1) : 0,
+        summary: 'Thuisbatterij-advies: aanbevolen capaciteit ' + gekozenBat.kwh + ' kWh (' + (gekozenBat.naam || '') + ')'
+          + '. Indicatieve opbrengst € ' + Math.round(gekozenBat.totaal || 0).toLocaleString('nl-NL') + '/jaar'
+          + (gekozenBat.tvt ? ', terugverdientijd ' + gekozenBat.tvt.toFixed(1) + ' jaar' : '') + '.'
+      };
+    }
+    var batKnop = $('btn-portaal');
+    if (batKnop) batKnop.style.display = (ADVIES_EMBED.active && !batBlok && gekozenBat) ? '' : 'none';
+
+    const verbruikItems = [];
+    verbruikItems.push(`${stroomJaar.toLocaleString('nl-NL')} kWh basis stroomverbruik`);
+    if (evKwh > 0) verbruikItems.push(`${evKwh.toLocaleString('nl-NL')} kWh EV-laden`);
+    if (wp === 'ja') verbruikItems.push('warmtepomp aanwezig');
+
+    const cards = [];
+
+    cards.push(`
+      <div class="ob-card">
+        <div class="ob-card-num">1</div>
+        <div class="ob-card-body">
+          <h6>Situatie van de klant</h6>
+          <p>Huishouden van ${personen} ${personen===1?'persoon':'personen'} met een totaal jaarverbruik van <strong>${verbruikTotaal.toLocaleString('nl-NL')} kWh</strong> (${joinEn(verbruikItems)}). Aansluiting: <strong>${aansluitingLabel(aansluiting)}</strong>.</p>
+          ${pv === 'ja' ? `<p>Zonnepanelen: ${pvAantal} stuks van ${pvWp} Wp (= ${pvKwp.toFixed(1)} kWp, ~${Math.round(pvProductie).toLocaleString('nl-NL')} kWh per jaar opwekking).</p>` : '<p>Geen zonnepanelen aanwezig.</p>'}
+        </div>
+      </div>`);
+
+    const patroonLabel = patroon === 'veel' ? 'overdag veel thuis' : patroon === 'gemiddeld' ? 'wisselend / hybride' : 'overdag weinig thuis';
+    cards.push(`
+      <div class="ob-card">
+        <div class="ob-card-num">2</div>
+        <div class="ob-card-body">
+          <h6>Minimum-capaciteit (op basis van thuispatroon)</h6>
+          <p>De minimum aanbevolen batterij dekt het deel van het verbruik dat batterij moet leveren in één dagcyclus. Hoe vaker iemand thuis is, hoe meer verbruik er is dat niet door directe PV gedekt wordt — en dus hoe groter de minimum-capaciteit. Boven dit minimum schaalt de opbrengst lineair door via arbitrage en onbalans, maar is meer capaciteit niet strikt nodig.</p>
+          <div class="ob-row"><span>Gemiddeld dagverbruik (${verbruikTotaal.toLocaleString('nl-NL')} kWh / 365)</span><span><strong>${dagVerbruik.toFixed(1)} kWh</strong></span></div>
+          <div class="ob-row"><span>Thuispatroon: <em>${patroonLabel}</em> → fractie</span><span><strong>${Math.round(avondFrac*100)}%</strong></span></div>
+          <div class="ob-row"><span>Verbruik dat batterij moet dekken</span><span><strong>${avondVerbruik.toFixed(1)} kWh</strong></span></div>
+          <div class="ob-row total"><span>Minimum aanbevolen capaciteit</span><span>${minimumKwh.toFixed(1)} kWh</span></div>
+          ${pvOverschot>0 ? `<p style="margin-top:8px; font-size:13px; color:var(--muted);">PV-overschot van ${Math.round(pvOverschot).toLocaleString('nl-NL')} kWh/jaar wordt gedeeltelijk opgeslagen — wat de batterij niet kan opnemen, blijft teruggeleverd worden.</p>` : ''}
+        </div>
+      </div>`);
+
+    if (pv === 'ja' && pvProductie > 0){
+      cards.push(`
+        <div class="ob-card">
+          <div class="ob-card-num">3</div>
+          <div class="ob-card-body">
+            <h6>Zonne-energie &amp; PV-overschot</h6>
+            <p>Van de <strong>${Math.round(pvProductie).toLocaleString('nl-NL')} kWh</strong> PV-opwek wordt <strong>${Math.round(pvDirect).toLocaleString('nl-NL')} kWh (${Math.round(directFrac*100)}%)</strong> direct verbruikt.</p>
+            <p>Het overschot van <strong>${Math.round(pvOverschot).toLocaleString('nl-NL')} kWh</strong> wordt zonder batterij teruggeleverd, waarover de leverancier <strong>€${prijsTerugleverkst.toFixed(2).replace('.',',')}/kWh</strong> aan terugleverkosten rekent.</p>
+          </div>
+        </div>`);
+    }
+
+    const stromen = [];
+    if (pvOverschot > 0) stromen.push('terugleverkosten besparen');
+    if (contract === 'dynamic') stromen.push('EPEX-arbitrage');
+    if (onbalans === 'ja') stromen.push('onbalansvergoeding');
+    const beideActief = (contract === 'dynamic' && ems === 'ja' && onbalans === 'ja');
+    const verdienNum = pv === 'ja' && pvProductie > 0 ? 4 : 3;
+    const prijsOpbouwNum = verdienNum + 1;
+
+    const refOptie = opties.find(o => o.kwh === 21) || opties.find(o => o.isMin) || opties[0];
+    if (refOptie){
+      cards.push(`
+      <div class="ob-card">
+        <div class="ob-card-num">${prijsOpbouwNum}</div>
+        <div class="ob-card-body">
+          <h6>Prijs-opbouw (voorbeeld: ${refOptie.naam})</h6>
+          <p>Hieronder de opbouw van bruto naar netto-investering. Dezelfde stappen gelden voor alle modellen in de tabel.</p>
+          <div class="ob-row"><span>Aanschafprijs ex BTW</span><span><strong>${fmt(refOptie.exBtw)}</strong></span></div>
+          <div class="ob-row"><span>BTW 21%</span><span><strong>+ ${fmt(refOptie.brutoInclBtw - refOptie.exBtw)}</strong></span></div>
+          <div class="ob-row"><span>Bruto incl. BTW</span><span><strong>${fmt(refOptie.brutoInclBtw)}</strong></span></div>
+          <div class="ob-row" style="color:var(--ok);"><span>Loyaliteitskorting (€${LOYAL_KORTING_EX_BTW} ex BTW)</span><span><strong>− ${fmt(refOptie.loyaalIncl)}</strong></span></div>
+          ${refOptie.extraKortingIncl > 0 ? `<div class="ob-row" style="color:var(--ok);"><span>Persoonlijke aanpassing (${kortingPercent.toString().replace('.', ',')}%, max. 15%)</span><span><strong>− ${fmt(refOptie.extraKortingIncl)}</strong></span></div>` : ''}
+          ${btwTeruggave ? (() => {
+            const direct = Math.min(BTW_DIRECT_LIMIET, refOptie.btwBedrag);
+            const gespreid = Math.max(0, refOptie.btwBedrag - BTW_DIRECT_LIMIET);
+            const caption = gespreid > 0
+              ? `€ ${direct.toLocaleString('nl-NL')} direct terug, € ${gespreid.toLocaleString('nl-NL')} gespreid over 5 jaar uitbetaald`
+              : `Direct teruggevorderd via Belastingdienst`;
+            return `<div class="ob-row" style="color:var(--ok);"><span>BTW-teruggave 21%<br><span style="font-size:11px; color:var(--muted); font-weight:400;">${caption}</span></span><span><strong>− ${fmt(refOptie.btwBedrag)}</strong></span></div>`;
+          })() : ''}
+          <div class="ob-row total"><span>Netto investering</span><span>${fmt(refOptie.prijsNetto)}</span></div>
+        </div>
+      </div>`);
+    }
+
+    cards.push(`
+      <div class="ob-card">
+        <div class="ob-card-num">${verdienNum}</div>
+        <div class="ob-card-body">
+          <h6>Aannames in het verdienmodel</h6>
+          <p>De batterij verdient via ${stromen.length ? joinEn(stromen) : '<em>geen actieve stroom in deze configuratie</em>'}.</p>
+          <div class="ob-row"><span>EPEX-marge gemiddeld dag/nacht</span><span><strong>€${epexMarge.toFixed(2).replace('.',',')}/kWh</strong></span></div>
+          <div class="ob-row"><span>Onbalansvergoeding bruto (voor aggregator-fee)</span><span><strong>€${onbalansPerKwh}/kWh/jaar</strong></span></div>
+          <div class="ob-row"><span>Cycli per dag${wp === 'ja' ? ' (verhoogd vanwege WP)' : ''} · round-trip rendement</span><span><strong>${wp === 'ja' ? '2,0' : '1,4'} · 85%</strong></span></div>
+          ${beideActief ? `<div class="ob-row"><span>Cannibalisatie EPEX ↔ onbalans (delen capaciteit)</span><span><strong>×0,45 op beide</strong></span></div>` : ''}
+          ${onbalans === 'ja' ? `<div class="ob-row"><span>Aggregator-fee onbalans${viaVa ? ' (contract via Climature)' : ' (externe aanbieder)'}</span><span><strong>−${viaVa ? DEFAULTS.aggregatorFeeClimature : DEFAULTS.aggregatorFeeExternal}%</strong></span></div>` : ''}
+          <div class="ob-row"><span>Realisatiefactor PV-overschot opslag</span><span><strong>70%</strong></span></div>
+          ${btwTeruggave ? `<div class="ob-row"><span>BTW-teruggave 21% (€ 2.495 direct, rest gespreid over 5 jaar)</span><span><strong>verlaagt netto-investering</strong></span></div>` : ''}
+          <p style="font-size:12px; color:var(--muted); margin-top:8px;">${adviesBronTekst('energy')} · ${adviesBronTekst('market')}.</p>
+        </div>
+      </div>`);
+
+    $('onderbouwing').innerHTML = cards.join('');
+
+    const empty = ' ';
+    const tableRows = opties.map(o => {
+      let cls = '';
+      if (o.belowMin) cls = 'below-min';
+      else if (o.kwh === bestTvtKwh) cls = 'highlight-best';
+      else if (o.isMin) cls = 'highlight-min';
+
+      const badges = [];
+      if (o.belowMin)                          badges.push('<span class="badge-row badge-too-small">Te klein</span>');
+      if (!o.belowMin && o.isMin)              badges.push('<span class="badge-row badge-min">MIN</span>');
+      if (!o.belowMin && o.kwh === bestTvtKwh) badges.push('<span class="badge-row badge-best">TOP</span>');
+      if (!o.belowMin && o.kwh === 21)         badges.push('<span class="badge-row badge-popular">Meest gekozen</span>');
+      const badgeHtml = badges.length ? `<span class="row-badges">${badges.join('')}</span>` : '';
+
+      const investeringHtml = `
+        <span class="row-investering-bruto">${fmt(o.brutoInclBtw)}${o.extraKortingIncl > 0 ? ` · −${fmt(o.extraKortingIncl)} aanpassing` : ''}</span>
+        <strong>${fmt(o.prijsNetto)}</strong>
+      `;
+      const tvtTxt = o.tvt ? o.tvt.toFixed(1).replace('.',',') + ' jr' : empty;
+      return `
+        <tr class="${cls}">
+          <td>
+            <span class="row-name">${o.naam}</span>
+            ${badgeHtml}
+            <span class="row-cap">${o.kwh} kWh</span>
+          </td>
+          <td class="right">${investeringHtml}</td>
+          <td class="right">${o.besparingTeruglever > 0 ? fmt(o.besparingTeruglever) : empty}</td>
+          <td class="right">${o.opbrengstEpex > 0 ? fmt(o.opbrengstEpex) : empty}</td>
+          <td class="right">${o.opbrengstOnbalans > 0 ? fmt(o.opbrengstOnbalans) : empty}</td>
+          <td class="right"><span class="total-amount">${fmt(o.totaal)}</span></td>
+          <td class="right"><span class="tvt-amount">${tvtTxt}</span></td>
+          <td class="right"><span class="tvt-amount">${fmt(o.winst10jr)}</span></td>
+        </tr>`;
+    }).join('');
+
+    $('product-advies').innerHTML = `
+      <div style="overflow-x:auto;">
+        <table class="options-table">
+          <thead>
+            <tr>
+              <th>Model</th>
+              <th class="right">Investering</th>
+              <th class="right">Teruglever<br>besparen</th>
+              <th class="right">EPEX<br>arbitrage</th>
+              <th class="right">Onbalans</th>
+              <th class="right">Totaal&nbsp;/&nbsp;jaar</th>
+              <th class="right">Terug­verdientijd</th>
+              <th class="right">Netto winst<br>na 10 jaar</th>
+            </tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </div>
+    `;
+
+    showStep(6);
+  }
+
+  function aansluitingLabel(v){
+    return {
+      '1f25': '1-fase (standaard)',
+      '3f25': '3-fase 25A',
+      '3f35': '3-fase 35A',
+      '3f40': '3-fase 40A of zwaarder'
+    }[v] || v;
+  }
+
+  // init
+  markAdviesInputs(root);
+  applyAssumptions();
+  updatePvPreview();
+  togglePvDetails();
+  toggleEvDetails();
+
+  function printPdf(){
+    const datum = new Date().toLocaleDateString('nl-NL').replace(/-/g, '-');
+    const titel = `Thuisbatterij Advies ${datum}`;
+    const oudTitel = document.title;
+    document.title = titel;
+    window.print();
+    setTimeout(() => { document.title = oudTitel; }, 1500);
+  }
+
+  window.BAT = { nextStep, prevStep, berekenAdvies, restart, togglePvDetails, updatePvPreview, toggleEvDetails, printPdf, setKorting, applyAssumptions };
+})();
+</script>
+</body>
+</html>

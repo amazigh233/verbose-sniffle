@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 110 110" width="110" height="110" role="img" aria-label="Climature">
+  <rect width="110" height="110" rx="18" fill="#123C24"/>
+  <path d="M27 56 L27 90 L83 90 L83 56" stroke="#FAFBF7" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" fill="none"/>
+  <path d="M19 59 L55 30 L91 59" stroke="#FAFBF7" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" fill="none"/>
+  <path d="M61 40 C61 23 76 15 92 13 C88 28 77 38 61 40 Z" fill="#B6D72A"/>
+  <path d="M60 49 L42 73 L54 73 L48 92 L72 62 L59 62 L66 49 Z" fill="#B6D72A"/>
+</svg>

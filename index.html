@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Climature Bedrijfsportaal</title>
+  <meta name="description" content="Lokaal Climature bedrijfsportaal voor klanten, offertes, facturen en advies.">
+  <meta name="theme-color" content="#123C24">
+  <link rel="icon" type="image/svg+xml" href="assets/icons/icon.svg">
+  <link rel="apple-touch-icon" href="assets/icons/icon.svg">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body class="auth-locked">
+  <section class="login-screen" aria-label="Inloggen">
+    <form class="login-panel" data-form="login">
+      <svg class="brand-mark" viewBox="0 0 110 110" fill="none" aria-hidden="true">
+        <rect width="110" height="110" rx="18" fill="#123C24"/>
+        <path d="M27 56 L27 90 L83 90 L83 56" stroke="#FAFBF7" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
+        <path d="M19 59 L55 30 L91 59" stroke="#FAFBF7" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
+        <path d="M61 40 C61 23 76 15 92 13 C88 28 77 38 61 40 Z" fill="#B6D72A"/>
+        <path d="M60 49 L42 73 L54 73 L48 92 L72 62 L59 62 L66 49 Z" fill="#B6D72A"/>
+      </svg>
+      <div>
+        <p class="eyebrow">Climature</p>
+        <h1>Inloggen</h1>
+      </div>
+      <label class="field">Inlognaam<input name="username" autocomplete="username" required></label>
+      <label class="field">Wachtwoord<input name="password" type="password" autocomplete="current-password" required></label>
+      <p class="login-error" id="login-error" aria-live="polite"></p>
+      <button class="primary-button" type="submit">Inloggen</button>
+    </form>
+  </section>
+
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Hoofdnavigatie">
+      <a class="brand" href="#dashboard" aria-label="Climature dashboard">
+        <svg class="brand-mark" viewBox="0 0 110 110" fill="none" aria-hidden="true">
+          <rect width="110" height="110" rx="18" fill="#123C24"/>
+          <path d="M27 56 L27 90 L83 90 L83 56" stroke="#FAFBF7" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
+          <path d="M19 59 L55 30 L91 59" stroke="#FAFBF7" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
+          <path d="M61 40 C61 23 76 15 92 13 C88 28 77 38 61 40 Z" fill="#B6D72A"/>
+          <path d="M60 49 L42 73 L54 73 L48 92 L72 62 L59 62 L66 49 Z" fill="#B6D72A"/>
+        </svg>
+        <span>
+          <strong>CLIMATURE</strong>
+          <small>Bedrijfsportaal</small>
+        </span>
+      </a>
+
+      <nav class="nav-list">
+        <a href="#dashboard" data-route-link="dashboard">Dashboard</a>
+        <a href="#customers" data-route-link="customers">Klantenbestand</a>
+        <a href="#quotes" data-route-link="quotes">Offertes</a>
+        <a href="#invoices" data-route-link="invoices">Facturen</a>
+        <a href="#reports" data-route-link="reports">Rapportage</a>
+        <a href="#installations" data-route-link="installations">Installaties</a>
+        <a href="#advice" data-route-link="advice">Advies-tool</a>
+        <a href="#products" data-route-link="products">Producten</a>
+        <a href="#messages" data-route-link="messages">Tekstgenerator</a>
+        <a href="#settings" data-route-link="settings">Instellingen</a>
+      </nav>
+    </aside>
+
+    <div class="main-shell">
+      <header class="topbar">
+        <button class="icon-button mobile-menu" type="button" data-action="toggle-sidebar" aria-label="Menu openen">☰</button>
+        <div>
+          <p class="eyebrow" id="route-eyebrow">Overzicht</p>
+          <h1 id="route-title">Dashboard</h1>
+        </div>
+        <div class="topbar-actions" id="topbar-actions"></div>
+      </header>
+
+      <main id="app" class="workspace" tabindex="-1"></main>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div id="print-document" aria-hidden="true"></div>
+
+  <script src="assets/vendor/jspdf.umd.min.js"></script>
+  <script src="assets/js/storage.js"></script>
+  <script src="assets/js/pdf.js"></script>
+  <script src="assets/js/customers.js"></script>
+  <script src="assets/js/quotes.js"></script>
+  <script src="assets/js/invoices.js"></script>
+  <script src="assets/js/installations.js"></script>
+  <script src="assets/js/advice.js"></script>
+  <script src="assets/js/reports.js"></script>
+  <script src="assets/js/app.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("service-worker.js").catch(function () {
+          // Service workers werken niet via file://; app blijft gewoon werken.
+        });
+      });
+    }
+  </script>
+</body>
+</html>

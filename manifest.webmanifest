@@ -1,0 +1,20 @@
+{
+  "name": "Climature Bedrijfsportaal",
+  "short_name": "Climature",
+  "description": "Lokaal Climature bedrijfsportaal voor klanten, offertes, facturen en advies.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "lang": "nl",
+  "background_color": "#123C24",
+  "theme_color": "#123C24",
+  "icons": [
+    {
+      "src": "assets/icons/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "name": "climature-bedrijfsportaal",
+  "version": "2.0.0",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "node": ">=24 <27"
+  },
+  "scripts": {
+    "dev": "node src/server.js",
+    "start": "NODE_ENV=production node src/server.js",
+    "start:render": "npm run prisma:deploy && npm run seed && npm start",
+    "hash-password": "node scripts/hash-password.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "seed": "node prisma/seed.js",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.13.0",
+    "bcrypt": "^6.0.0",
+    "connect-pg-simple": "^10.0.0",
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0",
+    "express-session": "^1.18.2",
+    "helmet": "^8.1.0",
+    "pg": "^8.16.3",
+    "prisma": "^6.13.0",
+    "read-excel-file": "^9.2.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.1",
+    "supertest": "^7.1.4",
+    "vitest": "^3.2.4"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  }
+}
