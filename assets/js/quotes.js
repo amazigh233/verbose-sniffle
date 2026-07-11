@@ -5,10 +5,14 @@
   var S = C.storage;
 
   function statusClass(status) {
-    if (status === "geaccepteerd") return "ok";
+    if (isAcceptedStatus(status)) return "ok";
     if (status === "afgewezen") return "danger";
     if (status === "verstuurd") return "warn";
     return "";
+  }
+
+  function isAcceptedStatus(status) {
+    return status === "geaccepteerd" || status === "geaccepteerd/aanbetaling";
   }
 
   function baseQuote(seed) {
@@ -58,9 +62,9 @@
       '<div class="button-row">',
       '<button class="small-button" data-action="quote-detail" data-id="' + S.escapeHtml(quote.id) + '">Open</button>',
       '<button class="small-button" data-action="quote-edit" data-id="' + S.escapeHtml(quote.id) + '">Bewerk</button>',
-      quote.status === "geaccepteerd" ? '<button class="small-button" data-action="quote-to-invoice" data-id="' + S.escapeHtml(quote.id) + '">Factuur</button>' : "",
-      quote.status === "geaccepteerd" ? '<button class="small-button" data-action="quote-to-installation" data-id="' + S.escapeHtml(quote.id) + '">Planning</button>' : "",
-      quote.status !== "geaccepteerd" && quote.status !== "afgewezen" ? '<button class="small-button" data-action="quote-status" data-status="geaccepteerd" data-id="' + S.escapeHtml(quote.id) + '">Accepteer</button>' : "",
+      isAcceptedStatus(quote.status) ? '<button class="small-button" data-action="quote-to-invoice" data-id="' + S.escapeHtml(quote.id) + '">Factuur</button>' : "",
+      isAcceptedStatus(quote.status) ? '<button class="small-button" data-action="quote-to-installation" data-id="' + S.escapeHtml(quote.id) + '">Planning</button>' : "",
+      !isAcceptedStatus(quote.status) && quote.status !== "afgewezen" ? '<button class="small-button" data-action="quote-status" data-status="geaccepteerd" data-id="' + S.escapeHtml(quote.id) + '">Accepteer</button>' : "",
       "</div>"
     ].join("");
   }
@@ -97,7 +101,7 @@
   function renderForm(quote) {
     var q = baseQuote(quote || {});
     return [
-      '<form class="grid" data-form="quote" data-id="' + S.escapeHtml(q.id || "") + '">',
+      '<form class="grid" data-form="quote" data-id="' + S.escapeHtml(q.id || "") + '" data-sales-opportunity-id="' + S.escapeHtml(q.salesOpportunityId || "") + '">',
       '<section class="panel">',
       '<div class="panel-head"><div><p class="eyebrow">Offerte</p><h2>' + (q.id ? "Offerte bewerken" : "Nieuwe offerte") + '</h2></div><div class="button-row"><button class="ghost-button" type="button" data-action="quotes">Annuleren</button><button class="primary-button" type="submit">Opslaan als concept</button></div></div>',
       '<div class="field-grid">',
@@ -118,7 +122,7 @@
   }
 
   function statusOptions(selected) {
-    return ["concept", "verstuurd", "geaccepteerd", "afgewezen"].map(function (status) {
+    return ["concept", "verstuurd", "geaccepteerd", "geaccepteerd/aanbetaling", "afgewezen"].map(function (status) {
       return '<option value="' + status + '"' + (status === selected ? " selected" : "") + ">" + status + "</option>";
     }).join("");
   }
@@ -174,6 +178,11 @@
       data.sourceAdviceId = form.dataset.sourceAdviceId || "";
       return S.upsert("quotes", data);
     }).then(function (saved) {
+      if (form.dataset.salesOpportunityId && C.salesFunnel && C.salesFunnel.linkQuote) {
+        return C.salesFunnel.linkQuote(form.dataset.salesOpportunityId, saved).then(function () { return saved; });
+      }
+      return saved;
+    }).then(function (saved) {
       C.app.toast("Offerte opgeslagen.");
       C.app.navigate("quote:" + saved.id);
       return saved;
@@ -208,6 +217,7 @@
       ["concept", "Concept"],
       ["verstuurd", "Verstuurd"],
       ["geaccepteerd", "Geaccepteerd"],
+      ["geaccepteerd/aanbetaling", "Geaccepteerd/aanbetaling"],
       ["afgewezen", "Afgewezen"]
     ];
     return [
@@ -224,7 +234,7 @@
   }
 
   function quoteActions(quote, invoice, installation) {
-    var accepted = quote.status === "geaccepteerd";
+    var accepted = isAcceptedStatus(quote.status);
     return [
       '<div class="button-row" style="margin-top:16px;">',
       accepted && !invoice ? '<button class="primary-button" data-action="quote-to-invoice" data-id="' + S.escapeHtml(quote.id) + '">Maak factuur</button>' : "",
@@ -263,16 +273,18 @@
   }
 
   function updateStatus(id, status) {
-    var allowed = ["concept", "verstuurd", "geaccepteerd", "afgewezen"];
+    var allowed = ["concept", "verstuurd", "geaccepteerd", "geaccepteerd/aanbetaling", "afgewezen"];
     var quote = S.getAll("quotes").find(function (item) { return item.id === id; });
     if (!quote || allowed.indexOf(status) < 0) return;
     var update = Object.assign({}, quote, {
       status: status,
       statusUpdatedAt: new Date().toISOString()
     });
-    if (status === "geaccepteerd" && !update.acceptedAt) update.acceptedAt = update.statusUpdatedAt;
+    if (isAcceptedStatus(status) && !update.acceptedAt) update.acceptedAt = update.statusUpdatedAt;
     return S.upsert("quotes", update).then(function () {
-      C.app.toast(status === "geaccepteerd" ? "Offerte geaccepteerd. Maak een factuur of plan de installatie." : "Offertestatus bijgewerkt.");
+      return S.refresh();
+    }).then(function () {
+      C.app.toast(isAcceptedStatus(status) ? "Offerte geaccepteerd. Maak een factuur of plan de installatie." : "Offertestatus bijgewerkt.");
       C.app.render();
     });
   }

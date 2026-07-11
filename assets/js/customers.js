@@ -34,20 +34,25 @@
   function renderList(query) {
     var customers = S.getAll("customers").filter(function (customer) { return matches(customer, query || ""); });
     var rows = customers.map(function (customer) {
+      var actions = '<button class="small-button" data-action="customer-detail" data-id="' + customer.id + '">Open</button>' +
+        (S.isAdmin() ? '<button class="small-button" data-action="customer-edit" data-id="' + customer.id + '">Bewerk</button>' : "");
       return [
         "<tr>",
         "<td><strong>" + S.escapeHtml(S.customerName(customer)) + "</strong><br><span class=\"muted\">" + S.escapeHtml([customer.firstName, customer.lastName].filter(Boolean).join(" ")) + "</span></td>",
         "<td>" + S.escapeHtml(customer.email || "-") + "<br><span class=\"muted\">" + S.escapeHtml(customer.phone || "") + "</span></td>",
         "<td>" + S.escapeHtml(customer.address || "-") + "<br><span class=\"muted\">" + S.escapeHtml([customer.postalCode, customer.city].filter(Boolean).join(" ")) + "</span></td>",
         "<td>" + S.formatDate((customer.createdAt || "").slice(0, 10)) + "</td>",
-        '<td><div class="button-row"><button class="small-button" data-action="customer-detail" data-id="' + customer.id + '">Open</button><button class="small-button" data-action="customer-edit" data-id="' + customer.id + '">Bewerk</button></div></td>',
+        '<td><div class="button-row">' + actions + "</div></td>",
         "</tr>"
       ].join("");
     }).join("");
+    var headActions = S.isAdmin()
+      ? '<div class="button-row"><button class="ghost-button" data-action="customer-import">Importeer aanvraag</button><button class="primary-button" data-action="customer-new">Nieuwe klant</button></div>'
+      : "";
 
     return [
       '<section class="section panel">',
-      '<div class="panel-head"><div><p class="eyebrow">Klantenbestand</p><h2>Klanten beheren</h2></div><div class="button-row"><button class="ghost-button" data-action="customer-import">Importeer aanvraag</button><button class="primary-button" data-action="customer-new">Nieuwe klant</button></div></div>',
+      '<div class="panel-head"><div><p class="eyebrow">Klantenbestand</p><h2>Klanten beheren</h2></div>' + headActions + "</div>",
       '<input class="search-input" type="search" placeholder="Zoeken op naam, bedrijf, e-mail, telefoon of postcode" value="' + S.escapeHtml(query || "") + '" data-action="customer-search">',
       customers.length ? '<div class="table-wrap" style="margin-top:14px;"><table class="data-table"><thead><tr><th>Klant</th><th>Contact</th><th>Adres</th><th>Aangemaakt</th><th>Acties</th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '<div class="empty-state" style="margin-top:14px;">Geen klanten gevonden.</div>',
       "</section>"
@@ -102,10 +107,20 @@
     var invoices = S.getAll("invoices").filter(function (invoice) { return invoice.customerId === id; });
     var installations = S.getAll("installations").filter(function (installation) { return installation.customerId === id; });
     var advices = S.getAll("advices").filter(function (advice) { return advice.customerId === id; });
+    var documents = S.getAll("customerDocuments").filter(function (document) { return document.customerId === id; });
+    var adminActions = S.isAdmin()
+      ? '<div class="button-row"><button class="small-button" data-action="customer-edit" data-id="' + id + '">Bewerk</button><button class="danger-button" data-action="customer-delete" data-id="' + id + '">Verwijder</button></div>'
+      : "";
+    var quickActions = S.isAdmin()
+      ? '<div class="button-row" style="margin-top:16px;"><button class="primary-button" data-action="quote-new" data-customer-id="' + id + '">Nieuwe offerte</button><button class="ghost-button" data-action="customer-advice" data-id="' + id + '">Nieuw advies</button><button class="ghost-button" data-action="invoice-new" data-customer-id="' + id + '">Nieuwe factuur</button><button class="ghost-button" data-action="installation-new" data-customer-id="' + id + '">Installatie plannen</button><button class="ghost-button" data-action="customer-workorder-print" data-id="' + id + '">Print werkbon</button></div>'
+      : '<div class="button-row" style="margin-top:16px;"><button class="ghost-button" data-action="customer-workorder-print" data-id="' + id + '">Print werkbon</button></div>';
+    var dossier = S.isAdmin()
+      ? documentUploadForm(customer) + '<h3>PDF-documenten</h3>' + linkedDocuments(documents) + '<h3>Adviezen</h3>' + linkedAdvices(advices) + '<h3>Offertes</h3>' + linkedQuotes(quotes) + '<h3>Facturen</h3>' + linkedInvoices(invoices) + '<h3>Installaties</h3>' + linkedInstallations(installations)
+      : '<h3>PDF-documenten</h3>' + linkedDocuments(documents) + '<h3>Installaties</h3>' + linkedInstallations(installations);
     return [
       '<section class="section grid two">',
       '<div class="panel">',
-      '<div class="panel-head"><div><p class="eyebrow">Klantdetail</p><h2>' + S.escapeHtml(S.customerName(customer)) + '</h2></div><div class="button-row"><button class="small-button" data-action="customer-edit" data-id="' + id + '">Bewerk</button><button class="danger-button" data-action="customer-delete" data-id="' + id + '">Verwijder</button></div></div>',
+      '<div class="panel-head"><div><p class="eyebrow">Klantdetail</p><h2>' + S.escapeHtml(S.customerName(customer)) + '</h2></div>' + adminActions + "</div>",
       '<div class="detail-list">',
       detail("Naam", [customer.firstName, customer.lastName].filter(Boolean).join(" ")),
       detail("Bedrijf", customer.companyName),
@@ -114,19 +129,13 @@
       detail("Adres", [customer.address, customer.postalCode, customer.city].filter(Boolean).join(", ")),
       detail("Opmerkingen", customer.notes),
       "</div>",
-      '<div class="button-row" style="margin-top:16px;"><button class="primary-button" data-action="quote-new" data-customer-id="' + id + '">Nieuwe offerte</button><button class="ghost-button" data-action="customer-advice" data-id="' + id + '">Nieuw advies</button><button class="ghost-button" data-action="invoice-new" data-customer-id="' + id + '">Nieuwe factuur</button><button class="ghost-button" data-action="installation-new" data-customer-id="' + id + '">Installatie plannen</button><button class="ghost-button" data-action="customer-workorder-print" data-id="' + id + '">Print werkbon</button></div>',
+      quickActions,
       "</div>",
       '<div class="panel"><div class="panel-head"><div><p class="eyebrow">Dossier</p><h2>Documenten en planning</h2></div></div>',
-      '<h3>Adviezen</h3>' + linkedAdvices(advices),
-      '<h3>Offertes</h3>' + linkedQuotes(quotes),
-      '<h3>Facturen</h3>' + linkedInvoices(invoices),
-      '<h3>Installaties</h3>' + linkedInstallations(installations),
+      dossier,
       "</div>",
       "</section>",
-      '<section class="section grid two">',
-      noteForm(customer),
-      timeline(customer, quotes, invoices, installations),
-      "</section>"
+      S.isAdmin() ? '<section class="section grid two">' + noteForm(customer) + timeline(customer, quotes, invoices, installations, documents) + "</section>" : ""
     ].join("");
   }
 
@@ -144,6 +153,35 @@
         : '<button class="small-button" data-action="advice-quote" data-id="' + S.escapeHtml(advice.id) + '">Maak offerte</button>';
       return '<tr><td><strong>' + S.escapeHtml(advice.title || advice.kind || "Advies") + '</strong><br><span class="muted">' + S.formatDate((advice.createdAt || "").slice(0, 10)) + (meta ? " · " + meta : "") + '</span></td><td><div class="button-row">' + quoteBtn + '<button class="small-button" data-action="advice-delete" data-id="' + S.escapeHtml(advice.id) + '">Verwijder</button></div></td></tr>';
     }).join("") + "</tbody></table></div>";
+  }
+
+  function documentUploadForm(customer) {
+    return [
+      '<form class="document-upload" data-form="customer-document" data-customer-id="' + S.escapeHtml(customer.id) + '">',
+      '<label class="field">PDF toevoegen<input name="file" type="file" accept="application/pdf,.pdf" required></label>',
+      '<button class="primary-button" type="submit">PDF toevoegen</button>',
+      "</form>"
+    ].join("");
+  }
+
+  function linkedDocuments(documents) {
+    if (!documents.length) return '<div class="empty-state">Nog geen PDF-documenten toegevoegd.</div>';
+    return '<div class="table-wrap"><table class="data-table"><tbody>' + documents.map(function (document) {
+      var deleteButton = S.isAdmin() ? '<button class="small-button" data-action="customer-document-delete" data-id="' + S.escapeHtml(document.id) + '">Verwijder</button>' : "";
+      return [
+        "<tr>",
+        "<td><strong>" + S.escapeHtml(document.fileName || "PDF-document") + '</strong><br><span class="muted">' + S.formatDate(String(document.createdAt || "").slice(0, 10)) + " - " + S.escapeHtml(formatBytes(document.size || 0)) + "</span></td>",
+        '<td><div class="button-row"><button class="small-button" data-action="customer-document-open" data-id="' + S.escapeHtml(document.id) + '">Open</button><button class="small-button" data-action="customer-document-download" data-id="' + S.escapeHtml(document.id) + '">Download</button>' + deleteButton + "</div></td>",
+        "</tr>"
+      ].join("");
+    }).join("") + "</tbody></table></div>";
+  }
+
+  function formatBytes(bytes) {
+    bytes = Number(bytes || 0);
+    if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1).replace(".", ",") + " MB";
+    if (bytes >= 1024) return Math.round(bytes / 1024) + " KB";
+    return bytes + " B";
   }
 
   function linkedQuotes(quotes) {
@@ -186,8 +224,8 @@
     }).join("");
   }
 
-  function timeline(customer, quotes, invoices, installations) {
-    var items = timelineItems(customer, quotes, invoices, installations);
+  function timeline(customer, quotes, invoices, installations, documents) {
+    var items = timelineItems(customer, quotes, invoices, installations, documents);
     return [
       '<div class="panel">',
       '<div class="panel-head"><div><p class="eyebrow">Tijdlijn</p><h2>Klantgeschiedenis</h2></div></div>',
@@ -196,7 +234,7 @@
     ].join("");
   }
 
-  function timelineItems(customer, quotes, invoices, installations) {
+  function timelineItems(customer, quotes, invoices, installations, documents) {
     var items = [];
     if (customer.createdAt) {
       items.push({
@@ -219,7 +257,7 @@
         body: (quote.status || "concept") + " - " + S.money(quote.total || 0),
         action: "quote-detail",
         id: quote.id,
-        tone: quote.status === "geaccepteerd" ? "ok" : quote.status === "afgewezen" ? "danger" : "warn"
+        tone: quote.status === "geaccepteerd" || quote.status === "geaccepteerd/aanbetaling" ? "ok" : quote.status === "afgewezen" ? "danger" : "warn"
       });
     });
     invoices.forEach(function (invoice) {
@@ -252,6 +290,19 @@
         action: "installation-detail",
         id: installation.id,
         tone: installation.status === "uitgevoerd" ? "ok" : installation.status === "geannuleerd" ? "danger" : "warn"
+      });
+    });
+    (documents || []).forEach(function (document) {
+      items.push({
+        kind: "document",
+        label: "PDF",
+        title: document.fileName || "PDF-document",
+        date: String(document.createdAt || "").slice(0, 10),
+        stamp: document.updatedAt || document.createdAt || "",
+        body: formatBytes(document.size || 0),
+        action: "customer-document-open",
+        id: document.id,
+        tone: "ok"
       });
     });
     S.getAll("customerNotes").filter(function (note) {
@@ -416,6 +467,90 @@
     });
   }
 
+  function saveDocumentFromForm(form) {
+    var fileInput = form.querySelector('input[type="file"]');
+    var file = fileInput && fileInput.files && fileInput.files[0];
+    var customerId = form.dataset.customerId;
+    if (!customerId || !file) {
+      C.app.toast("Kies eerst een PDF-bestand.");
+      return;
+    }
+    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+      C.app.toast("Alleen PDF-bestanden kunnen worden toegevoegd.");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      C.app.toast("PDF is groter dan 8 MB.");
+      return;
+    }
+    return readFileAsBase64(file).then(function (content) {
+      return S.upsert("customerDocuments", {
+        customerId: customerId,
+        fileName: file.name,
+        mimeType: "application/pdf",
+        size: file.size,
+        content: content
+      });
+    }).then(function () {
+      form.reset();
+      C.app.toast("PDF toegevoegd aan klantdossier.");
+      C.app.render();
+    });
+  }
+
+  function readFileAsBase64(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () {
+        resolve(String(reader.result || "").split(",")[1] || "");
+      };
+      reader.onerror = function () {
+        reject(new Error("PDF kon niet worden gelezen."));
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function documentBlob(document) {
+    var binary = window.atob(document.content || "");
+    var chunks = [];
+    for (var i = 0; i < binary.length; i += 8192) {
+      var slice = binary.slice(i, i + 8192);
+      var bytes = new Uint8Array(slice.length);
+      for (var j = 0; j < slice.length; j++) bytes[j] = slice.charCodeAt(j);
+      chunks.push(bytes);
+    }
+    return new Blob(chunks, { type: "application/pdf" });
+  }
+
+  function openDocument(id, download) {
+    var document = S.getAll("customerDocuments").find(function (item) { return item.id === id; });
+    if (!document) {
+      C.app.toast("PDF niet gevonden.");
+      return;
+    }
+    var url = URL.createObjectURL(documentBlob(document));
+    if (download) {
+      var link = window.document.createElement("a");
+      link.href = url;
+      link.download = document.fileName || "klantdocument.pdf";
+      window.document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } else {
+      window.open(url, "_blank", "noopener");
+    }
+    window.setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  function removeDocument(id) {
+    if (!window.confirm("PDF uit klantdossier verwijderen?")) return;
+    return S.remove("customerDocuments", id).then(function () {
+      C.app.toast("PDF verwijderd.");
+      C.app.render();
+    });
+  }
+
   function removeNote(id) {
     if (!window.confirm("Contactnotitie verwijderen?")) return;
     return S.remove("customerNotes", id).then(function () {
@@ -441,6 +576,9 @@
     saveImportFromForm: saveImportFromForm,
     remove: removeCustomer,
     saveNoteFromForm: saveNoteFromForm,
+    saveDocumentFromForm: saveDocumentFromForm,
+    openDocument: openDocument,
+    removeDocument: removeDocument,
     removeNote: removeNote,
     removeAdvice: removeAdvice
   };

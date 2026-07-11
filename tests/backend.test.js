@@ -23,6 +23,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  await prisma.user.deleteMany();
   await data.resetData(prisma);
 });
 
@@ -52,6 +53,14 @@ async function createCustomer(client) {
   return response.body.item;
 }
 
+async function createInstaller(client, username = "installer") {
+  return (await client.post("/api/users").send({
+    username,
+    password: "installer-pass",
+    role: "installer"
+  }).expect(200)).body.item;
+}
+
 describe("auth", () => {
   it("rejects protected routes without login", async () => {
     await request(app).get("/api/bootstrap").expect(401);
@@ -63,6 +72,92 @@ describe("auth", () => {
     await login(client);
     const session = await client.get("/api/auth/session").expect(200);
     expect(session.body.authenticated).toBe(true);
+    expect(session.body.user.role).toBe("admin");
+    expect((await client.get("/api/users").expect(200)).body.items).toHaveLength(1);
+  });
+
+  it("lets admins create installers and installers log in", async () => {
+    const client = agent();
+    await login(client);
+    const installer = await createInstaller(client);
+    expect(installer.role).toBe("installer");
+    expect(installer.passwordHash).toBeUndefined();
+
+    const installerClient = agent();
+    await installerClient.post("/api/auth/login").send({ username: "installer", password: "installer-pass" }).expect(200);
+    const session = await installerClient.get("/api/auth/session").expect(200);
+    expect(session.body.user.role).toBe("installer");
+  });
+
+  it("allows users to change their own username and password", async () => {
+    const client = agent();
+    await login(client);
+    await client.put("/api/auth/me").send({
+      username: "owner",
+      currentPassword: "test-password",
+      newPassword: "new-password"
+    }).expect(200);
+
+    await request(app).post("/api/auth/login").send({ username: "admin", password: "test-password" }).expect(401);
+    await request(app).post("/api/auth/login").send({ username: "owner", password: "new-password" }).expect(200);
+  });
+
+  it("protects the last active admin from lock-out", async () => {
+    const client = agent();
+    await login(client);
+    const admin = (await client.get("/api/users").expect(200)).body.items[0];
+    await client.put(`/api/users/${admin.id}`).send({ active: false }).expect(400);
+    await client.put(`/api/users/${admin.id}`).send({ role: "installer" }).expect(400);
+
+    await client.post("/api/users").send({ username: "second", password: "second-pass", role: "admin" }).expect(200);
+    await client.put(`/api/users/${admin.id}`).send({ role: "installer" }).expect(200);
+  });
+});
+
+describe("role access", () => {
+  it("limits installers to customers, installations and work orders", async () => {
+    const admin = agent();
+    await login(admin);
+    await createInstaller(admin);
+    const customer = await createCustomer(admin);
+    await admin.post("/api/collections/installations").send({
+      customerId: customer.id,
+      plannedDate: "2026-07-30",
+      startTime: "09:00",
+      durationHours: 4,
+      installer: "Sam"
+    }).expect(200);
+
+    const installer = agent();
+    await installer.post("/api/auth/login").send({ username: "installer", password: "installer-pass" }).expect(200);
+    const bootstrap = await installer.get("/api/bootstrap").expect(200);
+    expect(bootstrap.body.data.customers).toHaveLength(1);
+    expect(bootstrap.body.data.installations).toHaveLength(1);
+    expect(bootstrap.body.data.quotes).toBeUndefined();
+    expect(bootstrap.body.data.settings).toBeUndefined();
+
+    await installer.get("/api/collections/customers").expect(200);
+    await installer.get("/api/collections/installations").expect(200);
+    await installer.get("/api/collections/quotes").expect(403);
+    await installer.get("/api/settings").expect(403);
+    await installer.get("/api/users").expect(403);
+    await installer.get("/api/backup/export").expect(403);
+    await installer.post("/api/admin/reset").expect(403);
+    await installer.post("/api/collections/customers").send({ firstName: "Nope" }).expect(403);
+    await installer.post("/api/collections/installations").send({ customerId: customer.id }).expect(403);
+
+    const installation = bootstrap.body.data.installations[0];
+    await installer.put(`/api/installations/${installation.id}/workorder`).send({
+      status: "uitgevoerd",
+      workOrder: {
+        workDone: "Getest",
+        mechanicName: "Sam",
+        checks: { installedTested: true }
+      }
+    }).expect(200);
+    const updated = await admin.get("/api/bootstrap").expect(200);
+    expect(updated.body.data.installations[0].status).toBe("uitgevoerd");
+    expect(updated.body.data.installations[0].workOrder.workDone).toBe("Getest");
   });
 });
 
@@ -110,6 +205,82 @@ describe("business data", () => {
       startTime: "09:00",
       durationHours: 4
     }).expect(200);
+
+    const document = (await client.post("/api/collections/customerDocuments").send({
+      customerId: customer.id,
+      fileName: "scan.pdf",
+      mimeType: "application/pdf",
+      size: 25,
+      content: Buffer.from("%PDF-1.4\n%%EOF").toString("base64")
+    }).expect(200)).body.item;
+    expect(document.fileName).toBe("scan.pdf");
+
+    const bootstrap = await client.get("/api/bootstrap").expect(200);
+    expect(bootstrap.body.data.customerDocuments).toHaveLength(1);
+  });
+
+  it("creates sales opportunities and includes them in backups", async () => {
+    const client = agent();
+    await login(client);
+    const customer = await createCustomer(client);
+    const opportunity = (await client.post("/api/collections/salesOpportunities").send({
+      title: "Thuisbatterij familie Test",
+      stage: "contact",
+      customerId: customer.id,
+      contactName: "Test Klant",
+      source: "Website",
+      expectedValue: 9500,
+      probability: 25,
+      followUpDate: "2026-07-12"
+    }).expect(200)).body.item;
+
+    expect(opportunity.stage).toBe("contact");
+    expect(opportunity.customerId).toBe(customer.id);
+
+    const listed = await client.get("/api/bootstrap").expect(200);
+    expect(listed.body.data.salesOpportunities).toHaveLength(1);
+
+    const backup = (await client.get("/api/backup/export").expect(200)).body;
+    await data.resetData(prisma);
+    await client.post("/api/backup/import").send(backup).expect(200);
+    expect((await client.get("/api/bootstrap").expect(200)).body.data.salesOpportunities).toHaveLength(1);
+
+    await client.delete(`/api/collections/salesOpportunities/${opportunity.id}`).expect(200);
+    expect((await client.get("/api/bootstrap").expect(200)).body.data.salesOpportunities).toHaveLength(0);
+  });
+
+  it("syncs linked sales opportunities when quote status changes", async () => {
+    const client = agent();
+    await login(client);
+    const customer = await createCustomer(client);
+    const quote = (await client.post("/api/collections/quotes").send({
+      quoteNumber: "CL-OFF-2026-7777",
+      customerId: customer.id,
+      quoteDate: "2026-07-08",
+      validUntil: "2026-08-07",
+      status: "verstuurd",
+      lines: [{ description: "Warmtepomp", qty: 1, unit: "stuk", priceExVat: 1000, vatRate: 21 }]
+    }).expect(200)).body.item;
+    const opportunity = (await client.post("/api/collections/salesOpportunities").send({
+      title: "Warmtepomp offerte",
+      stage: "offerte_verstuurd",
+      customerId: customer.id,
+      quoteId: quote.id,
+      contactName: "Test Klant",
+      expectedValue: 1210,
+      probability: 70
+    }).expect(200)).body.item;
+
+    await client.post("/api/collections/quotes").send({
+      ...quote,
+      status: "geaccepteerd/aanbetaling",
+      lines: quote.lines
+    }).expect(200);
+
+    const bootstrap = await client.get("/api/bootstrap").expect(200);
+    const synced = bootstrap.body.data.salesOpportunities.find((item) => item.id === opportunity.id);
+    expect(synced.stage).toBe("gewonnen");
+    expect(synced.probability).toBe(100);
   });
 
   it("blocks duplicate final invoices for the same quote", async () => {

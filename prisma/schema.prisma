@@ -7,27 +7,56 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  role         String   @default("installer")
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([role])
+  @@index([active])
+}
+
 model Customer {
-  id          String         @id @default(cuid())
-  firstName   String
-  lastName    String
-  companyName String         @default("")
-  email       String
-  phone       String
-  address     String
-  postalCode  String
-  city        String
-  notes       String         @default("")
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  notesItems  CustomerNote[]
-  quotes      Quote[]
-  invoices    Invoice[]
-  installations Installation[]
-  advices     Advice[]
+  id                 String             @id @default(cuid())
+  firstName          String
+  lastName           String
+  companyName        String             @default("")
+  email              String
+  phone              String
+  address            String
+  postalCode         String
+  city               String
+  notes              String             @default("")
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  notesItems         CustomerNote[]
+  documents          CustomerDocument[]
+  quotes             Quote[]
+  invoices           Invoice[]
+  installations      Installation[]
+  advices            Advice[]
+  salesOpportunities SalesOpportunity[]
 
   @@index([email])
   @@index([postalCode])
+}
+
+model CustomerDocument {
+  id         String   @id @default(cuid())
+  customerId String
+  fileName   String
+  mimeType   String   @default("application/pdf")
+  size       Int      @default(0)
+  content    String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
 }
 
 model Advice {
@@ -78,33 +107,62 @@ model Product {
 }
 
 model Quote {
-  id              String      @id @default(cuid())
-  quoteNumber     String      @unique
-  customerId      String
-  quoteDate       String
-  validUntil      String
-  status          String      @default("concept")
-  notes           String      @default("")
-  sourceAdviceId  String      @default("")
-  subtotal        Float       @default(0)
-  vat             Float       @default(0)
-  total           Float       @default(0)
-  acceptedAt      DateTime?
-  statusUpdatedAt DateTime?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-  customer        Customer    @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  lines           QuoteLine[]
+  id                 String             @id @default(cuid())
+  quoteNumber        String             @unique
+  customerId         String
+  quoteDate          String
+  validUntil         String
+  status             String             @default("concept")
+  notes              String             @default("")
+  sourceAdviceId     String             @default("")
+  subtotal           Float              @default(0)
+  vat                Float              @default(0)
+  total              Float              @default(0)
+  acceptedAt         DateTime?
+  statusUpdatedAt    DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  customer           Customer           @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  lines              QuoteLine[]
+  salesOpportunities SalesOpportunity[]
 
   @@index([customerId])
   @@index([status])
 }
 
+model SalesOpportunity {
+  id                String    @id @default(cuid())
+  title             String
+  stage             String    @default("lead")
+  customerId        String?
+  quoteId           String?
+  contactName       String    @default("")
+  companyName       String    @default("")
+  email             String    @default("")
+  phone             String    @default("")
+  source            String    @default("")
+  expectedValue     Float     @default(0)
+  probability       Float     @default(10)
+  expectedCloseDate String    @default("")
+  followUpDate      String    @default("")
+  notes             String    @default("")
+  lostReason        String    @default("")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  customer          Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  quote             Quote?    @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+
+  @@index([customerId])
+  @@index([quoteId])
+  @@index([stage])
+  @@index([followUpDate])
+}
+
 model QuoteLine {
-  id          String   @id @default(cuid())
+  id          String @id @default(cuid())
   quoteId     String
   position    Int
-  productId   String   @default("")
+  productId   String @default("")
   description String
   qty         Float
   unit        String
@@ -113,7 +171,7 @@ model QuoteLine {
   subtotal    Float
   vat         Float
   total       Float
-  quote       Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  quote       Quote  @relation(fields: [quoteId], references: [id], onDelete: Cascade)
 
   @@index([quoteId])
 }

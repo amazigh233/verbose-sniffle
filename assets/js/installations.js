@@ -32,9 +32,10 @@
       var customer = customers.find(function (item) { return item.id === installation.customerId; });
       return !q || [installation.quoteNumber, installation.status, installation.installer, S.customerName(customer)].join(" ").toLowerCase().indexOf(q) >= 0;
     }));
+    var headAction = S.isAdmin() ? '<button class="primary-button" data-action="installation-new">Nieuwe installatie</button>' : "";
     return [
       '<section class="section panel">',
-      '<div class="panel-head"><div><p class="eyebrow">Planning</p><h2>Installaties beheren</h2></div><button class="primary-button" data-action="installation-new">Nieuwe installatie</button></div>',
+      '<div class="panel-head"><div><p class="eyebrow">Planning</p><h2>Installaties beheren</h2></div>' + headAction + "</div>",
       agendaControls(state),
       state.view === "list" ? listView(installations, customers, query) : "",
       state.view === "week" ? weekView(installations, customers, state) : "",
@@ -131,13 +132,14 @@
   function listView(installations, customers, query) {
     var rows = installations.map(function (installation) {
       var customer = customers.find(function (item) { return item.id === installation.customerId; });
+      var editButton = S.isAdmin() ? '<button class="small-button" data-action="installation-edit" data-id="' + S.escapeHtml(installation.id) + '">Bewerk</button>' : "";
       return [
         "<tr>",
         "<td><strong>" + S.escapeHtml(S.formatDate(installation.plannedDate)) + "</strong><br><span class=\"muted\">" + S.escapeHtml(installation.startTime || "-") + "</span></td>",
         "<td>" + S.escapeHtml(S.customerName(customer)) + (installation.quoteNumber ? '<br><span class="muted">' + S.escapeHtml(installation.quoteNumber) + "</span>" : "") + "</td>",
         '<td><span class="status-pill ' + statusClass(installation.status) + '">' + S.escapeHtml(installation.status || "ingepland") + "</span></td>",
         "<td>" + S.escapeHtml(installation.installer || "-") + "</td>",
-        '<td><div class="button-row"><button class="small-button" data-action="installation-detail" data-id="' + S.escapeHtml(installation.id) + '">Open</button><button class="small-button" data-action="installation-detail" data-id="' + S.escapeHtml(installation.id) + '">Werkbon invullen</button><a class="small-button" target="_blank" rel="noopener" href="' + S.escapeHtml(googleCalendarUrl(installation, customer)) + '">Google Agenda</a><button class="small-button" data-action="installation-edit" data-id="' + S.escapeHtml(installation.id) + '">Bewerk</button></div></td>',
+        '<td><div class="button-row"><button class="small-button" data-action="installation-detail" data-id="' + S.escapeHtml(installation.id) + '">Open</button><button class="small-button" data-action="installation-detail" data-id="' + S.escapeHtml(installation.id) + '">Werkbon invullen</button><a class="small-button" target="_blank" rel="noopener" href="' + S.escapeHtml(googleCalendarUrl(installation, customer)) + '">Google Agenda</a>' + editButton + "</div></td>",
         "</tr>"
       ].join("");
     }).join("");
@@ -261,12 +263,15 @@
     var installation = S.getAll("installations").find(function (item) { return item.id === id; });
     if (!installation) return renderList("");
     var customer = S.getAll("customers").find(function (item) { return item.id === installation.customerId; });
+    var adminButtons = S.isAdmin()
+      ? '<button class="ghost-button" data-action="installation-edit" data-id="' + S.escapeHtml(installation.id) + '">Bewerk</button>' + (installation.quoteId ? '<button class="ghost-button" data-action="quote-detail" data-id="' + S.escapeHtml(installation.quoteId) + '">Open offerte</button>' : "") + '<button class="danger-button" data-action="installation-delete" data-id="' + S.escapeHtml(installation.id) + '">Verwijder</button>'
+      : "";
     return [
       '<section class="grid two section">',
       '<div class="panel">',
       '<div class="panel-head"><div><p class="eyebrow">Installatie</p><h2>' + S.escapeHtml(S.formatDate(installation.plannedDate)) + '</h2></div><span class="status-pill ' + statusClass(installation.status) + '">' + S.escapeHtml(installation.status || "ingepland") + '</span></div>',
       '<div class="detail-list">' + detail("Klant", S.customerName(customer)) + detail("Offerte", installation.quoteNumber || "-") + detail("Starttijd", installation.startTime || "-") + detail("Duur", (installation.durationHours || 4) + " uur") + detail("Monteur", installation.installer || "-") + detail("Notities", installation.notes || "-") + "</div>",
-      '<div class="button-row" style="margin-top:16px;"><a class="primary-button" target="_blank" rel="noopener" href="' + S.escapeHtml(googleCalendarUrl(installation, customer)) + '">Zet in Google Agenda</a><button class="ghost-button" data-action="installation-workorder-print" data-id="' + S.escapeHtml(installation.id) + '">Print werkbon</button><button class="ghost-button" data-action="installation-edit" data-id="' + S.escapeHtml(installation.id) + '">Bewerk</button>' + (installation.quoteId ? '<button class="ghost-button" data-action="quote-detail" data-id="' + S.escapeHtml(installation.quoteId) + '">Open offerte</button>' : "") + '<button class="danger-button" data-action="installation-delete" data-id="' + S.escapeHtml(installation.id) + '">Verwijder</button></div>',
+      '<div class="button-row" style="margin-top:16px;"><a class="primary-button" target="_blank" rel="noopener" href="' + S.escapeHtml(googleCalendarUrl(installation, customer)) + '">Zet in Google Agenda</a><button class="ghost-button" data-action="installation-workorder-print" data-id="' + S.escapeHtml(installation.id) + '">Print werkbon</button>' + adminButtons + "</div>",
       "</div>",
       workOrderPanel(installation, customer),
       "</section>"
@@ -386,7 +391,7 @@
       status: String(data.get("status") || installation.status || "ingepland"),
       workOrder: workOrder
     });
-    return S.upsert("installations", payload).then(function (saved) {
+    return S.saveWorkOrder(installation.id, payload).then(function (saved) {
       C.app.toast("Werkbon opgeslagen.");
       C.app.navigate("installation:" + saved.id);
       return saved;

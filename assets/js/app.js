@@ -14,13 +14,15 @@
     dashboard: ["Overzicht", "Dashboard"],
     customers: ["Relaties", "Klantenbestand"],
     quotes: ["Verkoop", "Offertes"],
+    "sales-funnel": ["Verkoop", "Sales funnel"],
     invoices: ["Administratie", "Facturen"],
     reports: ["Administratie", "Rapportage"],
     installations: ["Planning", "Installaties"],
     advice: ["Advies", "Advies-tool"],
     products: ["Configuratie", "Producten"],
     messages: ["Communicatie", "Tekstgenerator"],
-    settings: ["Beheer", "Instellingen"]
+    settings: ["Beheer", "Instellingen"],
+    account: ["Account", "Mijn account"]
   };
 
   function toast(message) {
@@ -46,10 +48,24 @@
     eyebrowEl.textContent = meta[0];
     titleEl.textContent = meta[1];
     Array.from(document.querySelectorAll("[data-route-link]")).forEach(function (link) {
-      link.classList.toggle("is-active", link.dataset.routeLink === baseRoute);
+      var visible = canAccessBase(link.dataset.routeLink);
+      link.hidden = !visible;
+      link.classList.toggle("is-active", visible && link.dataset.routeLink === baseRoute);
     });
-    actionsEl.innerHTML = topActions(baseRoute) + '<button class="ghost-button" data-action="logout">Uitloggen</button>';
+    actionsEl.innerHTML = topActions(baseRoute) + '<button class="ghost-button" data-action="account">Mijn account</button><button class="ghost-button" data-action="logout">Uitloggen</button>';
     document.body.classList.remove("sidebar-open");
+  }
+
+  function canAccessBase(baseRoute) {
+    if (baseRoute === "account") return true;
+    if (S.isAdmin()) return true;
+    return baseRoute === "customers" || baseRoute === "installations";
+  }
+
+  function canAccessPath(path) {
+    if (S.isAdmin()) return true;
+    if (path === "account" || path === "customers" || path === "installations") return true;
+    return path.indexOf("customer:") === 0 || path.indexOf("installation:") === 0;
   }
 
   function isAuthenticated() {
@@ -96,8 +112,10 @@
   }
 
   function topActions(baseRoute) {
+    if (!S.isAdmin()) return "";
     if (baseRoute === "customers") return '<button class="primary-button" data-action="customer-new">Nieuwe klant</button>';
     if (baseRoute === "quotes") return '<button class="primary-button" data-action="quote-new">Nieuwe offerte</button>';
+    if (baseRoute === "sales-funnel") return '<button class="primary-button" data-action="sales-opportunity-new">Nieuwe lead</button>';
     if (baseRoute === "invoices") return '<button class="primary-button" data-action="invoice-new">Nieuwe factuur</button>';
     if (baseRoute === "installations") return '<button class="primary-button" data-action="installation-new">Nieuwe installatie</button>';
     if (baseRoute === "products") return '<button class="primary-button" data-action="product-new">Nieuw product</button>';
@@ -113,11 +131,16 @@
     if (base === "customer-new" || base === "customer-edit" || base === "customer-import") base = "customers";
     if (base === "quote") base = "quotes";
     if (base === "quote-new" || base === "quote-edit") base = "quotes";
+    if (base === "sales-opportunity" || base === "sales-opportunity-new" || base === "sales-opportunity-edit") base = "sales-funnel";
     if (base === "invoice") base = "invoices";
     if (base === "invoice-new" || base === "invoice-edit" || base === "invoice-from-quote") base = "invoices";
     if (base === "installation") base = "installations";
     if (base === "installation-new" || base === "installation-edit" || base === "installation-from-quote") base = "installations";
     if (base === "product-new" || base === "product-edit") base = "products";
+    if (!canAccessBase(base) || !canAccessPath(path)) {
+      navigate(S.isInstaller() ? "customers" : "dashboard");
+      return;
+    }
     setMeta(base);
 
     if (path === "dashboard") appEl.innerHTML = dashboard();
@@ -130,6 +153,10 @@
     else if (path === "quote-new") appEl.innerHTML = C.quotes.renderForm(customerSeed());
     else if (path.indexOf("quote-edit:") === 0) appEl.innerHTML = C.quotes.renderForm(findByRoute("quotes", path));
     else if (path.indexOf("quote:") === 0) appEl.innerHTML = C.quotes.renderDetail(path.split(":")[1]);
+    else if (path === "sales-funnel") appEl.innerHTML = C.salesFunnel.render();
+    else if (path === "sales-opportunity-new") appEl.innerHTML = C.salesFunnel.renderForm();
+    else if (path.indexOf("sales-opportunity-edit:") === 0) appEl.innerHTML = C.salesFunnel.renderForm(findByRoute("salesOpportunities", path));
+    else if (path.indexOf("sales-opportunity:") === 0) appEl.innerHTML = C.salesFunnel.renderDetail(path.split(":")[1]);
     else if (path === "invoices") appEl.innerHTML = C.invoices.renderList("");
     else if (path === "invoice-new") appEl.innerHTML = C.invoices.renderForm(customerSeed());
     else if (path.indexOf("invoice-from-quote:") === 0) appEl.innerHTML = C.invoices.renderForm(C.invoices.createFromQuote(path.split(":")[1]));
@@ -148,6 +175,7 @@
     else if (path.indexOf("product-edit:") === 0) appEl.innerHTML = productForm(findByRoute("products", path));
     else if (path === "messages") appEl.innerHTML = messages();
     else if (path === "settings") appEl.innerHTML = settings();
+    else if (path === "account") appEl.innerHTML = account();
     else appEl.innerHTML = dashboard();
 
     afterRender();
@@ -156,7 +184,11 @@
 
   function customerSeed() {
     var params = new URLSearchParams(window.location.hash.split("?")[1] || "");
-    return params.get("customerId") ? { customerId: params.get("customerId") } : undefined;
+    var seed = params.get("customerId") ? { customerId: params.get("customerId") } : {};
+    if (params.get("opportunityId") && C.salesFunnel && C.salesFunnel.quoteSeed) {
+      seed = Object.assign(seed, C.salesFunnel.quoteSeed(params.get("opportunityId")));
+    }
+    return Object.keys(seed).length ? seed : undefined;
   }
 
   function findByRoute(collection, current) {
@@ -278,6 +310,7 @@
       ["concept", "Concept"],
       ["verstuurd", "Verstuurd"],
       ["geaccepteerd", "Geaccepteerd"],
+      ["geaccepteerd/aanbetaling", "Geaccepteerd/aanbetaling"],
       ["afgewezen", "Afgewezen"]
     ];
     var max = Math.max.apply(null, stages.map(function (stage) {
@@ -527,6 +560,8 @@
     var data = S.settings();
     return [
       '<section class="grid two section">',
+      ownAccountPanel(),
+      accountManagementPanel(),
       '<form class="panel" data-form="settings">',
       '<div class="panel-head"><div><p class="eyebrow">Instellingen</p><h2>Bedrijfsgegevens en standaardteksten</h2></div><button class="primary-button" type="submit">Opslaan</button></div>',
       '<div class="field-grid">',
@@ -548,6 +583,70 @@
       backupPanel(),
       "</section>"
     ].join("");
+  }
+
+  function account() {
+    return '<section class="grid two section">' + ownAccountPanel() + (S.isAdmin() ? accountManagementPanel() : "") + "</section>";
+  }
+
+  function ownAccountPanel() {
+    var user = S.user() || {};
+    return [
+      '<form class="panel" data-form="account">',
+      '<div class="panel-head"><div><p class="eyebrow">Account</p><h2>Mijn login</h2></div><button class="primary-button" type="submit">Opslaan</button></div>',
+      '<div class="field-grid">',
+      '<label class="field">Gebruikersnaam<input name="username" autocomplete="username" required value="' + S.escapeHtml(user.username || "") + '"></label>',
+      '<label class="field">Rol<input readonly value="' + S.escapeHtml(roleLabel(user.role)) + '"></label>',
+      '<label class="field">Huidig wachtwoord<input name="currentPassword" type="password" autocomplete="current-password" required></label>',
+      '<label class="field">Nieuw wachtwoord<input name="newPassword" type="password" autocomplete="new-password" placeholder="Laat leeg om niet te wijzigen"></label>',
+      '<label class="field">Herhaal nieuw wachtwoord<input name="confirmPassword" type="password" autocomplete="new-password"></label>',
+      "</div>",
+      "</form>"
+    ].join("");
+  }
+
+  function accountManagementPanel() {
+    var users = S.read("users", []);
+    var rows = users.length ? users.map(userRow).join("") : '<div class="empty-state">Accounts worden geladen.</div>';
+    return [
+      '<section class="panel" data-users-panel>',
+      '<div class="panel-head"><div><p class="eyebrow">Beheer</p><h2>Accountbeheer</h2></div><button class="ghost-button" data-action="users-refresh">Ververs</button></div>',
+      '<form class="account-create" data-form="user-create">',
+      '<div class="field-grid">',
+      '<label class="field">Gebruikersnaam<input name="username" required autocomplete="off"></label>',
+      '<label class="field">Wachtwoord<input name="password" type="password" required autocomplete="new-password"></label>',
+      '<label class="field">Rol<select name="role"><option value="installer">Installateur</option><option value="admin">Beheerder</option></select></label>',
+      '<div class="field"><span>Nieuw account</span><button class="primary-button" type="submit">Toevoegen</button></div>',
+      "</div>",
+      "</form>",
+      '<div class="account-list">' + rows + "</div>",
+      "</section>"
+    ].join("");
+  }
+
+  function userRow(user) {
+    return [
+      '<form class="account-row" data-form="user-update" data-id="' + S.escapeHtml(user.id) + '">',
+      '<label class="field">Gebruikersnaam<input name="username" required value="' + S.escapeHtml(user.username || "") + '"></label>',
+      '<label class="field">Rol<select name="role">' + roleOptions(user.role) + '</select></label>',
+      '<label class="field">Status<select name="active"><option value="true"' + (user.active ? " selected" : "") + '>Actief</option><option value="false"' + (!user.active ? " selected" : "") + '>Uitgeschakeld</option></select></label>',
+      '<label class="field">Nieuw wachtwoord<input name="password" type="password" autocomplete="new-password" placeholder="Ongewijzigd"></label>',
+      '<div class="field"><span>' + S.escapeHtml(roleLabel(user.role)) + '</span><button class="small-button" type="submit">Opslaan</button></div>',
+      "</form>"
+    ].join("");
+  }
+
+  function roleOptions(selected) {
+    return [
+      '<option value="installer"' + (selected === "installer" ? " selected" : "") + '>Installateur</option>',
+      '<option value="admin"' + (selected === "admin" ? " selected" : "") + '>Beheerder</option>'
+    ].join("");
+  }
+
+  function roleLabel(role) {
+    if (role === "admin") return "Beheerder";
+    if (role === "installer") return "Installateur";
+    return "Onbekend";
   }
 
   function adviceAssumptionsPanel(assumptions) {
@@ -623,8 +722,10 @@
       ["Offertes", S.getAll("quotes").length],
       ["Facturen", S.getAll("invoices").length],
       ["Installaties", S.getAll("installations").length],
+      ["Saleskansen", S.getAll("salesOpportunities").length],
       ["Producten", S.getAll("products").length],
-      ["Notities", S.getAll("customerNotes").length]
+      ["Notities", S.getAll("customerNotes").length],
+      ["PDF's", S.getAll("customerDocuments").length]
     ];
     return [
       '<section class="panel">',
@@ -756,6 +857,12 @@
       adviceFrame.addEventListener("load", C.advice.postAssumptions, { once: true });
       C.advice.postAssumptions();
     }
+    if (document.querySelector("[data-users-panel]") && S.isAdmin() && !C.app.state.usersLoaded) {
+      C.app.state.usersLoaded = true;
+      S.listUsers().then(render).catch(function (error) {
+        toast(error.message || "Accounts laden mislukt.");
+      });
+    }
   }
 
   function handleClick(event) {
@@ -763,6 +870,7 @@
     if (!target) return;
     var action = target.dataset.action;
     if (action === "logout") return logout();
+    if (action === "account") navigate("account");
     if (action === "toggle-sidebar") document.body.classList.toggle("sidebar-open");
     if (action === "customers") navigate("customers");
     if (action === "customer-new") navigate("customer-new");
@@ -772,6 +880,9 @@
     if (action === "customer-workorder-print") printCustomerWorkOrder(target.dataset.id);
     if (action === "customer-delete") return C.customers.remove(target.dataset.id);
     if (action === "customer-note-delete") return C.customers.removeNote(target.dataset.id);
+    if (action === "customer-document-open") return C.customers.openDocument(target.dataset.id);
+    if (action === "customer-document-download") return C.customers.openDocument(target.dataset.id, true);
+    if (action === "customer-document-delete") return C.customers.removeDocument(target.dataset.id);
     if (action === "customer-advice") navigate("advice:" + target.dataset.id);
     if (action === "advice-quote") return C.advice.createQuoteFromAdvice(target.dataset.id);
     if (action === "advice-delete") return C.customers.removeAdvice(target.dataset.id);
@@ -798,6 +909,14 @@
     if (action === "invoice-print") C.pdf.printInvoice(find("invoices", target.dataset.id));
     if (action === "invoice-add-line") addLine("invoice");
     if (action === "invoice-remove-line") removeLine(target, "invoice");
+    if (action === "sales-funnel") navigate("sales-funnel");
+    if (action === "sales-opportunity-new") navigate("sales-opportunity-new");
+    if (action === "sales-opportunity-detail") navigate("sales-opportunity:" + target.dataset.id);
+    if (action === "sales-opportunity-edit") navigate("sales-opportunity-edit:" + target.dataset.id);
+    if (action === "sales-opportunity-delete") return C.salesFunnel.remove(target.dataset.id);
+    if (action === "sales-opportunity-stage") return C.salesFunnel.updateStage(target.dataset.id, target.dataset.stage);
+    if (action === "sales-opportunity-next") return C.salesFunnel.nextStage(target.dataset.id);
+    if (action === "sales-opportunity-quote") return C.salesFunnel.createQuote(target.dataset.id);
     if (action === "installation-new") navigate(target.dataset.customerId ? "installation-new?customerId=" + target.dataset.customerId : "installation-new");
     if (action === "installations") navigate("installations");
     if (action === "installation-detail") navigate("installation:" + target.dataset.id);
@@ -819,6 +938,10 @@
     if (action === "backup-export") return exportBackup();
     if (action === "backup-import") openBackupImport();
     if (action === "backup-reset") return resetBackupData();
+    if (action === "users-refresh") return S.listUsers().then(function () {
+      toast("Accounts bijgewerkt.");
+      render();
+    });
     if (action === "advice-tab") C.advice.setTab(target.dataset.tab);
     if (action === "advice-select-product") selectAdviceProduct(target.dataset.id);
     if (action === "advice-create-quote") return C.advice.createQuote();
@@ -902,6 +1025,9 @@
     if (action === "invoice-load-quote") {
       C.invoices.applyQuote(form, event.target.value);
     }
+    if (action === "sales-stage-select") {
+      C.salesFunnel.applyStageDefault(event.target);
+    }
     if (event.target.id === "backup-import-file") {
       importBackupFile(event.target.files && event.target.files[0]);
     }
@@ -923,11 +1049,16 @@
     if (form.dataset.form === "customer") work = C.customers.saveFromForm(form);
     if (form.dataset.form === "customer-import") work = C.customers.saveImportFromForm(form);
     if (form.dataset.form === "customer-note") work = C.customers.saveNoteFromForm(form);
+    if (form.dataset.form === "customer-document") work = C.customers.saveDocumentFromForm(form);
     if (form.dataset.form === "quote") work = C.quotes.saveFromForm(form);
+    if (form.dataset.form === "sales-opportunity") work = C.salesFunnel.saveFromForm(form);
     if (form.dataset.form === "invoice") work = C.invoices.saveFromForm(form);
     if (form.dataset.form === "installation") work = C.installations.saveFromForm(form);
     if (form.dataset.form === "workorder") work = C.installations.saveWorkOrderFromForm(form);
     if (form.dataset.form === "product") work = saveProductFromForm(form);
+    if (form.dataset.form === "account") work = saveOwnAccount(form);
+    if (form.dataset.form === "user-create") work = createUserFromForm(form);
+    if (form.dataset.form === "user-update") work = updateUserFromForm(form);
     if (form.dataset.form === "settings") {
       work = S.saveSettings(settingsPayloadFromForm(form)).then(function () {
         toast("Instellingen opgeslagen.");
@@ -938,6 +1069,44 @@
     return Promise.resolve(work).catch(function (error) {
       toast(error.message || "Opslaan mislukt.");
     }).then(done);
+  }
+
+  function saveOwnAccount(form) {
+    var data = Object.fromEntries(new FormData(form).entries());
+    if (data.newPassword && data.newPassword !== data.confirmPassword) {
+      toast("Nieuwe wachtwoorden komen niet overeen.");
+      return;
+    }
+    return S.updateMe({
+      username: data.username,
+      currentPassword: data.currentPassword,
+      newPassword: data.newPassword
+    }).then(function () {
+      toast("Account bijgewerkt.");
+      form.reset();
+      navigate("account");
+      render();
+    });
+  }
+
+  function createUserFromForm(form) {
+    var data = Object.fromEntries(new FormData(form).entries());
+    return S.createUser(data).then(function () {
+      C.app.state.usersLoaded = true;
+      toast("Account toegevoegd.");
+      render();
+    });
+  }
+
+  function updateUserFromForm(form) {
+    var data = Object.fromEntries(new FormData(form).entries());
+    data.active = data.active === "true";
+    if (!data.password) delete data.password;
+    return S.updateUser(form.dataset.id, data).then(function () {
+      C.app.state.usersLoaded = true;
+      toast("Account opgeslagen.");
+      render();
+    });
   }
 
   function setPath(object, path, value) {

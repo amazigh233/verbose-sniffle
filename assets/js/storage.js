@@ -3,7 +3,7 @@
 
   var store = window.Climature = window.Climature || {};
   var EURO = new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" });
-  var COLLECTIONS = ["customers", "customerNotes", "products", "quotes", "invoices", "installations", "advices"];
+  var COLLECTIONS = ["customers", "customerNotes", "customerDocuments", "products", "quotes", "invoices", "installations", "advices", "salesOpportunities"];
 
   var DEFAULT_SETTINGS = {
     companyName: "Climature",
@@ -55,15 +55,19 @@
   var cache = {
     customers: [],
     customerNotes: [],
+    customerDocuments: [],
     products: [],
     quotes: [],
     invoices: [],
     installations: [],
     advices: [],
+    salesOpportunities: [],
     settings: Object.assign({}, DEFAULT_SETTINGS),
-    counters: {}
+    counters: {},
+    users: []
   };
   var authenticated = false;
+  var currentUser = null;
 
   function api(path, options) {
     return fetch(path, Object.assign({
@@ -123,10 +127,12 @@
   function init() {
     return api("/api/auth/session").then(function (session) {
       authenticated = Boolean(session.authenticated);
+      currentUser = session.user || null;
       if (!authenticated) return false;
       return refresh().then(function () { return true; });
     }).catch(function () {
       authenticated = false;
+      currentUser = null;
       throw new Error("Kan geen verbinding maken met de server.");
     });
   }
@@ -143,8 +149,9 @@
     return api("/api/auth/login", {
       method: "POST",
       body: JSON.stringify({ username: username, password: password })
-    }).then(function () {
+    }).then(function (session) {
       authenticated = true;
+      currentUser = session.user || null;
       return refresh();
     });
   }
@@ -154,12 +161,25 @@
       return null;
     }).then(function () {
       authenticated = false;
+      currentUser = null;
       applyData({});
     });
   }
 
   function isAuthenticated() {
     return authenticated;
+  }
+
+  function user() {
+    return currentUser;
+  }
+
+  function isAdmin() {
+    return currentUser && currentUser.role === "admin";
+  }
+
+  function isInstaller() {
+    return currentUser && currentUser.role === "installer";
   }
 
   function read(key, fallback) {
@@ -336,12 +356,65 @@
     return refresh();
   }
 
+  function listUsers() {
+    return api("/api/users").then(function (payload) {
+      cache.users = payload.items || [];
+      return cache.users;
+    });
+  }
+
+  function createUser(data) {
+    return api("/api/users", {
+      method: "POST",
+      body: JSON.stringify(data || {})
+    }).then(function (payload) {
+      return listUsers().then(function () { return payload.item; });
+    });
+  }
+
+  function updateUser(id, data) {
+    return api("/api/users/" + encodeURIComponent(id), {
+      method: "PUT",
+      body: JSON.stringify(data || {})
+    }).then(function (payload) {
+      return listUsers().then(function () { return payload.item; });
+    });
+  }
+
+  function updateMe(data) {
+    return api("/api/auth/me", {
+      method: "PUT",
+      body: JSON.stringify(data || {})
+    }).then(function (payload) {
+      currentUser = payload.user || currentUser;
+      return currentUser;
+    });
+  }
+
+  function saveWorkOrder(id, data) {
+    return api("/api/installations/" + encodeURIComponent(id) + "/workorder", {
+      method: "PUT",
+      body: JSON.stringify(data || {})
+    }).then(function (payload) {
+      var saved = payload.item;
+      var items = getAll("installations").slice();
+      var index = items.findIndex(function (existing) { return existing.id === saved.id; });
+      if (index >= 0) items[index] = saved;
+      else items.unshift(saved);
+      cache.installations = items;
+      return saved;
+    });
+  }
+
   store.storage = {
     init: init,
     refresh: refresh,
     login: login,
     logout: logout,
     isAuthenticated: isAuthenticated,
+    user: user,
+    isAdmin: isAdmin,
+    isInstaller: isInstaller,
     getAll: getAll,
     saveAll: saveAll,
     exportData: exportData,
@@ -357,6 +430,11 @@
     saveSettings: saveSettings,
     refreshAdviceAssumptions: refreshAdviceAssumptions,
     refreshOverdueInvoices: refreshOverdueInvoices,
+    listUsers: listUsers,
+    createUser: createUser,
+    updateUser: updateUser,
+    updateMe: updateMe,
+    saveWorkOrder: saveWorkOrder,
     calculateTotals: calculateTotals,
     customerName: customerName,
     uid: uid,

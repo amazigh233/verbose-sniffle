@@ -1,7 +1,6 @@
 "use strict";
 
 const path = require("path");
-const bcrypt = require("bcrypt");
 const express = require("express");
 const session = require("express-session");
 const PgSession = require("connect-pg-simple")(session);
@@ -10,6 +9,9 @@ const pg = require("pg");
 const { loadConfig } = require("./config");
 const { prisma } = require("./prisma");
 const data = require("./data");
+const users = require("./users");
+
+const INSTALLER_COLLECTIONS = ["customers", "customerNotes", "customerDocuments", "installations"];
 
 function asyncHandler(fn) {
   return function wrapped(req, res, next) {
@@ -20,6 +22,30 @@ function asyncHandler(fn) {
 function requireAuth(req, res, next) {
   if (req.session && req.session.user) return next();
   res.status(401).json({ error: "Niet ingelogd." });
+}
+
+function requireRole(...roles) {
+  return function roleGuard(req, res, next) {
+    if (!req.session || !req.session.user) {
+      res.status(401).json({ error: "Niet ingelogd." });
+      return;
+    }
+    if (roles.includes(req.session.user.role)) return next();
+    res.status(403).json({ error: "Geen toegang." });
+  };
+}
+
+function canReadCollection(user, collection) {
+  return user.role === "admin" || (user.role === "installer" && INSTALLER_COLLECTIONS.includes(collection));
+}
+
+function installerBootstrap(fullData) {
+  return {
+    customers: fullData.customers || [],
+    customerNotes: fullData.customerNotes || [],
+    customerDocuments: fullData.customerDocuments || [],
+    installations: fullData.installations || []
+  };
 }
 
 function requireCollection(req) {
@@ -38,7 +64,7 @@ function createApp(config = loadConfig()) {
 
   app.disable("x-powered-by");
   app.use(helmet({ contentSecurityPolicy: false, hsts: config.isProduction }));
-  app.use(express.json({ limit: "2mb" }));
+  app.use(express.json({ limit: "12mb" }));
   app.use((req, res, next) => {
     if (req.path.startsWith("/api/")) res.set("Cache-Control", "no-store");
     next();
@@ -71,22 +97,21 @@ function createApp(config = loadConfig()) {
   });
 
   app.post("/api/auth/login", asyncHandler(async (req, res) => {
-    const username = String(req.body.username || "");
-    const password = String(req.body.password || "");
-    const validUsername = username === config.adminUsername;
-    const validPassword = await bcrypt.compare(password, config.adminPasswordHash);
-    if (!validUsername || !validPassword) {
-      res.status(401).json({ error: "Inlognaam of wachtwoord is onjuist." });
-      return;
-    }
+    const user = await users.login(prisma, config, req.body.username, req.body.password);
     req.session.regenerate((error) => {
       if (error) {
         res.status(500).json({ error: "Sessie kon niet worden aangemaakt." });
         return;
       }
-      req.session.user = { username };
+      req.session.user = user;
       res.json({ authenticated: true, user: req.session.user });
     });
+  }));
+
+  app.put("/api/auth/me", requireAuth, asyncHandler(async (req, res) => {
+    const user = await users.updateMe(prisma, req.session.user, req.body || {});
+    req.session.user = users.sessionUser(user);
+    res.json({ user: req.session.user });
   }));
 
   app.post("/api/auth/logout", requireAuth, (req, res) => {
@@ -100,60 +125,81 @@ function createApp(config = loadConfig()) {
     });
   });
 
-  app.get("/api/bootstrap", requireAuth, asyncHandler(async (_req, res) => {
-    res.json({ data: await data.bootstrap(prisma) });
+  app.get("/api/bootstrap", requireAuth, asyncHandler(async (req, res) => {
+    const payload = await data.bootstrap(prisma);
+    res.json({ data: req.session.user.role === "installer" ? installerBootstrap(payload) : payload });
   }));
 
-  app.get("/api/settings", requireAuth, asyncHandler(async (_req, res) => {
+  app.get("/api/users", requireRole("admin"), asyncHandler(async (_req, res) => {
+    res.json({ items: await users.listUsers(prisma) });
+  }));
+
+  app.post("/api/users", requireRole("admin"), asyncHandler(async (req, res) => {
+    res.json({ item: await users.createUser(prisma, req.body || {}) });
+  }));
+
+  app.put("/api/users/:id", requireRole("admin"), asyncHandler(async (req, res) => {
+    res.json({ item: await users.updateUser(prisma, req.params.id, req.body || {}) });
+  }));
+
+  app.get("/api/settings", requireRole("admin"), asyncHandler(async (_req, res) => {
     res.json({ item: await data.getSettings(prisma) });
   }));
 
-  app.put("/api/settings", requireAuth, asyncHandler(async (req, res) => {
+  app.put("/api/settings", requireRole("admin"), asyncHandler(async (req, res) => {
     res.json({ item: await data.saveSettings(prisma, req.body || {}) });
   }));
 
-  app.post("/api/advice-assumptions/refresh", requireAuth, asyncHandler(async (_req, res) => {
+  app.post("/api/advice-assumptions/refresh", requireRole("admin"), asyncHandler(async (_req, res) => {
     res.json({ item: await data.refreshAdviceAssumptions(prisma) });
   }));
 
-  app.post("/api/counters/:type/next", requireAuth, asyncHandler(async (req, res) => {
+  app.post("/api/counters/:type/next", requireRole("admin"), asyncHandler(async (req, res) => {
     res.json({ value: await data.nextNumber(prisma, req.params.type) });
   }));
 
-  app.get("/api/counters/:type/peek", requireAuth, asyncHandler(async (req, res) => {
+  app.get("/api/counters/:type/peek", requireRole("admin"), asyncHandler(async (req, res) => {
     res.json({ value: await data.peekNumber(prisma, req.params.type) });
   }));
 
   app.get("/api/collections/:collection", requireAuth, asyncHandler(async (req, res) => {
     const collection = requireCollection(req);
+    if (!canReadCollection(req.session.user, collection)) {
+      res.status(403).json({ error: "Geen toegang." });
+      return;
+    }
     res.json({ items: await data.listCollection(prisma, collection) });
   }));
 
-  app.post("/api/collections/:collection", requireAuth, asyncHandler(async (req, res) => {
+  app.post("/api/collections/:collection", requireRole("admin"), asyncHandler(async (req, res) => {
     const collection = requireCollection(req);
     res.json({ item: await data.upsert(prisma, collection, req.body || {}) });
   }));
 
-  app.put("/api/collections/:collection", requireAuth, asyncHandler(async (req, res) => {
+  app.put("/api/collections/:collection", requireRole("admin"), asyncHandler(async (req, res) => {
     const collection = requireCollection(req);
     res.json({ data: await data.replaceCollection(prisma, collection, req.body.items || []) });
   }));
 
-  app.delete("/api/collections/:collection/:id", requireAuth, asyncHandler(async (req, res) => {
+  app.delete("/api/collections/:collection/:id", requireRole("admin"), asyncHandler(async (req, res) => {
     const collection = requireCollection(req);
     await data.remove(prisma, collection, req.params.id);
     res.json({ ok: true });
   }));
 
-  app.get("/api/backup/export", requireAuth, asyncHandler(async (_req, res) => {
+  app.put("/api/installations/:id/workorder", requireRole("admin", "installer"), asyncHandler(async (req, res) => {
+    res.json({ item: await data.saveInstallationWorkOrder(prisma, req.params.id, req.body || {}) });
+  }));
+
+  app.get("/api/backup/export", requireRole("admin"), asyncHandler(async (_req, res) => {
     res.json(await data.exportData(prisma));
   }));
 
-  app.post("/api/backup/import", requireAuth, asyncHandler(async (req, res) => {
+  app.post("/api/backup/import", requireRole("admin"), asyncHandler(async (req, res) => {
     res.json({ data: await data.importData(prisma, req.body) });
   }));
 
-  app.post("/api/admin/reset", requireAuth, asyncHandler(async (_req, res) => {
+  app.post("/api/admin/reset", requireRole("admin"), asyncHandler(async (_req, res) => {
     res.json({ data: await data.resetData(prisma) });
   }));
 
@@ -192,6 +238,7 @@ async function main() {
   }
   const config = loadConfig();
   const app = createApp(config);
+  await users.ensureBootstrapAdmin(prisma, config);
   await data.bootstrap(prisma);
   app.listen(config.port, () => {
     console.log(`Climature Bedrijfsportaal draait op http://localhost:${config.port}`);

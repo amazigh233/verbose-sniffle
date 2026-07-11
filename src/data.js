@@ -3,7 +3,8 @@
 const { DEFAULT_PRODUCTS, DEFAULT_SETTINGS } = require("./defaults");
 const { normalizeAssumptions, refreshAdviceAssumptions: refreshAssumptionsFromSources } = require("./advice-assumptions");
 
-const COLLECTIONS = ["customers", "customerNotes", "products", "quotes", "invoices", "installations", "advices"];
+const COLLECTIONS = ["customers", "customerNotes", "customerDocuments", "products", "quotes", "invoices", "installations", "advices", "salesOpportunities"];
+const SALES_STAGES = ["lead", "contact", "advies", "offerte_maken", "offerte_verstuurd", "gewonnen", "verloren"];
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -95,6 +96,16 @@ function serializeInvoice(invoice) {
   };
 }
 
+function serializeSalesOpportunity(opportunity) {
+  return {
+    ...opportunity,
+    customerId: opportunity.customerId || "",
+    quoteId: opportunity.quoteId || "",
+    createdAt: iso(opportunity.createdAt),
+    updatedAt: iso(opportunity.updatedAt)
+  };
+}
+
 async function ensureDefaults(prisma) {
   await prisma.setting.upsert({
     where: { key: "settings" },
@@ -178,6 +189,7 @@ async function refreshOverdueInvoices(prisma) {
 async function listCollection(prisma, collection) {
   if (collection === "customers") return prisma.customer.findMany({ orderBy: { createdAt: "desc" } });
   if (collection === "customerNotes") return prisma.customerNote.findMany({ orderBy: { createdAt: "desc" } });
+  if (collection === "customerDocuments") return prisma.customerDocument.findMany({ orderBy: { createdAt: "desc" } });
   if (collection === "products") return prisma.product.findMany({ orderBy: [{ category: "asc" }, { brand: "asc" }, { name: "asc" }] });
   if (collection === "quotes") {
     const rows = await prisma.quote.findMany({ include: { lines: true }, orderBy: { createdAt: "desc" } });
@@ -189,6 +201,10 @@ async function listCollection(prisma, collection) {
   }
   if (collection === "installations") return prisma.installation.findMany({ orderBy: [{ plannedDate: "asc" }, { startTime: "asc" }] });
   if (collection === "advices") return prisma.advice.findMany({ orderBy: { createdAt: "desc" } });
+  if (collection === "salesOpportunities") {
+    const rows = await prisma.salesOpportunity.findMany({ orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }] });
+    return rows.map(serializeSalesOpportunity);
+  }
   throw Object.assign(new Error("Onbekende collectie."), { status: 404 });
 }
 
@@ -227,6 +243,29 @@ function customerNoteData(item) {
     date: item.date || today(),
     type: item.type || "Notitie",
     body: String(item.body || "").trim(),
+    createdAt: asDate(item.createdAt) || undefined
+  });
+}
+
+function customerDocumentData(item) {
+  const mimeType = String(item.mimeType || "application/pdf").trim();
+  const fileName = String(item.fileName || "").trim();
+  const content = String(item.content || "").trim();
+  const size = parseInt(item.size, 10) || 0;
+  if (!item.customerId) throw Object.assign(new Error("Klant ontbreekt bij PDF-document."), { status: 400 });
+  if (!fileName) throw Object.assign(new Error("Bestandsnaam ontbreekt."), { status: 400 });
+  if (mimeType !== "application/pdf" && !fileName.toLowerCase().endsWith(".pdf")) {
+    throw Object.assign(new Error("Alleen PDF-bestanden kunnen worden toegevoegd."), { status: 400 });
+  }
+  if (!content) throw Object.assign(new Error("PDF-bestand is leeg."), { status: 400 });
+  if (size > 8 * 1024 * 1024) throw Object.assign(new Error("PDF is groter dan 8 MB."), { status: 400 });
+  return stripUndefined({
+    id: item.id || undefined,
+    customerId: item.customerId,
+    fileName,
+    mimeType: "application/pdf",
+    size,
+    content,
     createdAt: asDate(item.createdAt) || undefined
   });
 }
@@ -310,6 +349,12 @@ function installationData(item) {
   });
 }
 
+function workOrderData(item) {
+  const status = ["ingepland", "uitgevoerd", "geannuleerd"].includes(item.status) ? item.status : "ingepland";
+  const workOrder = item.workOrder && typeof item.workOrder === "object" ? item.workOrder : {};
+  return { status, workOrder };
+}
+
 function adviceData(item) {
   return stripUndefined({
     id: item.id || undefined,
@@ -329,6 +374,45 @@ function adviceData(item) {
   });
 }
 
+function salesOpportunityData(item) {
+  const title = String(item.title || "").trim();
+  const customerId = item.customerId || null;
+  const contactName = String(item.contactName || "").trim();
+  const stage = SALES_STAGES.includes(item.stage) ? item.stage : "lead";
+  const probability = Math.max(0, Math.min(100, parseNumber(item.probability)));
+  if (!title) throw Object.assign(new Error("Titel ontbreekt bij saleskans."), { status: 400 });
+  if (!customerId && !contactName) {
+    throw Object.assign(new Error("Vul een contactnaam in of koppel een klant."), { status: 400 });
+  }
+  return stripUndefined({
+    id: item.id || undefined,
+    title,
+    stage,
+    customerId,
+    quoteId: item.quoteId || null,
+    contactName,
+    companyName: String(item.companyName || "").trim(),
+    email: String(item.email || "").trim(),
+    phone: String(item.phone || "").trim(),
+    source: String(item.source || "").trim(),
+    expectedValue: parseNumber(item.expectedValue),
+    probability,
+    expectedCloseDate: String(item.expectedCloseDate || ""),
+    followUpDate: String(item.followUpDate || ""),
+    notes: String(item.notes || ""),
+    lostReason: String(item.lostReason || ""),
+    createdAt: asDate(item.createdAt) || undefined
+  });
+}
+
+function quoteStage(status) {
+  if (status === "geaccepteerd" || status === "geaccepteerd/aanbetaling") return { stage: "gewonnen", probability: 100, lostReason: "" };
+  if (status === "afgewezen") return { stage: "verloren", probability: 0, lostReason: "Offerte afgewezen" };
+  if (status === "verstuurd") return { stage: "offerte_verstuurd" };
+  if (status === "concept") return { stage: "offerte_maken" };
+  return null;
+}
+
 async function upsertQuote(prisma, item) {
   const data = quoteData(item);
   const id = data.header.id;
@@ -340,6 +424,13 @@ async function upsertQuote(prisma, item) {
     if (data.lines.length) {
       await tx.quoteLine.createMany({
         data: data.lines.map((line, index) => ({ ...line, quoteId: quote.id, position: index }))
+      });
+    }
+    const syncedStage = quoteStage(quote.status);
+    if (syncedStage) {
+      await tx.salesOpportunity.updateMany({
+        where: { quoteId: quote.id },
+        data: syncedStage
       });
     }
     return tx.quote.findUnique({ where: { id: quote.id }, include: { lines: true } });
@@ -390,6 +481,12 @@ async function upsert(prisma, collection, item) {
       ? prisma.customerNote.update({ where: { id: data.id }, data })
       : prisma.customerNote.create({ data });
   }
+  if (collection === "customerDocuments") {
+    const data = customerDocumentData(item);
+    return data.id
+      ? prisma.customerDocument.update({ where: { id: data.id }, data })
+      : prisma.customerDocument.create({ data });
+  }
   if (collection === "products") {
     const data = productData(item);
     return data.id
@@ -410,28 +507,44 @@ async function upsert(prisma, collection, item) {
       ? prisma.advice.update({ where: { id: data.id }, data })
       : prisma.advice.create({ data });
   }
+  if (collection === "salesOpportunities") {
+    const data = salesOpportunityData(item);
+    const saved = data.id
+      ? await prisma.salesOpportunity.update({ where: { id: data.id }, data })
+      : await prisma.salesOpportunity.create({ data });
+    return serializeSalesOpportunity(saved);
+  }
   throw Object.assign(new Error("Onbekende collectie."), { status: 404 });
 }
 
 async function remove(prisma, collection, id) {
   if (collection === "customers") return prisma.customer.delete({ where: { id } });
   if (collection === "customerNotes") return prisma.customerNote.delete({ where: { id } });
+  if (collection === "customerDocuments") return prisma.customerDocument.delete({ where: { id } });
   if (collection === "products") return prisma.product.delete({ where: { id } });
   if (collection === "quotes") return prisma.quote.delete({ where: { id } });
   if (collection === "invoices") return prisma.invoice.delete({ where: { id } });
   if (collection === "installations") return prisma.installation.delete({ where: { id } });
   if (collection === "advices") return prisma.advice.delete({ where: { id } });
+  if (collection === "salesOpportunities") return prisma.salesOpportunity.delete({ where: { id } });
   throw Object.assign(new Error("Onbekende collectie."), { status: 404 });
+}
+
+async function saveInstallationWorkOrder(prisma, id, item) {
+  const data = workOrderData(item || {});
+  return prisma.installation.update({ where: { id }, data });
 }
 
 async function clearBusinessData(tx) {
   await tx.invoiceLine.deleteMany();
   await tx.quoteLine.deleteMany();
+  await tx.salesOpportunity.deleteMany();
   await tx.installation.deleteMany();
   await tx.advice.deleteMany();
   await tx.invoice.deleteMany();
   await tx.quote.deleteMany();
   await tx.customerNote.deleteMany();
+  await tx.customerDocument.deleteMany();
   await tx.customer.deleteMany();
   await tx.product.deleteMany();
   await tx.counter.deleteMany();
@@ -450,6 +563,7 @@ async function replaceAll(prisma, payload) {
     for (const product of payload.products || []) await tx.product.create({ data: productData(product) });
     for (const customer of payload.customers || []) await tx.customer.create({ data: customerData(customer) });
     for (const note of payload.customerNotes || []) await tx.customerNote.create({ data: customerNoteData(note) });
+    for (const document of payload.customerDocuments || []) await tx.customerDocument.create({ data: customerDocumentData(document) });
     for (const quote of payload.quotes || []) {
       const data = quoteData(quote);
       const created = await tx.quote.create({ data: data.header });
@@ -462,6 +576,7 @@ async function replaceAll(prisma, payload) {
     }
     for (const installation of payload.installations || []) await tx.installation.create({ data: installationData(installation) });
     for (const advice of payload.advices || []) await tx.advice.create({ data: adviceData(advice) });
+    for (const opportunity of payload.salesOpportunities || []) await tx.salesOpportunity.create({ data: salesOpportunityData(opportunity) });
     const counters = payload.counters || {};
     for (const [key, value] of Object.entries(counters)) {
       await tx.counter.create({ data: { key, value: parseInt(value, 10) || 0 } });
@@ -515,6 +630,7 @@ module.exports = {
   replaceCollection,
   resetData,
   saveSettings,
+  saveInstallationWorkOrder,
   refreshAdviceAssumptions,
   upsert
 };

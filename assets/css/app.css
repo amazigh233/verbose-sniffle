@@ -17,6 +17,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { min-height: 100%; }
 body {
   min-height: 100%;
@@ -320,6 +321,18 @@ body:not(.auth-locked) .login-screen {
   flex-wrap: wrap;
   gap: 10px;
   align-items: center;
+}
+
+.document-upload {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
 }
 
 .btn,
@@ -759,6 +772,94 @@ body:not(.auth-locked) .login-screen {
   height: 100%;
   border-radius: inherit;
   background: var(--accent-dark);
+}
+
+.sales-funnel-panel {
+  overflow: hidden;
+}
+
+.sales-board {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(220px, 1fr));
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.sales-stage {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 220px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.sales-stage-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 48px;
+}
+
+.sales-stage-head strong,
+.sales-stage-head span {
+  display: block;
+}
+
+.sales-stage-head strong {
+  color: var(--brand);
+}
+
+.sales-stage-head span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.sales-card-list {
+  display: grid;
+  gap: 10px;
+}
+
+.sales-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.sales-card-top {
+  display: grid;
+  gap: 8px;
+}
+
+.sales-card h3 {
+  margin: 0;
+  color: var(--brand);
+  font-size: 16px;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.sales-card p {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.sales-card-meta {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
 }
 
 .rank-item {
@@ -1325,6 +1426,10 @@ body:not(.auth-locked) .login-screen {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .sales-board {
+    grid-template-columns: repeat(4, minmax(220px, 1fr));
+  }
+
   .line-row {
     grid-template-columns: minmax(180px, 1fr) 76px 82px 108px;
   }
@@ -1381,8 +1486,18 @@ body:not(.auth-locked) .login-screen {
   .mini-metrics,
   .quick-actions,
   .product-grid,
+  .document-upload,
   .advice-products {
     grid-template-columns: 1fr;
+  }
+
+  .sales-board {
+    grid-template-columns: 1fr;
+    overflow-x: visible;
+  }
+
+  .sales-stage {
+    min-width: 0;
   }
 
   .line-row,
@@ -1489,6 +1604,32 @@ body:not(.auth-locked) .login-screen {
   fill: var(--muted);
   font-size: 11px;
   font-weight: 600;
+}
+
+.account-create {
+  margin-bottom: 16px;
+}
+
+.account-list {
+  display: grid;
+  gap: 12px;
+}
+
+.account-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+@media (max-width: 900px) {
+  .account-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media print {
