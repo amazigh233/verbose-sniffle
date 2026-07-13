@@ -1,0 +1,7 @@
+FROM alpine:3.22
+
+RUN apk add --no-cache aws-cli postgresql17-client tzdata
+COPY scripts/backup-to-s3.sh /usr/local/bin/backup-to-s3
+RUN chmod 0555 /usr/local/bin/backup-to-s3
+
+CMD ["/usr/local/bin/backup-to-s3"]

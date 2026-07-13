@@ -239,6 +239,13 @@
     }).join("");
   }
 
+  function employeeOptions(selectedId) {
+    var employees = S.read("employeeDirectory", []);
+    return '<option value="">Geen HR-koppeling / vrije tekst</option>' + employees.map(function (employee) {
+      return '<option value="' + S.escapeHtml(employee.id) + '"' + (employee.id === selectedId ? " selected" : "") + '>' + S.escapeHtml(employee.displayName + (employee.jobTitle ? " · " + employee.jobTitle : "")) + "</option>";
+    }).join("");
+  }
+
   function renderForm(installation) {
     var data = baseInstallation(installation || {});
     return [
@@ -250,7 +257,8 @@
       '<label class="field">Datum<input name="plannedDate" type="date" required value="' + S.escapeHtml(data.plannedDate || S.today()) + '"></label>',
       '<label class="field">Starttijd<input name="startTime" type="time" value="' + S.escapeHtml(data.startTime || "09:00") + '"></label>',
       '<label class="field">Duur in uren<input name="durationHours" type="number" min="0.5" step="0.5" value="' + S.escapeHtml(data.durationHours || 4) + '"></label>',
-      '<label class="field">Monteur<input name="installer" value="' + S.escapeHtml(data.installer || "") + '" placeholder="Naam monteur"></label>',
+      S.isAdmin() && S.isHrPortalEnabled() ? '<label class="field">Werknemer<select name="employeeId">' + employeeOptions(data.employeeId || "") + '</select></label>' : "",
+      '<label class="field">Monteur (weergavenaam)<input name="installer" value="' + S.escapeHtml(data.installer || "") + '" placeholder="Naam monteur"></label>',
       '<label class="field">Status<select name="status">' + statusOptions(data.status || "ingepland") + '</select></label>',
       '<label class="field full">Notities<textarea name="notes" rows="5">' + S.escapeHtml(data.notes || "") + "</textarea></label>",
       '<input type="hidden" name="quoteId" value="' + S.escapeHtml(data.quoteId || "") + '">',

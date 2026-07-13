@@ -8,16 +8,132 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  username     String   @unique
-  passwordHash String
-  role         String   @default("installer")
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id               String                @id @default(cuid())
+  username         String                @unique
+  passwordHash     String
+  role             String                @default("installer")
+  active           Boolean               @default(true)
+  mfaSecretCipher  Bytes?
+  mfaSecretIv      Bytes?
+  mfaSecretTag     Bytes?
+  mfaEnabledAt     DateTime?
+  mfaLastUsedStep  Int?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  recoveryCodes    UserMfaRecoveryCode[]
+  createdContracts EmploymentContract[]  @relation("ContractCreatedBy")
+  createdNotes     EmployeeNote[]        @relation("NoteCreatedBy")
+  updatedNotes     EmployeeNote[]        @relation("NoteUpdatedBy")
+  hrAuditEvents    HrAuditEvent[]        @relation("HrAuditActor")
 
   @@index([role])
   @@index([active])
+}
+
+model UserMfaRecoveryCode {
+  id        String    @id @default(cuid())
+  userId    String
+  codeHash  String
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
+}
+
+model Employee {
+  id                String               @id @default(cuid())
+  employeeNumber    String               @unique
+  firstName         String
+  lastName          String
+  workEmail         String               @default("")
+  workPhone         String               @default("")
+  jobTitle          String               @default("")
+  department        String               @default("")
+  status            String               @default("active")
+  employmentType    String               @default("permanent")
+  hoursPerWeek      Float                @default(0)
+  startDate         String
+  endDate           String               @default("")
+  privateDataCipher Bytes?
+  privateDataIv     Bytes?
+  privateDataTag    Bytes?
+  archivedAt        DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  contracts         EmploymentContract[]
+  notes             EmployeeNote[]
+  installations     Installation[]
+
+  @@index([status])
+  @@index([department])
+  @@index([lastName, firstName])
+  @@index([endDate])
+}
+
+model EmploymentContract {
+  id           String   @id @default(cuid())
+  employeeId   String
+  title        String
+  contractType String   @default("permanent")
+  status       String   @default("active")
+  startDate    String
+  endDate      String   @default("")
+  hoursPerWeek Float    @default(0)
+  description  String   @default("")
+  fileName     String
+  mimeType     String   @default("application/pdf")
+  size         Int
+  sha256       String
+  scanStatus   String   @default("quarantine")
+  scanMessage  String   @default("")
+  fileCipher   Bytes
+  fileIv       Bytes
+  fileTag      Bytes
+  keyVersion   String   @default("v1")
+  createdById  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  employee     Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  createdBy    User     @relation("ContractCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([employeeId])
+  @@index([endDate])
+  @@index([scanStatus])
+}
+
+model EmployeeNote {
+  id          String   @id @default(cuid())
+  employeeId  String
+  category    String   @default("general")
+  bodyCipher  Bytes
+  bodyIv      Bytes
+  bodyTag     Bytes
+  keyVersion  String   @default("v1")
+  createdById String
+  updatedById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  createdBy   User     @relation("NoteCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy   User     @relation("NoteUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@index([employeeId, createdAt])
+}
+
+model HrAuditEvent {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String
+  metadata   Json?
+  ipHash     String   @default("")
+  createdAt  DateTime @default(now())
+  actor      User?    @relation("HrAuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
 }
 
 model Customer {
@@ -220,24 +336,27 @@ model InvoiceLine {
 }
 
 model Installation {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   customerId    String
-  quoteId       String   @default("")
-  quoteNumber   String   @default("")
+  quoteId       String    @default("")
+  quoteNumber   String    @default("")
   plannedDate   String
-  startTime     String   @default("09:00")
-  durationHours Float    @default(4)
-  status        String   @default("ingepland")
-  installer     String   @default("")
-  notes         String   @default("")
+  startTime     String    @default("09:00")
+  durationHours Float     @default(4)
+  status        String    @default("ingepland")
+  installer     String    @default("")
+  employeeId    String?
+  notes         String    @default("")
   workOrder     Json?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  customer      Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  customer      Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  employee      Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
 
   @@index([customerId])
   @@index([quoteId])
   @@index([plannedDate])
+  @@index([employeeId])
 }
 
 model Setting {

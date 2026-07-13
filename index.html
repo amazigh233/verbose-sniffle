@@ -60,6 +60,7 @@
         <a href="#products" data-route-link="products">Producten</a>
         <a href="#messages" data-route-link="messages">Tekstgenerator</a>
         <a href="#settings" data-route-link="settings">Instellingen</a>
+        <a href="/medewerkers/" id="hr-portal-link" hidden>Werknemersportaal</a>
       </nav>
     </aside>
 
@@ -91,14 +92,5 @@
   <script src="assets/js/advice.js"></script>
   <script src="assets/js/reports.js"></script>
   <script src="assets/js/app.js"></script>
-  <script>
-    if ("serviceWorker" in navigator) {
-      window.addEventListener("load", function () {
-        navigator.serviceWorker.register("service-worker.js").catch(function () {
-          // Service workers werken niet via file://; app blijft gewoon werken.
-        });
-      });
-    }
-  </script>
 </body>
 </html>

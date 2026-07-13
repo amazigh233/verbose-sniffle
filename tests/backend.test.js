@@ -6,8 +6,10 @@ const { createApp } = require("../src/server");
 const { prisma } = require("../src/prisma");
 const data = require("../src/data");
 const { assumptionsFromCbsRows } = require("../src/advice-assumptions");
+const { authenticator, encrypt, decrypt, scanWithClamav } = require("../src/hr-security");
 
 let app;
+let hrApp;
 
 beforeAll(async () => {
   const adminPasswordHash = await bcrypt.hash("test-password", 4);
@@ -20,9 +22,24 @@ beforeAll(async () => {
     nodeEnv: "test",
     isProduction: false
   });
+  hrApp = createApp({
+    databaseUrl: process.env.DATABASE_URL,
+    sessionSecret: "test-hr-session-secret-at-least-32-chars",
+    adminUsername: "admin",
+    adminPasswordHash,
+    port: 0,
+    nodeEnv: "test",
+    isProduction: false,
+    hrPortalEnabled: true,
+    hrEncryptionKey: Buffer.alloc(32, 7).toString("base64"),
+    hrKeyVersion: "v1",
+    allowUnscannedHrFiles: true
+  });
 });
 
 beforeEach(async () => {
+  await prisma.hrAuditEvent.deleteMany();
+  await prisma.employee.deleteMany();
   await prisma.user.deleteMany();
   await data.resetData(prisma);
 });
@@ -30,6 +47,7 @@ beforeEach(async () => {
 afterAll(async () => {
   await prisma.$disconnect();
   if (app && app.locals && app.locals.pool) await app.locals.pool.end();
+  if (hrApp && hrApp.locals && hrApp.locals.pool) await hrApp.locals.pool.end();
 });
 
 function agent() {
@@ -59,6 +77,14 @@ async function createInstaller(client, username = "installer") {
     password: "installer-pass",
     role: "installer"
   }).expect(200)).body.item;
+}
+
+async function enableHr(client) {
+  const setup = await client.post("/api/hr/mfa/setup/start").send({ password: "test-password" }).expect(200);
+  const code = authenticator.generate(setup.body.secret);
+  const confirmed = await client.post("/api/hr/mfa/setup/confirm").send({ code }).expect(200);
+  expect(confirmed.body.recoveryCodes).toHaveLength(10);
+  return confirmed.body.recoveryCodes;
 }
 
 describe("auth", () => {
@@ -308,6 +334,174 @@ describe("business data", () => {
     await data.resetData(prisma);
     await client.post("/api/backup/import").send(backup).expect(200);
     expect((await client.get("/api/settings").expect(200)).body.item.companyName).toBe("Climature Test");
+  });
+});
+
+describe("secure HR portal", () => {
+  function hrAgent() {
+    return request.agent(hrApp);
+  }
+
+  async function createEmployee(client, overrides = {}) {
+    return (await client.post("/api/hr/employees").send({
+      employeeNumber: "CL-001",
+      firstName: "Sam",
+      lastName: "Monteur",
+      workEmail: "sam@climature.nl",
+      workPhone: "0612345678",
+      jobTitle: "Installateur",
+      department: "Uitvoering",
+      status: "active",
+      employmentType: "permanent",
+      hoursPerWeek: 40,
+      startDate: "2026-01-01",
+      privateEmail: "sam.prive@example.com",
+      privatePhone: "0687654321",
+      address: "Privéstraat 1",
+      postalCode: "1234 AB",
+      city: "Utrecht",
+      emergencyContactName: "Alex",
+      emergencyContactPhone: "0611111111",
+      ...overrides
+    }).expect(201)).body.item;
+  }
+
+  it("blocks installers from the HR shell, APIs and employee identifiers", async () => {
+    const admin = hrAgent();
+    await login(admin);
+    await admin.post("/api/users").send({ username: "installer", password: "installer-pass", role: "installer" }).expect(200);
+    const installer = hrAgent();
+    await installer.post("/api/auth/login").send({ username: "installer", password: "installer-pass" }).expect(200);
+    await installer.get("/medewerkers/").expect(403);
+    await installer.get("/api/hr/session").expect(403);
+    await installer.get("/api/hr/employees").expect(403);
+    await installer.get("/api/admin/employee-directory").expect(403);
+  });
+
+  it("sets up MFA, stores private data encrypted and audits employee actions", async () => {
+    const client = hrAgent();
+    await login(client);
+    const recoveryCodes = await enableHr(client);
+    const employee = await createEmployee(client);
+    expect(employee.privateEmail).toBe("sam.prive@example.com");
+
+    const stored = await prisma.employee.findUnique({ where: { id: employee.id } });
+    expect(stored.privateDataCipher).toBeInstanceOf(Uint8Array);
+    expect(Buffer.from(stored.privateDataCipher).toString("utf8")).not.toContain("sam.prive@example.com");
+
+    await client.post(`/api/hr/employees/${employee.id}/notes`).send({ category: "agreement", body: "Interne afspraak" }).expect(201);
+    const note = await prisma.employeeNote.findFirst({ where: { employeeId: employee.id } });
+    expect(Buffer.from(note.bodyCipher).toString("utf8")).not.toContain("Interne afspraak");
+
+    const audit = await client.get(`/api/hr/employees/${employee.id}/audit`).expect(200);
+    expect(audit.body.items.map((item) => item.action)).toEqual(expect.arrayContaining(["employee.created", "note.created"]));
+
+    await client.put(`/api/hr/employees/${employee.id}`).send({ ...employee, status: "archived" }).expect(200);
+    await client.post(`/api/hr/employees/${employee.id}/purge`).send({
+      confirmEmployeeNumber: employee.employeeNumber,
+      password: "test-password",
+      code: recoveryCodes[0]
+    }).expect(200);
+    expect(await prisma.employee.findUnique({ where: { id: employee.id } })).toBeNull();
+    expect(await prisma.hrAuditEvent.findFirst({ where: { entityId: employee.id, action: "employee.purged" } })).toBeTruthy();
+  });
+
+  it("scans, encrypts and downloads PDF contracts without exposing them in backups", async () => {
+    const client = hrAgent();
+    await login(client);
+    await enableHr(client);
+    const employee = await createEmployee(client);
+    const pdf = Buffer.from("%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF");
+    const uploaded = await client.post(`/api/hr/employees/${employee.id}/contracts`)
+      .field("title", "Arbeidsovereenkomst")
+      .field("contractType", "permanent")
+      .field("startDate", "2026-01-01")
+      .field("endDate", "2027-01-01")
+      .field("hoursPerWeek", "40")
+      .attach("file", pdf, { filename: "contract.pdf", contentType: "application/pdf" })
+      .expect(201);
+    expect(uploaded.body.item.scanStatus).toBe("clean");
+
+    const stored = await prisma.employmentContract.findUnique({ where: { id: uploaded.body.item.id } });
+    expect(Buffer.from(stored.fileCipher).equals(pdf)).toBe(false);
+    const downloaded = await client.get(`/api/hr/employees/${employee.id}/contracts/${stored.id}/download`).expect(200);
+    expect(Buffer.from(downloaded.body).equals(pdf)).toBe(true);
+    expect(downloaded.headers["cache-control"]).toContain("no-store");
+
+    await client.post(`/api/hr/employees/${employee.id}/contracts`)
+      .field("title", "Ongeldig")
+      .field("startDate", "2026-01-01")
+      .attach("file", Buffer.from("not a pdf"), { filename: "fake.pdf", contentType: "application/pdf" })
+      .expect(400);
+
+    const backup = await client.get("/api/backup/export").expect(200);
+    expect(backup.body.data.employees).toBeUndefined();
+    expect(JSON.stringify(backup.body)).not.toContain("sam.prive@example.com");
+    expect(JSON.stringify(backup.body)).not.toContain("contract.pdf");
+  });
+
+  it("provides only a safe active-worker projection to CRM installation planning", async () => {
+    const client = hrAgent();
+    await login(client);
+    await enableHr(client);
+    const employee = await createEmployee(client);
+    const directory = await client.get("/api/admin/employee-directory").expect(200);
+    expect(directory.body.items).toEqual([{ id: employee.id, displayName: "Sam Monteur", jobTitle: "Installateur", active: true }]);
+    expect(JSON.stringify(directory.body)).not.toContain("sam.prive@example.com");
+
+    const customer = await createCustomer(client);
+    const installation = (await client.post("/api/collections/installations").send({
+      customerId: customer.id,
+      plannedDate: "2026-08-01",
+      employeeId: employee.id,
+      installer: "Wordt overschreven"
+    }).expect(200)).body.item;
+    expect(installation.installer).toBe("Sam Monteur");
+    expect(installation.employeeId).toBe(employee.id);
+
+    await client.post("/api/users").send({ username: "field", password: "installer-pass", role: "installer" }).expect(200);
+    const installer = hrAgent();
+    await installer.post("/api/auth/login").send({ username: "field", password: "installer-pass" }).expect(200);
+    const bootstrap = await installer.get("/api/bootstrap").expect(200);
+    expect(bootstrap.body.data.installations[0].installer).toBe("Sam Monteur");
+    expect(bootstrap.body.data.installations[0].employeeId).toBeUndefined();
+  });
+
+  it("enforces origin, CSRF tokens and immediate session invalidation", async () => {
+    const client = hrAgent();
+    await login(client);
+    const session = await client.get("/api/auth/session").expect(200);
+    await client.post("/api/users").set("Host", "portal.test").set("Origin", "http://portal.test").send({ username: "blocked", password: "blocked-password", role: "installer" }).expect(403);
+    await client.post("/api/users").set("Host", "portal.test").set("Origin", "http://portal.test").set("X-CSRF-Token", session.body.csrfToken).send({ username: "allowed", password: "allowed-password", role: "installer" }).expect(200);
+
+    const installer = hrAgent();
+    await installer.post("/api/auth/login").send({ username: "allowed", password: "allowed-password" }).expect(200);
+    const allowed = (await client.get("/api/users").expect(200)).body.items.find((item) => item.username === "allowed");
+    await client.put(`/api/users/${allowed.id}`).send({ active: false }).expect(200);
+    await installer.get("/api/bootstrap").expect(401);
+
+    await request(hrApp).get("/package.json").expect(404);
+    await request(hrApp).get("/hr/index.html").expect(404);
+    const root = await request(hrApp).get("/").expect(200);
+    expect(root.headers["content-security-policy"]).toContain("script-src 'self'");
+    expect(root.headers["content-security-policy"]).not.toContain("script-src 'self' 'unsafe-inline'");
+  });
+
+  it("rejects replayed recovery codes and fails closed without a malware scanner", async () => {
+    const client = hrAgent();
+    await login(client);
+    const recoveryCodes = await enableHr(client);
+    await client.post("/api/hr/lock").expect(200);
+    await client.post("/api/hr/elevate").send({ password: "test-password", code: recoveryCodes[0] }).expect(200);
+    await client.post("/api/hr/lock").expect(200);
+    await client.post("/api/hr/elevate").send({ password: "test-password", code: recoveryCodes[0] }).expect(401);
+
+    const scan = await scanWithClamav({ isProduction: true, clamavHost: "", allowUnscannedHrFiles: false }, Buffer.from("%PDF-test"));
+    expect(scan).toMatchObject({ clean: false, unavailable: true });
+
+    const config = { hrEncryptionKey: Buffer.alloc(32, 7).toString("base64"), hrKeyVersion: "v1" };
+    const encrypted = encrypt(config, "gevoelig");
+    expect(() => decrypt({ ...config, hrEncryptionKey: Buffer.alloc(32, 8).toString("base64") }, encrypted.cipher, encrypted.iv, encrypted.tag)).toThrow(/veilig worden geopend/);
   });
 });
 

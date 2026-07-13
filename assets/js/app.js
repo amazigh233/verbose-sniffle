@@ -53,6 +53,8 @@
       link.classList.toggle("is-active", visible && link.dataset.routeLink === baseRoute);
     });
     actionsEl.innerHTML = topActions(baseRoute) + '<button class="ghost-button" data-action="account">Mijn account</button><button class="ghost-button" data-action="logout">Uitloggen</button>';
+    var hrLink = document.getElementById("hr-portal-link");
+    if (hrLink) hrLink.hidden = !(S.isAdmin() && S.isHrPortalEnabled());
     document.body.classList.remove("sidebar-open");
   }
 
@@ -1149,6 +1151,11 @@
 
   function init() {
     C.app = { navigate: navigate, toast: toast, render: guardedRender, state: {} };
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("service-worker.js").catch(function () {});
+      });
+    }
     window.addEventListener("hashchange", guardedRender);
     document.addEventListener("click", function (event) {
       Promise.resolve(handleClick(event)).catch(function (error) {
@@ -1166,6 +1173,8 @@
       });
     });
     S.init().then(function () {
+      return S.listEmployeeDirectory().catch(function () { return []; });
+    }).then(function () {
       guardedRender();
     }).catch(function (error) {
       showLogin();

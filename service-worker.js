@@ -1,7 +1,7 @@
 /* Climature Bedrijfsportaal service worker — offline app-shell cache. */
 "use strict";
 
-var CACHE_VERSION = "climature-shell-v4";
+var CACHE_VERSION = "climature-shell-v5";
 
 var APP_SHELL = [
   "./",
@@ -50,6 +50,7 @@ self.addEventListener("fetch", function (event) {
   var url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.indexOf("/api/") === 0) return;
+  if (url.pathname.indexOf("/medewerkers") === 0) return;
 
   // Navigatieverzoeken: netwerk eerst, val terug op gecachete index.html (offline).
   if (request.mode === "navigate") {

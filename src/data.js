@@ -343,6 +343,7 @@ function installationData(item) {
     durationHours: parseNumber(item.durationHours) || 4,
     status: item.status || "ingepland",
     installer: item.installer || "",
+    employeeId: item.employeeId || null,
     notes: item.notes || "",
     workOrder,
     createdAt: asDate(item.createdAt) || undefined
@@ -497,6 +498,11 @@ async function upsert(prisma, collection, item) {
   if (collection === "invoices") return upsertInvoice(prisma, item);
   if (collection === "installations") {
     const data = installationData(item);
+    if (data.employeeId) {
+      const employee = await prisma.employee.findFirst({ where: { id: data.employeeId, status: "active" }, select: { firstName: true, lastName: true } });
+      if (!employee) throw Object.assign(new Error("Geselecteerde werknemer is niet actief."), { status: 400 });
+      data.installer = `${employee.firstName} ${employee.lastName}`.trim();
+    }
     return data.id
       ? prisma.installation.update({ where: { id: data.id }, data })
       : prisma.installation.create({ data });
@@ -593,11 +599,13 @@ async function replaceCollection(prisma, collection, items) {
 }
 
 async function exportData(prisma) {
+  const payload = await bootstrap(prisma);
+  payload.installations = (payload.installations || []).map(({ employeeId: _employeeId, ...installation }) => installation);
   return {
     app: "climature-bedrijfsportaal",
     version: 2,
     exportedAt: new Date().toISOString(),
-    data: await bootstrap(prisma)
+    data: payload
   };
 }
 

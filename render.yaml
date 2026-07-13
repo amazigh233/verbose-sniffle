@@ -2,10 +2,11 @@ services:
   - type: web
     name: climature-bedrijfsportaal
     runtime: node
-    plan: free
+    plan: starter
     region: frankfurt
     buildCommand: npm ci && npm run prisma:generate
-    startCommand: npm run start:render
+    preDeployCommand: npm run prisma:deploy && npm run seed
+    startCommand: npm start
     healthCheckPath: /api/health
     autoDeployTrigger: commit
     envVars:
@@ -23,10 +24,53 @@ services:
         value: climature
       - key: ADMIN_PASSWORD_HASH
         sync: false
+      - key: HR_PORTAL_ENABLED
+        value: "false"
+      - key: HR_ENCRYPTION_KEY
+        generateValue: true
+      - key: HR_KEY_VERSION
+        value: v1
+      - key: CLAMAV_HOST
+        fromService:
+          type: pserv
+          name: climature-clamav
+          property: host
+      - key: CLAMAV_PORT
+        value: "3310"
+  - type: pserv
+    name: climature-clamav
+    runtime: image
+    plan: starter
+    region: frankfurt
+    image:
+      url: docker.io/clamav/clamav:1.4.3
+  - type: cron
+    name: climature-nightly-backup
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    schedule: "0 2 * * *"
+    dockerfilePath: ./Dockerfile.backup
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: climature-bedrijfsportaal-db
+          property: connectionString
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_REGION
+        sync: false
+      - key: HR_BACKUP_BUCKET
+        sync: false
+      - key: HR_BACKUP_PREFIX
+        value: postgres
 
 databases:
   - name: climature-bedrijfsportaal-db
-    plan: free
+    plan: basic-1gb
     region: frankfurt
     databaseName: climature
     user: climature
+    ipAllowList: []

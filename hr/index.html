@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <title>Climature Werknemersportaal</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/icons/icon.svg">
+  <link rel="stylesheet" href="/medewerkers/hr.css">
+</head>
+<body>
+  <div class="hr-shell" hidden>
+    <aside class="hr-sidebar">
+      <a class="hr-brand" href="#dashboard"><span>C</span><div><strong>CLIMATURE</strong><small>Werknemersportaal</small></div></a>
+      <nav>
+        <a href="#dashboard" data-nav="dashboard">Dashboard</a>
+        <a href="#employees" data-nav="employees">Werknemers</a>
+      </nav>
+      <div class="hr-sidebar-bottom">
+        <button class="link-button" data-action="lock">Portaal vergrendelen</button>
+        <a href="/">Terug naar CRM</a>
+      </div>
+    </aside>
+    <main>
+      <header class="hr-topbar"><div><p>Beveiligde HR-omgeving</p><h1 id="page-title">Dashboard</h1></div><div id="top-actions"></div></header>
+      <div id="hr-app" class="hr-workspace"></div>
+    </main>
+  </div>
+  <main id="security-gate" class="security-gate"><div class="gate-card"><p>Beveiligde omgeving wordt geladen…</p></div></main>
+  <div id="hr-toast" class="hr-toast" role="status" aria-live="polite"></div>
+  <script src="/medewerkers/hr.js"></script>
+</body>
+</html>

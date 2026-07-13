@@ -1,6 +1,26 @@
 "use strict";
 
 const { test, expect } = require("@playwright/test");
+const fs = require("fs");
+const path = require("path");
+
+test("standalone HR portal shows no CRM navigation or CRM data", async ({ page }) => {
+  const root = path.join(__dirname, "..", "..");
+  await page.route("**/medewerkers/", (route) => route.fulfill({ contentType: "text/html", body: fs.readFileSync(path.join(root, "hr/index.html"), "utf8") }));
+  await page.route("**/medewerkers/hr.css", (route) => route.fulfill({ contentType: "text/css", body: fs.readFileSync(path.join(root, "hr/hr.css"), "utf8") }));
+  await page.route("**/medewerkers/hr.js", (route) => route.fulfill({ contentType: "application/javascript", body: fs.readFileSync(path.join(root, "hr/hr.js"), "utf8") }));
+  await page.route("**/api/auth/session", (route) => route.fulfill({ json: { authenticated: true, user: { id: "a1", username: "admin", role: "admin" }, csrfToken: "test-token", features: { hrPortalEnabled: true } } }));
+  await page.route("**/api/hr/session", (route) => route.fulfill({ json: { mfaEnabled: true, elevated: true } }));
+  await page.route("**/api/hr/dashboard", (route) => route.fulfill({ json: { active: 2, archived: 1, missingContracts: 1, expiring30: 0, expiring60: 0, expiring90: 0, expiring: [] } }));
+
+  await page.goto("/medewerkers/#dashboard");
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  await expect(page.getByText("Actieve werknemers")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Werknemers", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Klantenbestand" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Offertes" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Facturen" })).toHaveCount(0);
+});
 
 test("login page loads", async ({ page }) => {
   await page.goto("/");

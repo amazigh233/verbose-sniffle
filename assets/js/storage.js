@@ -64,16 +64,24 @@
     salesOpportunities: [],
     settings: Object.assign({}, DEFAULT_SETTINGS),
     counters: {},
-    users: []
+    users: [],
+    employeeDirectory: []
   };
   var authenticated = false;
   var currentUser = null;
+  var currentCsrfToken = "";
+  var features = {};
 
   function api(path, options) {
+    options = options || {};
+    var headers = Object.assign({ "Content-Type": "application/json" }, options.headers || {});
+    if (["POST", "PUT", "PATCH", "DELETE"].indexOf(String(options.method || "GET").toUpperCase()) >= 0 && currentCsrfToken) {
+      headers["X-CSRF-Token"] = currentCsrfToken;
+    }
     return fetch(path, Object.assign({
       credentials: "same-origin",
-      headers: { "Content-Type": "application/json" }
-    }, options || {})).then(function (response) {
+      headers: headers
+    }, options, { headers: headers })).then(function (response) {
       return response.text().then(function (text) {
         var payload = text ? JSON.parse(text) : {};
         if (!response.ok) throw new Error(payload.error || "Serververzoek mislukt.");
@@ -128,6 +136,8 @@
     return api("/api/auth/session").then(function (session) {
       authenticated = Boolean(session.authenticated);
       currentUser = session.user || null;
+      currentCsrfToken = session.csrfToken || "";
+      features = session.features || {};
       if (!authenticated) return false;
       return refresh().then(function () { return true; });
     }).catch(function () {
@@ -152,6 +162,8 @@
     }).then(function (session) {
       authenticated = true;
       currentUser = session.user || null;
+      currentCsrfToken = session.csrfToken || "";
+      features = session.features || {};
       return refresh();
     });
   }
@@ -162,6 +174,7 @@
     }).then(function () {
       authenticated = false;
       currentUser = null;
+      currentCsrfToken = "";
       applyData({});
     });
   }
@@ -180,6 +193,10 @@
 
   function isInstaller() {
     return currentUser && currentUser.role === "installer";
+  }
+
+  function isHrPortalEnabled() {
+    return Boolean(features.hrPortalEnabled);
   }
 
   function read(key, fallback) {
@@ -363,6 +380,14 @@
     });
   }
 
+  function listEmployeeDirectory() {
+    if (!isHrPortalEnabled() || !isAdmin()) return Promise.resolve([]);
+    return api("/api/admin/employee-directory").then(function (payload) {
+      cache.employeeDirectory = payload.items || [];
+      return cache.employeeDirectory;
+    });
+  }
+
   function createUser(data) {
     return api("/api/users", {
       method: "POST",
@@ -415,6 +440,7 @@
     user: user,
     isAdmin: isAdmin,
     isInstaller: isInstaller,
+    isHrPortalEnabled: isHrPortalEnabled,
     getAll: getAll,
     saveAll: saveAll,
     exportData: exportData,
@@ -431,6 +457,7 @@
     refreshAdviceAssumptions: refreshAdviceAssumptions,
     refreshOverdueInvoices: refreshOverdueInvoices,
     listUsers: listUsers,
+    listEmployeeDirectory: listEmployeeDirectory,
     createUser: createUser,
     updateUser: updateUser,
     updateMe: updateMe,
