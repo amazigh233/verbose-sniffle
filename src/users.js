@@ -2,10 +2,12 @@
 
 const bcrypt = require("bcrypt");
 
-const ROLES = ["admin", "installer"];
+const ROLES = ["admin", "crm", "sales", "execution", "finance", "installer"];
 const USER_SELECT = {
   id: true,
   username: true,
+  email: true,
+  employeeId: true,
   role: true,
   active: true,
   createdAt: true,
@@ -17,13 +19,17 @@ function normalizeUsername(value) {
 }
 
 function normalizeRole(value) {
-  return ROLES.includes(value) ? value : "installer";
+  const role = String(value || "").trim().toLowerCase();
+  if (!ROLES.includes(role)) throw publicError("Kies een geldige accountrol.", 400);
+  return role;
 }
 
 function serializeUser(user) {
   return {
     id: user.id,
     username: user.username,
+    email: user.email || "",
+    employeeId: user.employeeId || null,
     role: user.role,
     active: Boolean(user.active),
     createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : user.createdAt,
@@ -35,7 +41,8 @@ function sessionUser(user) {
   return {
     id: user.id,
     username: user.username,
-    role: user.role
+    role: user.role,
+    employeeId: user.employeeId || null
   };
 }
 
@@ -125,10 +132,12 @@ async function createUser(prisma, payload) {
   try {
     const user = await prisma.user.create({
       data: {
-        username,
-        passwordHash,
-        role: normalizeRole(payload.role),
-        active: payload.active === undefined ? true : Boolean(payload.active)
+      username,
+      email: String(payload.email || "").trim().toLowerCase(),
+      passwordHash,
+      role: normalizeRole(payload.role),
+      active: payload.active === undefined ? true : Boolean(payload.active),
+      employeeId: payload.employeeId || null
       },
       select: USER_SELECT
     });
@@ -146,6 +155,8 @@ async function updateUser(prisma, id, payload) {
   }
   if (Object.prototype.hasOwnProperty.call(payload, "role")) data.role = normalizeRole(payload.role);
   if (Object.prototype.hasOwnProperty.call(payload, "active")) data.active = Boolean(payload.active);
+  if (Object.prototype.hasOwnProperty.call(payload, "email")) data.email = String(payload.email || "").trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(payload, "employeeId")) data.employeeId = payload.employeeId || null;
   const password = passwordFromPayload(payload, false);
   if (password) data.passwordHash = await bcrypt.hash(password, 12);
   await assertAdminCanChange(prisma, id, data);

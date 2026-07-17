@@ -49,18 +49,50 @@
       </a>
 
       <nav class="nav-list">
-        <a href="#dashboard" data-route-link="dashboard">Dashboard</a>
-        <a href="#customers" data-route-link="customers">Klantenbestand</a>
-        <a href="#quotes" data-route-link="quotes">Offertes</a>
-        <a href="#sales-funnel" data-route-link="sales-funnel">Sales funnel</a>
-        <a href="#invoices" data-route-link="invoices">Facturen</a>
-        <a href="#reports" data-route-link="reports">Rapportage</a>
-        <a href="#installations" data-route-link="installations">Installaties</a>
-        <a href="#advice" data-route-link="advice">Advies-tool</a>
-        <a href="#products" data-route-link="products">Producten</a>
-        <a href="#messages" data-route-link="messages">Tekstgenerator</a>
-        <a href="#settings" data-route-link="settings">Instellingen</a>
-        <a href="/medewerkers/" id="hr-portal-link" hidden>Werknemersportaal</a>
+        <section class="nav-group" data-nav-group data-portal="global">
+          <a class="portal-switch-link" href="#portals" data-route-link="portals">Alle portalen</a>
+        </section>
+
+        <section class="nav-group" data-nav-group data-portal="crm">
+          <p class="nav-group-label">CRM</p>
+          <a href="#crm-portal" data-route-link="crm-portal">Overzicht</a>
+          <a href="#customers" data-route-link="customers">Klantenbestand</a>
+        </section>
+
+        <section class="nav-group" data-nav-group data-portal="sales">
+          <p class="nav-group-label">Sales</p>
+          <a href="#sales-portal" data-route-link="sales-portal">Overzicht</a>
+          <a href="#sales-funnel" data-route-link="sales-funnel">1. Sales funnel</a>
+          <a href="#sales-agenda" data-route-link="sales-agenda">2. Sales agenda</a>
+          <a href="#advice" data-route-link="advice">3. Advies</a>
+          <a href="#quotes" data-route-link="quotes">4. Offertes</a>
+        </section>
+
+        <section class="nav-group" data-nav-group data-portal="execution">
+          <p class="nav-group-label">Uitvoering</p>
+          <a href="#execution-portal" data-route-link="execution-portal">Overzicht</a>
+          <a href="#projects" data-route-link="projects">1. Projecten</a>
+          <a href="#installations" data-route-link="installations">2. Installaties</a>
+          <a href="#service" data-route-link="service">3. Service & onderhoud</a>
+        </section>
+
+        <section class="nav-group" data-nav-group data-portal="finance">
+          <p class="nav-group-label">Financiën</p>
+          <a href="#finance-portal" data-route-link="finance-portal">Overzicht</a>
+          <a href="#invoices" data-route-link="invoices">Facturen</a>
+          <a href="#reports" data-route-link="reports">Rapportage</a>
+          <a href="#service" data-route-link="service">Servicecontracten</a>
+        </section>
+
+        <section class="nav-group" data-nav-group data-portal="management">
+          <p class="nav-group-label">Beheer</p>
+          <a href="#management-portal" data-route-link="management-portal">Overzicht</a>
+          <a href="#products" data-route-link="products">Producten</a>
+          <a href="#messages" data-route-link="messages">Tekstgenerator</a>
+          <a href="#google-business" data-route-link="google-business">Google Bedrijfsprofiel</a>
+          <a href="#settings" data-route-link="settings">Instellingen</a>
+          <a href="/medewerkers/" id="hr-portal-link" hidden>Werknemersportaal</a>
+        </section>
       </nav>
     </aside>
 
@@ -87,8 +119,11 @@
   <script src="assets/js/customers.js"></script>
   <script src="assets/js/quotes.js"></script>
   <script src="assets/js/sales-funnel.js"></script>
+  <script src="assets/js/sales-agenda.js"></script>
   <script src="assets/js/invoices.js"></script>
   <script src="assets/js/installations.js"></script>
+  <script src="assets/js/projects.js"></script>
+  <script src="assets/js/service.js"></script>
   <script src="assets/js/advice.js"></script>
   <script src="assets/js/reports.js"></script>
   <script src="assets/js/app.js"></script>

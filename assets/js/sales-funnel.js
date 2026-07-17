@@ -204,6 +204,7 @@
       stageFlow(opportunity),
       '<div class="button-row" style="margin-top:16px;">',
       '<button class="primary-button" data-action="sales-opportunity-quote" data-id="' + S.escapeHtml(opportunity.id) + '">Start offerte</button>',
+      '<button class="ghost-button" data-action="sales-appointment-new" data-opportunity-id="' + S.escapeHtml(opportunity.id) + '">Plan afspraak</button>',
       quote ? '<button class="ghost-button" data-action="quote-detail" data-id="' + S.escapeHtml(quote.id) + '">Open offerte</button>' : "",
       '<button class="ghost-button" data-action="sales-opportunity-edit" data-id="' + S.escapeHtml(opportunity.id) + '">Bewerk</button>',
       '<button class="danger-button" data-action="sales-opportunity-delete" data-id="' + S.escapeHtml(opportunity.id) + '">Verwijder</button>',

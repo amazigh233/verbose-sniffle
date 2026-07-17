@@ -15,8 +15,23 @@ const data = require("./data");
 const users = require("./users");
 const hr = require("./hr-data");
 const hrSecurity = require("./hr-security");
+const workforce = require("./hr-workforce");
+const projects = require("./project-data");
+const service = require("./service-data");
 
-const INSTALLER_COLLECTIONS = ["customers", "customerNotes", "customerDocuments", "installations"];
+const ROLE_COLLECTIONS = {
+  crm: ["customers", "customerNotes", "customerDocuments"],
+  sales: ["customers", "products", "quotes", "advices", "salesOpportunities", "salesAppointments"],
+  execution: ["customers", "quotes", "installations"],
+  finance: ["customers", "products", "quotes", "invoices"],
+  installer: ["customers", "customerNotes", "customerDocuments", "installations"]
+};
+const ROLE_WRITE_COLLECTIONS = {
+  crm: ["customers", "customerNotes", "customerDocuments"],
+  sales: ["quotes", "advices", "salesOpportunities", "salesAppointments"],
+  execution: ["installations"],
+  finance: ["invoices"]
+};
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 function requestOrigin(req) {
@@ -108,16 +123,70 @@ function requireHrElevation(req, res, next) {
 }
 
 function canReadCollection(user, collection) {
-  return user.role === "admin" || (user.role === "installer" && INSTALLER_COLLECTIONS.includes(collection));
+  return user.role === "admin" || Boolean(ROLE_COLLECTIONS[user.role] && ROLE_COLLECTIONS[user.role].includes(collection));
 }
 
-function installerBootstrap(fullData) {
-  return {
-    customers: fullData.customers || [],
-    customerNotes: fullData.customerNotes || [],
-    customerDocuments: fullData.customerDocuments || [],
-    installations: (fullData.installations || []).map(({ employeeId: _employeeId, ...installation }) => installation)
+function canWriteCollection(user, collection) {
+  return user.role === "admin" || Boolean(ROLE_WRITE_COLLECTIONS[user.role] && ROLE_WRITE_COLLECTIONS[user.role].includes(collection));
+}
+
+function channelCustomers(items) {
+  return (items || []).map(({ notes: _notes, ...customer }) => customer);
+}
+
+function executionQuotes(items) {
+  return (items || []).map((quote) => ({
+    id: quote.id,
+    quoteNumber: quote.quoteNumber,
+    customerId: quote.customerId,
+    quoteDate: quote.quoteDate,
+    status: quote.status
+  }));
+}
+
+function collectionForRole(collection, items, role) {
+  if (collection === "customers" && ["sales", "execution", "finance"].includes(role)) return channelCustomers(items);
+  if (collection === "quotes" && role === "execution") return executionQuotes(items);
+  if (collection === "installations" && role === "installer") {
+    return (items || []).map(({ employeeId: _employeeId, qualificationCheck: _qualificationCheck, ...installation }) => installation);
+  }
+  return items || [];
+}
+
+function settingsForRole(settings, role) {
+  const company = {
+    companyName: settings.companyName,
+    companyAddress: settings.companyAddress,
+    companyCity: settings.companyCity,
+    companyPhone: settings.companyPhone,
+    companyEmail: settings.companyEmail,
+    companySite: settings.companySite,
+    companyKvk: settings.companyKvk,
+    companyVat: settings.companyVat,
+    companyIban: settings.companyIban
   };
+  if (role === "sales") return { ...company, defaultQuoteTerms: settings.defaultQuoteTerms, adviceAssumptions: settings.adviceAssumptions };
+  if (role === "finance") return { ...company, paymentDays: settings.paymentDays, defaultInvoiceNote: settings.defaultInvoiceNote };
+  if (role === "execution") return company;
+  return {};
+}
+
+function roleBootstrap(fullData, role) {
+  if (role === "admin") return fullData;
+  const payload = {};
+  for (const collection of ROLE_COLLECTIONS[role] || []) payload[collection] = collectionForRole(collection, fullData[collection], role);
+  if (["sales", "execution", "finance"].includes(role)) {
+    payload.settings = settingsForRole(fullData.settings || {}, role);
+  }
+  if (["sales", "finance"].includes(role)) {
+    const prefix = role === "sales" ? "quote-" : "invoice-";
+    payload.counters = Object.fromEntries(Object.entries(fullData.counters || {}).filter(([key]) => key.startsWith(prefix)));
+  }
+  return payload;
+}
+
+function canUseCounter(user, type) {
+  return user.role === "admin" || (type === "quote" && user.role === "sales") || (type === "invoice" && user.role === "finance");
 }
 
 function requireCollection(req) {
@@ -200,7 +269,7 @@ function createApp(config = loadConfig()) {
       res.status(401).json({ error: "Sessie verlopen." });
       return;
     }
-    const current = await prisma.user.findUnique({ where: { id: req.session.user.id }, select: { id: true, username: true, role: true, active: true } });
+    const current = await prisma.user.findUnique({ where: { id: req.session.user.id }, select: { id: true, username: true, role: true, active: true, employeeId: true } });
     if (!current || !current.active || current.role !== req.session.user.role) {
       req.session.destroy(() => {});
       res.status(401).json({ error: "Sessie is niet meer geldig." });
@@ -341,7 +410,7 @@ function createApp(config = loadConfig()) {
   });
 
   app.get("/api/hr/dashboard", ...hrProtected, asyncHandler(async (_req, res) => {
-    res.json(await hr.dashboard(prisma));
+    res.json({ ...(await hr.dashboard(prisma)), ...(await workforce.dashboardStats(prisma)) });
   }));
 
   app.get("/api/hr/employees", ...hrProtected, asyncHandler(async (req, res) => {
@@ -350,6 +419,7 @@ function createApp(config = loadConfig()) {
 
   app.post("/api/hr/employees", ...hrProtected, asyncHandler(async (req, res) => {
     const saved = await hr.saveEmployee(prisma, config, null, req.body || {});
+    await workforce.ensureAutomaticChecklists(prisma, saved, null);
     await hrSecurity.audit(prisma, config, req, "employee.created", "employee", saved.id, { employeeNumber: saved.employeeNumber });
     res.status(201).json({ item: await hr.getEmployee(prisma, config, saved.id) });
   }));
@@ -359,7 +429,9 @@ function createApp(config = loadConfig()) {
   }));
 
   app.put("/api/hr/employees/:id", ...hrProtected, asyncHandler(async (req, res) => {
+    const previous = await prisma.employee.findUnique({ where: { id: req.params.id }, select: { status: true } });
     const saved = await hr.saveEmployee(prisma, config, req.params.id, req.body || {});
+    await workforce.ensureAutomaticChecklists(prisma, saved, previous && previous.status);
     await hrSecurity.audit(prisma, config, req, saved.status === "archived" ? "employee.archived" : "employee.updated", "employee", saved.id, { status: saved.status });
     res.json({ item: await hr.getEmployee(prisma, config, saved.id) });
   }));
@@ -438,14 +510,278 @@ function createApp(config = loadConfig()) {
     res.json({ items: items.map((item) => ({ id: item.id, action: item.action, metadata: item.metadata, actor: item.actor ? item.actor.username : "Verwijderde gebruiker", createdAt: item.createdAt })) });
   }));
 
-  app.get("/api/admin/employee-directory", hrEnabled, requireRole("admin"), asyncHandler(async (_req, res) => {
-    const rows = await prisma.employee.findMany({ where: { status: "active" }, select: { id: true, firstName: true, lastName: true, jobTitle: true, status: true }, orderBy: [{ lastName: "asc" }, { firstName: "asc" }] });
-    res.json({ items: rows.map((item) => ({ id: item.id, displayName: `${item.firstName} ${item.lastName}`.trim(), jobTitle: item.jobTitle, active: true })) });
+  app.get("/api/hr/qualification-definitions", ...hrProtected, asyncHandler(async (_req, res) => {
+    res.json({ items: await workforce.listDefinitions(prisma) });
+  }));
+
+  app.post("/api/hr/qualification-definitions", ...hrProtected, asyncHandler(async (req, res) => {
+    const item = await workforce.saveDefinition(prisma, null, req.body || {});
+    await hrSecurity.audit(prisma, config, req, "qualification_definition.created", "qualification_definition", item.id, { code: item.code });
+    res.status(201).json({ item });
+  }));
+
+  app.put("/api/hr/qualification-definitions/:id", ...hrProtected, asyncHandler(async (req, res) => {
+    const item = await workforce.saveDefinition(prisma, req.params.id, req.body || {});
+    await hrSecurity.audit(prisma, config, req, "qualification_definition.updated", "qualification_definition", item.id, { code: item.code, active: item.active });
+    res.json({ item });
+  }));
+
+  app.get("/api/hr/qualification-requirements", ...hrProtected, asyncHandler(async (_req, res) => {
+    res.json({ items: await workforce.listRequirements(prisma) });
+  }));
+
+  app.post("/api/hr/qualification-requirements", ...hrProtected, asyncHandler(async (req, res) => {
+    const item = await workforce.saveRequirement(prisma, req.body || {});
+    await hrSecurity.audit(prisma, config, req, "qualification_requirement.saved", "qualification_requirement", item.id, { workType: item.workType, qualificationCode: item.definition.code });
+    res.json({ item });
+  }));
+
+  app.delete("/api/hr/qualification-requirements/:id", ...hrProtected, asyncHandler(async (req, res) => {
+    await workforce.deleteRequirement(prisma, req.params.id);
+    await hrSecurity.audit(prisma, config, req, "qualification_requirement.deleted", "qualification_requirement", req.params.id);
+    res.json({ ok: true });
+  }));
+
+  app.get("/api/hr/skills-matrix", ...hrProtected, asyncHandler(async (req, res) => {
+    res.json(await workforce.qualificationMatrix(prisma, req.query || {}));
+  }));
+
+  app.get("/api/hr/employees/:id/qualifications", ...hrProtected, asyncHandler(async (req, res) => {
+    res.json({ items: await workforce.listEmployeeQualifications(prisma, config, req.params.id, req.query.archived === "true") });
+  }));
+
+  app.post("/api/hr/employees/:id/qualifications", ...hrProtected, upload.single("file"), asyncHandler(async (req, res) => {
+    const item = await workforce.saveEmployeeQualification(prisma, config, req.session.user.id, req.params.id, null, req.body || {}, req.file);
+    await hrSecurity.audit(prisma, config, req, "qualification.created", "employee", req.params.id, { qualificationId: item.id, definitionCode: item.definition.code, scanStatus: item.evidenceScanStatus });
+    res.status(201).json({ item });
+  }));
+
+  app.put("/api/hr/employees/:employeeId/qualifications/:id", ...hrProtected, upload.single("file"), asyncHandler(async (req, res) => {
+    const item = await workforce.saveEmployeeQualification(prisma, config, req.session.user.id, req.params.employeeId, req.params.id, req.body || {}, req.file);
+    await hrSecurity.audit(prisma, config, req, "qualification.updated", "employee", req.params.employeeId, { qualificationId: item.id, definitionCode: item.definition.code, scanStatus: item.evidenceScanStatus });
+    res.json({ item });
+  }));
+
+  app.patch("/api/hr/employees/:employeeId/qualifications/:id/archive", ...hrProtected, asyncHandler(async (req, res) => {
+    await workforce.archiveQualification(prisma, req.params.employeeId, req.params.id);
+    await hrSecurity.audit(prisma, config, req, "qualification.archived", "employee", req.params.employeeId, { qualificationId: req.params.id });
+    res.json({ ok: true });
+  }));
+
+  app.post("/api/hr/employees/:employeeId/qualifications/:id/rescan", ...hrProtected, asyncHandler(async (req, res) => {
+    const item = await workforce.rescanQualification(prisma, config, req.params.employeeId, req.params.id);
+    await hrSecurity.audit(prisma, config, req, "qualification.rescanned", "employee", req.params.employeeId, { qualificationId: item.id, scanStatus: item.evidenceScanStatus });
+    res.json({ item });
+  }));
+
+  app.get("/api/hr/employees/:employeeId/qualifications/:id/download", ...hrProtected, asyncHandler(async (req, res) => {
+    const file = await workforce.qualificationFile(prisma, config, req.params.employeeId, req.params.id);
+    await hrSecurity.audit(prisma, config, req, "qualification.downloaded", "employee", req.params.employeeId, { qualificationId: file.row.id });
+    res.set({ "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(file.row.evidenceFileName)}`, "Content-Length": String(file.buffer.length), "Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff" });
+    res.send(file.buffer);
+  }));
+
+  app.get("/api/hr/checklist-templates", ...hrProtected, asyncHandler(async (_req, res) => {
+    res.json({ items: await workforce.listTemplates(prisma) });
+  }));
+
+  app.put("/api/hr/checklist-templates/:type", ...hrProtected, asyncHandler(async (req, res) => {
+    const item = await workforce.saveTemplate(prisma, req.params.type, req.body || {});
+    await hrSecurity.audit(prisma, config, req, "checklist_template.updated", "checklist_template", item.id, { type: item.type, version: item.version });
+    res.json({ item });
+  }));
+
+  app.get("/api/hr/employees/:id/checklists", ...hrProtected, asyncHandler(async (req, res) => {
+    res.json({ items: await workforce.listEmployeeChecklists(prisma, config, req.params.id) });
+  }));
+
+  app.post("/api/hr/employees/:id/checklists", ...hrProtected, asyncHandler(async (req, res) => {
+    const employee = await prisma.employee.findUnique({ where: { id: req.params.id }, select: { startDate: true, endDate: true } });
+    if (!employee) throw Object.assign(new Error("Werknemer niet gevonden."), { status: 404 });
+    const type = req.body.type;
+    const item = await workforce.instantiateChecklist(prisma, req.params.id, type, req.body.anchorDate || (type === "offboarding" ? employee.endDate : employee.startDate) || new Date().toISOString().slice(0, 10));
+    await hrSecurity.audit(prisma, config, req, "checklist.created", "employee", req.params.id, { checklistId: item.id, type: item.type });
+    res.status(201).json({ item });
+  }));
+
+  app.put("/api/hr/checklists/:checklistId/items/:itemId", ...hrProtected, asyncHandler(async (req, res) => {
+    const result = await workforce.updateChecklistTask(prisma, config, req.session.user.id, req.params.checklistId, req.params.itemId, req.body || {});
+    await hrSecurity.audit(prisma, config, req, "checklist_task.updated", "employee", result.employeeId, { checklistId: req.params.checklistId, taskId: result.itemId, status: result.status });
+    res.json({ item: result });
+  }));
+
+  app.get("/api/admin/employee-directory", hrEnabled, requireRole("admin", "execution"), asyncHandler(async (req, res) => {
+    res.json({ items: await workforce.directory(prisma, req.query.workType, req.query.plannedDate) });
+  }));
+
+  app.get("/api/projects/actions", requireRole("admin", "execution"), asyncHandler(async (req, res) => {
+    res.json({ items: await projects.actionCenter(prisma, req.session.user, req.query || {}) });
+  }));
+
+  app.get("/api/projects", requireRole("admin", "execution", "installer"), asyncHandler(async (req, res) => {
+    res.json(await projects.listProjects(prisma, config, req.session.user, req.query || {}));
+  }));
+
+  app.post("/api/projects", requireRole("admin", "execution"), asyncHandler(async (req, res) => {
+    const project = await projects.createProject(prisma, req.body || {}, req.session.user.id);
+    res.status(201).json({ item: await projects.getProject(prisma, config, req.session.user, project.id) });
+  }));
+
+  app.get("/api/projects/:id", requireRole("admin", "execution", "installer"), asyncHandler(async (req, res) => {
+    res.json({ item: await projects.getProject(prisma, config, req.session.user, req.params.id) });
+  }));
+
+  app.put("/api/projects/:id", requireRole("admin", "execution"), asyncHandler(async (req, res) => {
+    await projects.updateProject(prisma, req.session.user, req.params.id, req.body || {});
+    res.json({ item: await projects.getProject(prisma, config, req.session.user, req.params.id) });
+  }));
+
+  app.post("/api/projects/:id/materials", requireRole("admin", "execution"), asyncHandler(async (req, res) => {
+    res.status(201).json({ item: await projects.saveMaterial(prisma, req.session.user, req.params.id, null, req.body || {}) });
+  }));
+
+  app.put("/api/projects/:id/materials/:materialId", requireRole("admin", "execution"), asyncHandler(async (req, res) => {
+    res.json({ item: await projects.saveMaterial(prisma, req.session.user, req.params.id, req.params.materialId, req.body || {}) });
+  }));
+
+  app.delete("/api/projects/:id/materials/:materialId", requireRole("admin", "execution"), asyncHandler(async (req, res) => {
+    await projects.removeMaterial(prisma, req.session.user, req.params.id, req.params.materialId);
+    res.json({ ok: true });
+  }));
+
+  app.post("/api/projects/:id/tasks", requireRole("admin", "execution"), asyncHandler(async (req, res) => {
+    res.status(201).json({ item: await projects.saveTask(prisma, req.session.user, req.params.id, null, req.body || {}) });
+  }));
+
+  app.put("/api/projects/:id/tasks/:taskId", requireRole("admin", "execution", "installer"), asyncHandler(async (req, res) => {
+    res.json({ item: await projects.saveTask(prisma, req.session.user, req.params.id, req.params.taskId, req.body || {}) });
+  }));
+
+  app.post("/api/projects/:id/team", requireRole("admin", "execution"), asyncHandler(async (req, res) => {
+    res.json({ item: await projects.saveMember(prisma, req.session.user, req.params.id, req.body || {}) });
+  }));
+
+  app.delete("/api/projects/:id/team/:memberId", requireRole("admin", "execution"), asyncHandler(async (req, res) => {
+    await projects.removeMember(prisma, req.session.user, req.params.id, req.params.memberId);
+    res.json({ ok: true });
+  }));
+
+  app.post("/api/projects/:id/equipment", requireRole("admin", "execution", "installer"), asyncHandler(async (req, res) => {
+    res.status(201).json({ item: await projects.saveEquipment(prisma, config, req.session.user, req.params.id, null, req.body || {}) });
+  }));
+
+  app.put("/api/projects/:id/equipment/:equipmentId", requireRole("admin", "execution", "installer"), asyncHandler(async (req, res) => {
+    res.json({ item: await projects.saveEquipment(prisma, config, req.session.user, req.params.id, req.params.equipmentId, req.body || {}) });
+  }));
+
+  app.get("/api/project-templates", requireRole("admin", "execution"), asyncHandler(async (_req, res) => {
+    res.json({ items: await projects.listTemplates(prisma) });
+  }));
+
+  app.get("/api/employee-availability", requireRole("admin", "execution"), asyncHandler(async (req, res) => {
+    res.json({ items: await projects.availabilityDirectory(prisma, req.query || {}) });
+  }));
+
+  app.get("/api/hr/employees/:id/work-schedule", ...hrProtected, asyncHandler(async (req, res) => {
+    const items = await prisma.employeeWorkSchedule.findMany({ where: { employeeId: req.params.id }, orderBy: { weekday: "asc" } });
+    const absences = await prisma.employeeAbsence.findMany({ where: { employeeId: req.params.id }, orderBy: { startDate: "desc" }, take: 100 });
+    res.json({ items, absences });
+  }));
+
+  app.put("/api/hr/employees/:id/work-schedule", ...hrProtected, asyncHandler(async (req, res) => {
+    const items = await projects.saveSchedule(prisma, req.params.id, req.body.items || []);
+    await hrSecurity.audit(prisma, config, req, "employee.schedule_updated", "employee", req.params.id, { weekdays: items.map((item) => item.weekday) });
+    res.json({ items });
+  }));
+
+  app.post("/api/hr/employees/:id/absences", ...hrProtected, asyncHandler(async (req, res) => {
+    const item = await projects.saveAbsence(prisma, req.params.id, null, req.body || {});
+    await hrSecurity.audit(prisma, config, req, "employee.absence_created", "employee", req.params.id, { absenceId: item.id, type: item.type, startDate: item.startDate, endDate: item.endDate });
+    res.status(201).json({ item });
+  }));
+
+  app.put("/api/hr/employees/:id/absences/:absenceId", ...hrProtected, asyncHandler(async (req, res) => {
+    const existing = await prisma.employeeAbsence.findFirst({ where: { id: req.params.absenceId, employeeId: req.params.id } });
+    if (!existing) throw Object.assign(new Error("Afwezigheid niet gevonden."), { status: 404 });
+    const item = await projects.saveAbsence(prisma, req.params.id, existing.id, req.body || {});
+    await hrSecurity.audit(prisma, config, req, "employee.absence_updated", "employee", req.params.id, { absenceId: item.id, type: item.type, startDate: item.startDate, endDate: item.endDate });
+    res.json({ item });
+  }));
+
+  app.delete("/api/hr/employees/:id/absences/:absenceId", ...hrProtected, asyncHandler(async (req, res) => {
+    const existing = await prisma.employeeAbsence.findFirst({ where: { id: req.params.absenceId, employeeId: req.params.id } });
+    if (!existing) throw Object.assign(new Error("Afwezigheid niet gevonden."), { status: 404 });
+    await prisma.employeeAbsence.delete({ where: { id: existing.id } });
+    await hrSecurity.audit(prisma, config, req, "employee.absence_deleted", "employee", req.params.id, { absenceId: existing.id });
+    res.json({ ok: true });
   }));
 
   app.get("/api/bootstrap", requireAuth, asyncHandler(async (req, res) => {
     const payload = await data.bootstrap(prisma);
-    res.json({ data: req.session.user.role === "installer" ? installerBootstrap(payload) : payload });
+    res.json({ data: roleBootstrap(payload, req.session.user.role) });
+  }));
+
+  const serviceReader = requireRole("admin", "execution", "installer", "finance", "crm");
+  const serviceManager = requireRole("admin", "execution");
+
+  app.get("/api/service/dashboard", serviceReader, asyncHandler(async (req, res) => {
+    res.json(await service.dashboard(prisma, req.session.user));
+  }));
+
+  app.get("/api/service/bootstrap", serviceReader, asyncHandler(async (req, res) => {
+    res.json(await service.bootstrap(prisma, req.session.user, req.query || {}));
+  }));
+
+  app.post("/api/service/equipment", serviceManager, asyncHandler(async (req, res) => {
+    res.status(201).json({ item: await service.saveEquipment(prisma, req.session.user, null, req.body || {}) });
+  }));
+  app.put("/api/service/equipment/:id", serviceManager, asyncHandler(async (req, res) => {
+    res.json({ item: await service.saveEquipment(prisma, req.session.user, req.params.id, req.body || {}) });
+  }));
+
+  app.post("/api/service/contracts", serviceManager, asyncHandler(async (req, res) => {
+    res.status(201).json({ item: await service.saveContract(prisma, req.session.user, null, req.body || {}) });
+  }));
+  app.put("/api/service/contracts/:id", serviceManager, asyncHandler(async (req, res) => {
+    res.json({ item: await service.saveContract(prisma, req.session.user, req.params.id, req.body || {}) });
+  }));
+
+  app.post("/api/service/requests", serviceManager, asyncHandler(async (req, res) => {
+    res.status(201).json({ item: await service.saveRequest(prisma, req.session.user, null, req.body || {}) });
+  }));
+  app.put("/api/service/requests/:id", serviceManager, asyncHandler(async (req, res) => {
+    res.json({ item: await service.saveRequest(prisma, req.session.user, req.params.id, req.body || {}) });
+  }));
+
+  app.get("/api/service/availability", serviceManager, asyncHandler(async (req, res) => {
+    res.json({ items: await service.availability(prisma, req.query || {}) });
+  }));
+  app.post("/api/service/visits", serviceManager, asyncHandler(async (req, res) => {
+    res.status(201).json({ item: await service.saveVisit(prisma, req.session.user, null, req.body || {}) });
+  }));
+  app.put("/api/service/visits/:id", requireRole("admin", "execution", "installer"), asyncHandler(async (req, res) => {
+    res.json({ item: await service.saveVisit(prisma, req.session.user, req.params.id, req.body || {}) });
+  }));
+  app.post("/api/service/visits/:id/invoice", requireRole("admin", "execution", "finance"), asyncHandler(async (req, res) => {
+    res.status(201).json({ item: await service.createInvoice(prisma, req.session.user, req.params.id) });
+  }));
+  app.post("/api/service/visits/:id/confirmation", serviceManager, asyncHandler(async (req, res) => {
+    res.json(await service.sendVisitConfirmation(prisma, config, req.session.user, req.params.id));
+  }));
+
+  app.post("/api/service/requests/:id/documents", serviceManager, upload.single("file"), asyncHandler(async (req, res) => {
+    res.status(201).json({ item: await service.saveDocument(prisma, config, req.session.user, "request", req.params.id, req.file) });
+  }));
+  app.post("/api/service/visits/:id/documents", requireRole("admin", "execution", "installer"), upload.single("file"), asyncHandler(async (req, res) => {
+    res.status(201).json({ item: await service.saveDocument(prisma, config, req.session.user, "visit", req.params.id, req.file) });
+  }));
+  app.get("/api/service/documents/:id/download", requireRole("admin", "execution", "installer"), asyncHandler(async (req, res) => {
+    const item = await service.documentFile(prisma, req.session.user, req.params.id);
+    res.set({ "Content-Type": item.mimeType, "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(item.fileName)}`, "Content-Length": String(item.content.length), "Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff" });
+    res.send(item.content);
+  }));
+  app.post("/api/service/reminders/run", serviceManager, asyncHandler(async (req, res) => {
+    res.json({ items: await service.sendReminders(prisma, config, req.session.user) });
   }));
 
   app.get("/api/users", requireRole("admin"), asyncHandler(async (_req, res) => {
@@ -472,11 +808,13 @@ function createApp(config = loadConfig()) {
     res.json({ item: await data.refreshAdviceAssumptions(prisma) });
   }));
 
-  app.post("/api/counters/:type/next", requireRole("admin"), asyncHandler(async (req, res) => {
+  app.post("/api/counters/:type/next", requireAuth, asyncHandler(async (req, res) => {
+    if (!canUseCounter(req.session.user, req.params.type)) return res.status(403).json({ error: "Geen toegang." });
     res.json({ value: await data.nextNumber(prisma, req.params.type) });
   }));
 
-  app.get("/api/counters/:type/peek", requireRole("admin"), asyncHandler(async (req, res) => {
+  app.get("/api/counters/:type/peek", requireAuth, asyncHandler(async (req, res) => {
+    if (!canUseCounter(req.session.user, req.params.type)) return res.status(403).json({ error: "Geen toegang." });
     res.json({ value: await data.peekNumber(prisma, req.params.type) });
   }));
 
@@ -486,26 +824,40 @@ function createApp(config = loadConfig()) {
       res.status(403).json({ error: "Geen toegang." });
       return;
     }
-    res.json({ items: await data.listCollection(prisma, collection) });
+    const items = await data.listCollection(prisma, collection);
+    res.json({ items: collectionForRole(collection, items, req.session.user.role) });
   }));
 
-  app.post("/api/collections/:collection", requireRole("admin"), asyncHandler(async (req, res) => {
+  app.post("/api/collections/:collection", requireAuth, asyncHandler(async (req, res) => {
     const collection = requireCollection(req);
-    res.json({ item: await data.upsert(prisma, collection, req.body || {}) });
+    if (!canWriteCollection(req.session.user, collection)) return res.status(403).json({ error: "Geen toegang." });
+    const input = { ...(req.body || {}) };
+    if (collection === "installations") {
+      input.qualificationCheck = input.employeeId ? await workforce.checkEmployeeQualifications(prisma, input.employeeId, input.workType, input.plannedDate) : null;
+    }
+    const item = await data.upsert(prisma, collection, input);
+    if (collection === "installations") await projects.ensureProjectForInstallation(prisma, item.id, req.session.user.id);
+    if (collection === "installations" && input.qualificationCheck && input.qualificationCheck.warnings.length) {
+      await hrSecurity.audit(prisma, config, req, "installation.qualification_warning", "installation", item.id, { workType: input.qualificationCheck.workType, warningCodes: input.qualificationCheck.warnings.map((warning) => warning.code), qualificationCodes: input.qualificationCheck.warnings.map((warning) => warning.qualificationCode) });
+    }
+    res.json({ item });
   }));
 
   app.put("/api/collections/:collection", requireRole("admin"), asyncHandler(async (req, res) => {
     const collection = requireCollection(req);
-    res.json({ data: await data.replaceCollection(prisma, collection, req.body.items || []) });
+    await data.replaceCollection(prisma, collection, req.body.items || []);
+    await projects.ensureProjectsForExistingInstallations(prisma);
+    res.json({ data: await data.bootstrap(prisma) });
   }));
 
-  app.delete("/api/collections/:collection/:id", requireRole("admin"), asyncHandler(async (req, res) => {
+  app.delete("/api/collections/:collection/:id", requireAuth, asyncHandler(async (req, res) => {
     const collection = requireCollection(req);
+    if (!canWriteCollection(req.session.user, collection)) return res.status(403).json({ error: "Geen toegang." });
     await data.remove(prisma, collection, req.params.id);
     res.json({ ok: true });
   }));
 
-  app.put("/api/installations/:id/workorder", requireRole("admin", "installer"), asyncHandler(async (req, res) => {
+  app.put("/api/installations/:id/workorder", requireRole("admin", "execution", "installer"), asyncHandler(async (req, res) => {
     res.json({ item: await data.saveInstallationWorkOrder(prisma, req.params.id, req.body || {}) });
   }));
 
@@ -514,7 +866,9 @@ function createApp(config = loadConfig()) {
   }));
 
   app.post("/api/backup/import", requireRole("admin"), asyncHandler(async (req, res) => {
-    res.json({ data: await data.importData(prisma, req.body) });
+    await data.importData(prisma, req.body);
+    await projects.ensureProjectsForExistingInstallations(prisma);
+    res.json({ data: await data.bootstrap(prisma) });
   }));
 
   app.post("/api/admin/reset", requireRole("admin"), asyncHandler(async (_req, res) => {
@@ -564,6 +918,8 @@ async function main() {
   const app = createApp(config);
   await users.ensureBootstrapAdmin(prisma, config);
   await data.bootstrap(prisma);
+  await workforce.ensureDefaults(prisma);
+  await projects.ensureProjectsForExistingInstallations(prisma);
   app.listen(config.port, () => {
     console.log(`Climature Bedrijfsportaal draait op http://localhost:${config.port}`);
   });

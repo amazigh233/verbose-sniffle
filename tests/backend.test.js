@@ -5,6 +5,7 @@ const request = require("supertest");
 const { createApp } = require("../src/server");
 const { prisma } = require("../src/prisma");
 const data = require("../src/data");
+const service = require("../src/service-data");
 const { assumptionsFromCbsRows } = require("../src/advice-assumptions");
 const { authenticator, encrypt, decrypt, scanWithClamav } = require("../src/hr-security");
 
@@ -38,10 +39,99 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  await prisma.serviceAuditEvent.deleteMany();
+  await prisma.serviceDocument.deleteMany();
+  await prisma.maintenanceMeasurement.deleteMany();
+  await prisma.serviceReminderRun.deleteMany();
+  await prisma.maintenanceVisit.deleteMany();
+  await prisma.serviceRequest.deleteMany();
+  await prisma.serviceContract.deleteMany();
+  await prisma.customerEquipment.deleteMany();
   await prisma.hrAuditEvent.deleteMany();
   await prisma.employee.deleteMany();
+  await prisma.qualificationRequirement.deleteMany();
+  await prisma.qualificationDefinition.deleteMany();
+  await prisma.checklistTemplate.deleteMany();
   await prisma.user.deleteMany();
   await data.resetData(prisma);
+});
+
+describe("service and maintenance", () => {
+  it("sends each due maintenance reminder at most once per day", async () => {
+    const client = agent(); await login(client);
+    const customer = await createCustomer(client);
+    await client.post("/api/service/contracts").send({ customerId: customer.id, title: "Onderhoud", startDate: "2026-01-01", nextMaintenanceDate: new Date().toISOString().slice(0, 10), price: 100, billingPeriod: "yearly", maintenanceFrequency: 12 }).expect(201);
+    const originalFetch = global.fetch;
+    global.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ id: "mail-1" }) }));
+    try {
+      const config = { resendApiKey: "test-key", serviceMailFrom: "service@example.com" };
+      const first = await service.sendReminders(prisma, config, null);
+      const second = await service.sendReminders(prisma, config, null);
+      expect(first[0].status).toBe("sent");
+      expect(second[0].status).toBe("duplicate");
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    } finally { global.fetch = originalFetch; }
+  });
+
+  it("runs the service lifecycle and creates at most one concept invoice", async () => {
+    const client = agent();
+    await login(client);
+    const customer = await createCustomer(client);
+    const employee = await prisma.employee.create({ data: { employeeNumber: "CL-SVC-001", firstName: "Sam", lastName: "Service", startDate: "2026-01-01", status: "active" } });
+
+    const equipment = (await client.post("/api/service/equipment").send({ customerId: customer.id, type: "heat_pump", brand: "Test", model: "HP-1", serialNumber: "SN-001", installedAt: "2026-01-15", warrantyUntil: "2031-01-15", maintenanceIntervalMonths: 12 }).expect(201)).body.item;
+    expect(equipment.nextMaintenanceDate).toBe("2027-01-15");
+    const contract = (await client.post("/api/service/contracts").send({ customerId: customer.id, equipmentId: equipment.id, title: "Jaarlijks onderhoud", startDate: "2026-01-15", price: 150, billingPeriod: "yearly", maintenanceFrequency: 12 }).expect(201)).body.item;
+    const serviceRequest = (await client.post("/api/service/requests").send({ customerId: customer.id, equipmentId: equipment.id, title: "Lage waterdruk", priority: "high", type: "malfunction", description: "Druk zakt weg." }).expect(201)).body.item;
+    const visit = (await client.post("/api/service/visits").send({ customerId: customer.id, equipmentId: equipment.id, contractId: contract.id, serviceRequestId: serviceRequest.id, assignedEmployeeId: employee.id, type: "malfunction", workType: "heat_pump", plannedDate: "2026-08-01", startTime: "09:00", durationHours: 2 }).expect(201)).body.item;
+    expect(visit.qualificationCheck.availability).toBeDefined();
+
+    const completed = (await client.put(`/api/service/visits/${visit.id}`).send({ status: "completed", diagnosis: "Expansievat defect", workPerformed: "Expansievat vervangen", customerName: "Test Klant", customerSignature: "data:image/png;base64,dGVzdA==", materialsUsed: [{ description: "Expansievat", quantity: 1, unit: "stuk", priceExVat: 75 }], measurements: [{ name: "Waterdruk", value: 1.8, unit: "bar" }] }).expect(200)).body.item;
+    expect(completed.measurements[0]).toMatchObject({ name: "Waterdruk", value: 1.8, unit: "bar" });
+    expect((await prisma.serviceRequest.findUnique({ where: { id: serviceRequest.id } })).status).toBe("resolved");
+    expect((await prisma.customerEquipment.findUnique({ where: { id: equipment.id } })).lastMaintenanceDate).toBe("2026-08-01");
+
+    const invoiceResponses = await Promise.all([
+      client.post(`/api/service/visits/${visit.id}/invoice`).send({}).expect(201),
+      client.post(`/api/service/visits/${visit.id}/invoice`).send({}).expect(201)
+    ]);
+    const firstInvoice = invoiceResponses[0].body.item, secondInvoice = invoiceResponses[1].body.item;
+    expect(secondInvoice.id).toBe(firstInvoice.id);
+    expect(firstInvoice.lines).toHaveLength(2);
+    expect(await prisma.invoice.count({ where: { id: firstInvoice.id } })).toBe(1);
+    expect(await prisma.serviceAuditEvent.count({ where: { entityType: "visit", entityId: visit.id } })).toBeGreaterThan(1);
+    const backup = (await client.get("/api/backup/export").expect(200)).body;
+    expect(backup.data.serviceContracts).toHaveLength(1);
+    expect(backup.data.maintenanceVisits).toHaveLength(1);
+    await client.post("/api/backup/import").send(backup).expect(200);
+    expect(await prisma.customerEquipment.count()).toBe(1);
+    expect(await prisma.maintenanceVisit.count()).toBe(1);
+  });
+
+  it("limits installers to their own service visits and gives CRM and finance read-only views", async () => {
+    const admin = agent(); await login(admin);
+    const customer = await createCustomer(admin);
+    const ownEmployee = await prisma.employee.create({ data: { employeeNumber: "CL-SVC-002", firstName: "Eigen", lastName: "Monteur", startDate: "2026-01-01", status: "active" } });
+    const otherEmployee = await prisma.employee.create({ data: { employeeNumber: "CL-SVC-003", firstName: "Andere", lastName: "Monteur", startDate: "2026-01-01", status: "active" } });
+    const installerUser = await createInstaller(admin, "service-installer");
+    await prisma.user.update({ where: { id: installerUser.id }, data: { employeeId: ownEmployee.id } });
+    const ownVisit = (await admin.post("/api/service/visits").send({ customerId: customer.id, assignedEmployeeId: ownEmployee.id, plannedDate: "2026-08-02", startTime: "09:00", durationHours: 2, workType: "other" }).expect(201)).body.item;
+    const otherVisit = (await admin.post("/api/service/visits").send({ customerId: customer.id, assignedEmployeeId: otherEmployee.id, plannedDate: "2026-08-02", startTime: "12:00", durationHours: 2, workType: "other" }).expect(201)).body.item;
+
+    const installer = agent(); await installer.post("/api/auth/login").send({ username: "service-installer", password: "installer-pass" }).expect(200);
+    const ownData = await installer.get("/api/service/bootstrap").expect(200);
+    expect(ownData.body.visits.map((item) => item.id)).toEqual([ownVisit.id]);
+    await installer.put(`/api/service/visits/${ownVisit.id}`).send({ status: "in_progress", diagnosis: "Controle" }).expect(200);
+    await installer.put(`/api/service/visits/${otherVisit.id}`).send({ status: "in_progress" }).expect(403);
+    await installer.post("/api/service/contracts").send({}).expect(403);
+
+    await createRoleUser(admin, "crm"); await createRoleUser(admin, "finance");
+    const crm = await loginAsRole("crm"), finance = await loginAsRole("finance");
+    await crm.get(`/api/service/bootstrap?customerId=${customer.id}`).expect(200);
+    await finance.get("/api/service/bootstrap").expect(200);
+    await crm.post("/api/service/requests").send({}).expect(403);
+    await finance.post("/api/service/contracts").send({}).expect(403);
+  });
 });
 
 afterAll(async () => {
@@ -79,6 +169,20 @@ async function createInstaller(client, username = "installer") {
   }).expect(200)).body.item;
 }
 
+async function createRoleUser(client, role) {
+  return (await client.post("/api/users").send({
+    username: `${role}-user`,
+    password: `${role}-password`,
+    role
+  }).expect(200)).body.item;
+}
+
+async function loginAsRole(role) {
+  const client = agent();
+  await client.post("/api/auth/login").send({ username: `${role}-user`, password: `${role}-password` }).expect(200);
+  return client;
+}
+
 async function enableHr(client) {
   const setup = await client.post("/api/hr/mfa/setup/start").send({ password: "test-password" }).expect(200);
   const code = authenticator.generate(setup.body.secret);
@@ -113,6 +217,20 @@ describe("auth", () => {
     await installerClient.post("/api/auth/login").send({ username: "installer", password: "installer-pass" }).expect(200);
     const session = await installerClient.get("/api/auth/session").expect(200);
     expect(session.body.user.role).toBe("installer");
+  });
+
+  it("stores every selected account role and rejects missing or unknown roles", async () => {
+    const client = agent();
+    await login(client);
+    for (const role of ["admin", "crm", "sales", "execution", "finance", "installer"]) {
+      const item = (await client.post("/api/users").send({ username: `account-${role}`, password: "account-password", role }).expect(200)).body.item;
+      expect(item.role).toBe(role);
+    }
+    await client.post("/api/users").send({ username: "zonder-rol", password: "account-password" }).expect(400);
+    await client.post("/api/users").send({ username: "verkeerde-rol", password: "account-password", role: "uitvoerder" }).expect(400);
+    const salesLogin = agent();
+    const session = await salesLogin.post("/api/auth/login").send({ username: "account-sales", password: "account-password" }).expect(200);
+    expect(session.body.user.role).toBe("sales");
   });
 
   it("allows users to change their own username and password", async () => {
@@ -184,6 +302,76 @@ describe("role access", () => {
     const updated = await admin.get("/api/bootstrap").expect(200);
     expect(updated.body.data.installations[0].status).toBe("uitgevoerd");
     expect(updated.body.data.installations[0].workOrder.workDone).toBe("Getest");
+  });
+
+  it("isolates CRM, sales, execution and finance by portal and API collection", async () => {
+    const admin = agent();
+    await login(admin);
+    for (const role of ["crm", "sales", "execution", "finance"]) await createRoleUser(admin, role);
+    const customer = await createCustomer(admin);
+    await admin.post("/api/collections/installations").send({
+      customerId: customer.id,
+      plannedDate: "2026-08-20",
+      startTime: "09:00",
+      durationHours: 4,
+      workType: "other"
+    }).expect(200);
+
+    const crm = await loginAsRole("crm");
+    const crmData = (await crm.get("/api/bootstrap").expect(200)).body.data;
+    expect(Object.keys(crmData).sort()).toEqual(["customerDocuments", "customerNotes", "customers"]);
+    await crm.get("/api/collections/customers").expect(200);
+    await crm.get("/api/collections/salesOpportunities").expect(403);
+    await crm.post("/api/collections/customers").send({
+      firstName: "CRM",
+      lastName: "Klant",
+      email: "crm@example.com",
+      phone: "0611111111",
+      address: "CRM-straat 1",
+      postalCode: "1234 AB",
+      city: "Utrecht"
+    }).expect(200);
+    await crm.post("/api/collections/quotes").send({}).expect(403);
+
+    const sales = await loginAsRole("sales");
+    const salesData = (await sales.get("/api/bootstrap").expect(200)).body.data;
+    expect(salesData.salesOpportunities).toBeDefined();
+    expect(salesData.salesAppointments).toBeDefined();
+    expect(salesData.quotes).toBeDefined();
+    expect(salesData.invoices).toBeUndefined();
+    expect(salesData.installations).toBeUndefined();
+    await sales.get("/api/collections/quotes").expect(200);
+    await sales.get("/api/collections/invoices").expect(403);
+    await sales.post("/api/collections/salesAppointments").send({ title: "Belafspraak", date: "2026-08-01", startTime: "10:00", endTime: "10:30" }).expect(200);
+    await sales.post("/api/collections/customers").send({ firstName: "Nope" }).expect(403);
+    await sales.post("/api/counters/quote/next").expect(200);
+    await sales.post("/api/counters/invoice/next").expect(403);
+    await sales.get("/api/projects").expect(403);
+
+    const execution = await loginAsRole("execution");
+    const executionData = (await execution.get("/api/bootstrap").expect(200)).body.data;
+    expect(executionData.installations).toHaveLength(1);
+    expect(executionData.invoices).toBeUndefined();
+    expect(executionData.salesOpportunities).toBeUndefined();
+    await execution.get("/api/collections/installations").expect(200);
+    await execution.get("/api/collections/invoices").expect(403);
+    await execution.get("/api/projects").expect(200);
+    await execution.post("/api/collections/installations").send({ customerId: customer.id, plannedDate: "2026-08-21", startTime: "09:00", durationHours: 4, workType: "other" }).expect(200);
+    await execution.post("/api/collections/invoices").send({}).expect(403);
+
+    const finance = await loginAsRole("finance");
+    const financeData = (await finance.get("/api/bootstrap").expect(200)).body.data;
+    expect(financeData.invoices).toBeDefined();
+    expect(financeData.quotes).toBeDefined();
+    expect(financeData.salesOpportunities).toBeUndefined();
+    expect(financeData.installations).toBeUndefined();
+    await finance.get("/api/collections/invoices").expect(200);
+    await finance.get("/api/collections/salesOpportunities").expect(403);
+    await finance.post("/api/counters/invoice/next").expect(200);
+    await finance.post("/api/counters/quote/next").expect(403);
+    await finance.post("/api/collections/customers").send({ firstName: "Nope" }).expect(403);
+    await finance.get("/api/users").expect(403);
+    await finance.get("/api/backup/export").expect(403);
   });
 });
 
@@ -263,13 +451,32 @@ describe("business data", () => {
     expect(opportunity.stage).toBe("contact");
     expect(opportunity.customerId).toBe(customer.id);
 
+    const appointment = (await client.post("/api/collections/salesAppointments").send({
+      title: "Kennismakingsgesprek",
+      type: "videogesprek",
+      date: "2026-07-16",
+      startTime: "10:00",
+      endTime: "10:45",
+      customerId: customer.id,
+      opportunityId: opportunity.id,
+      contactName: "Test Klant"
+    }).expect(200)).body.item;
+    expect(appointment.opportunityId).toBe(opportunity.id);
+
     const listed = await client.get("/api/bootstrap").expect(200);
     expect(listed.body.data.salesOpportunities).toHaveLength(1);
+    expect(listed.body.data.salesAppointments).toHaveLength(1);
 
     const backup = (await client.get("/api/backup/export").expect(200)).body;
     await data.resetData(prisma);
     await client.post("/api/backup/import").send(backup).expect(200);
     expect((await client.get("/api/bootstrap").expect(200)).body.data.salesOpportunities).toHaveLength(1);
+    expect((await client.get("/api/bootstrap").expect(200)).body.data.salesAppointments).toHaveLength(1);
+
+    await client.post("/api/collections/salesAppointments").send({
+      ...appointment,
+      endTime: "09:30"
+    }).expect(400);
 
     await client.delete(`/api/collections/salesOpportunities/${opportunity.id}`).expect(200);
     expect((await client.get("/api/bootstrap").expect(200)).body.data.salesOpportunities).toHaveLength(0);
@@ -335,6 +542,15 @@ describe("business data", () => {
     await client.post("/api/backup/import").send(backup).expect(200);
     expect((await client.get("/api/settings").expect(200)).body.item.companyName).toBe("Climature Test");
   });
+
+  it("stores only secure Google Business Profile links", async () => {
+    const client = agent();
+    await login(client);
+    const googleBusinessProfile = { profileUrl: "https://maps.app.goo.gl/climature", reviewUrl: "https://g.page/r/climature/review" };
+    const saved = await client.put("/api/settings").send({ googleBusinessProfile }).expect(200);
+    expect(saved.body.item.googleBusinessProfile).toEqual(googleBusinessProfile);
+    await client.put("/api/settings").send({ googleBusinessProfile: { profileUrl: "javascript:alert(1)", reviewUrl: "" } }).expect(400);
+  });
 });
 
 describe("secure HR portal", () => {
@@ -375,6 +591,9 @@ describe("secure HR portal", () => {
     await installer.get("/medewerkers/").expect(403);
     await installer.get("/api/hr/session").expect(403);
     await installer.get("/api/hr/employees").expect(403);
+    await installer.get("/api/hr/skills-matrix").expect(403);
+    await installer.get("/api/hr/qualification-definitions").expect(403);
+    await installer.get("/api/hr/checklist-templates").expect(403);
     await installer.get("/api/admin/employee-directory").expect(403);
   });
 
@@ -446,18 +665,21 @@ describe("secure HR portal", () => {
     await enableHr(client);
     const employee = await createEmployee(client);
     const directory = await client.get("/api/admin/employee-directory").expect(200);
-    expect(directory.body.items).toEqual([{ id: employee.id, displayName: "Sam Monteur", jobTitle: "Installateur", active: true }]);
+    expect(directory.body.items).toEqual([{ id: employee.id, displayName: "Sam Monteur", jobTitle: "Installateur", active: true, qualified: false, warnings: [{ code: "missing", label: "VCA", minimumLevel: "" }] }]);
     expect(JSON.stringify(directory.body)).not.toContain("sam.prive@example.com");
 
     const customer = await createCustomer(client);
     const installation = (await client.post("/api/collections/installations").send({
       customerId: customer.id,
       plannedDate: "2026-08-01",
+      workType: "other",
       employeeId: employee.id,
       installer: "Wordt overschreven"
     }).expect(200)).body.item;
     expect(installation.installer).toBe("Sam Monteur");
     expect(installation.employeeId).toBe(employee.id);
+    expect(installation.qualificationCheck.qualified).toBe(false);
+    expect(installation.qualificationCheck.warnings[0].qualificationCode).toBe("VCA");
 
     await client.post("/api/users").send({ username: "field", password: "installer-pass", role: "installer" }).expect(200);
     const installer = hrAgent();
@@ -465,6 +687,99 @@ describe("secure HR portal", () => {
     const bootstrap = await installer.get("/api/bootstrap").expect(200);
     expect(bootstrap.body.data.installations[0].installer).toBe("Sam Monteur");
     expect(bootstrap.body.data.installations[0].employeeId).toBeUndefined();
+    expect(bootstrap.body.data.installations[0].qualificationCheck).toBeUndefined();
+  });
+
+  it("evaluates qualification evidence and validity against the planned date", async () => {
+    const client = hrAgent();
+    await login(client);
+    await enableHr(client);
+    const employee = await createEmployee(client);
+    const definitions = (await client.get("/api/hr/qualification-definitions").expect(200)).body.items;
+    const vca = definitions.find((item) => item.code === "VCA");
+    const pdf = Buffer.from("%PDF-1.4\nqualification\n%%EOF");
+
+    const uploaded = await client.post(`/api/hr/employees/${employee.id}/qualifications`)
+      .field("definitionId", vca.id)
+      .field("issuer", "Erkende opleider")
+      .field("certificateNumber", "VCA-123")
+      .field("issueDate", "2026-01-01")
+      .field("expiryDate", "2026-08-01")
+      .field("note", "Alleen intern zichtbaar")
+      .attach("file", pdf, { filename: "vca.pdf", contentType: "application/pdf" })
+      .expect(201);
+    expect(uploaded.body.item.evidenceScanStatus).toBe("clean");
+
+    const stored = await prisma.employeeQualification.findUnique({ where: { id: uploaded.body.item.id } });
+    expect(Buffer.from(stored.evidenceCipher).equals(pdf)).toBe(false);
+    expect(Buffer.from(stored.noteCipher).toString("utf8")).not.toContain("Alleen intern zichtbaar");
+
+    const onBoundary = await client.get("/api/admin/employee-directory?workType=other&plannedDate=2026-08-01").expect(200);
+    expect(onBoundary.body.items[0]).toMatchObject({ qualified: true, warnings: [] });
+    const practical = definitions.find((item) => item.code === "PRACTICAL_SKILL");
+    await client.post("/api/hr/qualification-requirements").send({ workType: "other", definitionId: practical.id, minimumLevel: "independent", active: true }).expect(200);
+    const skill = (await client.post(`/api/hr/employees/${employee.id}/qualifications`)
+      .field("definitionId", practical.id)
+      .field("skillLevel", "basic")
+      .field("issueDate", "2026-01-01")
+      .expect(201)).body.item;
+    const insufficient = await client.get("/api/admin/employee-directory?workType=other&plannedDate=2026-08-01").expect(200);
+    expect(insufficient.body.items[0].warnings).toEqual([expect.objectContaining({ code: "insufficient_level", label: "Praktische vakvaardigheid" })]);
+    await client.put(`/api/hr/employees/${employee.id}/qualifications/${skill.id}`)
+      .field("definitionId", practical.id)
+      .field("skillLevel", "specialist")
+      .field("issueDate", "2026-01-01")
+      .expect(200);
+    expect((await client.get("/api/admin/employee-directory?workType=other&plannedDate=2026-08-01").expect(200)).body.items[0].qualified).toBe(true);
+    const expired = await client.get("/api/admin/employee-directory?workType=other&plannedDate=2026-08-02").expect(200);
+    expect(expired.body.items[0].warnings).toEqual([expect.objectContaining({ code: "expired", label: "VCA" })]);
+
+    const airco = await client.get("/api/admin/employee-directory?workType=air_conditioning&plannedDate=2026-08-01").expect(200);
+    expect(airco.body.items[0].warnings).toEqual([expect.objectContaining({ code: "missing", label: "F-gassen / BRL 200" })]);
+    const requirements = (await client.get("/api/hr/qualification-requirements").expect(200)).body.items;
+    const fGasRequirement = requirements.find((item) => item.workType === "air_conditioning" && item.definition.code === "FGAS_BRL200");
+    await client.delete(`/api/hr/qualification-requirements/${fGasRequirement.id}`).expect(200);
+    const afterConfigurationChange = await client.get("/api/admin/employee-directory?workType=air_conditioning&plannedDate=2026-08-01").expect(200);
+    expect(afterConfigurationChange.body.items[0]).toMatchObject({ qualified: true, warnings: [] });
+    const download = await client.get(`/api/hr/employees/${employee.id}/qualifications/${stored.id}/download`).expect(200);
+    expect(Buffer.from(download.body).equals(pdf)).toBe(true);
+    expect(download.headers["cache-control"]).toContain("no-store");
+    expect(JSON.stringify((await client.get("/api/backup/export").expect(200)).body)).not.toContain("vca.pdf");
+  });
+
+  it("creates versioned onboarding and offboarding checklists without duplicates", async () => {
+    const client = hrAgent();
+    await login(client);
+    await enableHr(client);
+    const employee = await createEmployee(client);
+    let checklists = (await client.get(`/api/hr/employees/${employee.id}/checklists`).expect(200)).body.items;
+    expect(checklists.filter((item) => item.type === "onboarding")).toHaveLength(1);
+    expect(checklists[0].items.map((item) => item.title)).toContain("Contract ondertekend");
+    expect(checklists[0].items[0].dueDate).toBe("2025-12-25");
+    const dashboard = await client.get("/api/hr/dashboard").expect(200);
+    expect(dashboard.body.checklistOverdue).toBeGreaterThan(0);
+    expect(dashboard.body.checklistTasks[0].employee.displayName).toBe("Sam Monteur");
+    expect(dashboard.body.qualificationMissing).toBe(1);
+
+    const users = (await client.get("/api/users").expect(200)).body.items;
+    await client.put(`/api/hr/checklists/${checklists[0].id}/items/${checklists[0].items[0].id}`).send({
+      status: "completed", dueDate: checklists[0].items[0].dueDate, assignedToId: users[0].id, note: "Afgetekend"
+    }).expect(200);
+    const storedTask = await prisma.employeeChecklistItem.findUnique({ where: { id: checklists[0].items[0].id } });
+    expect(Buffer.from(storedTask.noteCipher).toString("utf8")).not.toContain("Afgetekend");
+
+    await client.put(`/api/hr/employees/${employee.id}`).send({ ...employee, status: "ended", endDate: "2026-12-31" }).expect(200);
+    await client.put(`/api/hr/employees/${employee.id}`).send({ ...employee, status: "archived", endDate: "2026-12-31" }).expect(200);
+    checklists = (await client.get(`/api/hr/employees/${employee.id}/checklists`).expect(200)).body.items;
+    expect(checklists.filter((item) => item.type === "offboarding")).toHaveLength(1);
+    expect(checklists.find((item) => item.type === "offboarding").items.map((item) => item.title)).toContain("Accounts geblokkeerd");
+
+    const templates = (await client.get("/api/hr/checklist-templates").expect(200)).body.items;
+    const onboarding = templates.find((item) => item.type === "onboarding");
+    await client.put("/api/hr/checklist-templates/onboarding").send({ name: "Onboarding nieuw", active: true, items: [{ title: "Nieuwe taak", description: "Nieuwe versie", dueOffsetDays: 0, required: true }] }).expect(200);
+    const existing = (await client.get(`/api/hr/employees/${employee.id}/checklists`).expect(200)).body.items.find((item) => item.type === "onboarding");
+    expect(existing.templateVersion).toBe(onboarding.version);
+    expect(existing.items.map((item) => item.title)).toContain("Contract ondertekend");
   });
 
   it("enforces origin, CSRF tokens and immediate session invalidation", async () => {

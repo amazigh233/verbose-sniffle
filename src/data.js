@@ -3,8 +3,10 @@
 const { DEFAULT_PRODUCTS, DEFAULT_SETTINGS } = require("./defaults");
 const { normalizeAssumptions, refreshAdviceAssumptions: refreshAssumptionsFromSources } = require("./advice-assumptions");
 
-const COLLECTIONS = ["customers", "customerNotes", "customerDocuments", "products", "quotes", "invoices", "installations", "advices", "salesOpportunities"];
+const COLLECTIONS = ["customers", "customerNotes", "customerDocuments", "products", "quotes", "invoices", "installations", "advices", "salesOpportunities", "salesAppointments"];
 const SALES_STAGES = ["lead", "contact", "advies", "offerte_maken", "offerte_verstuurd", "gewonnen", "verloren"];
+const APPOINTMENT_TYPES = ["belafspraak", "videogesprek", "bezoek", "adviesgesprek", "overig"];
+const APPOINTMENT_STATUSES = ["gepland", "afgerond", "geannuleerd"];
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -52,6 +54,22 @@ function iso(value) {
 
 function stripUndefined(object) {
   return Object.fromEntries(Object.entries(object).filter((entry) => entry[1] !== undefined));
+}
+
+function normalizeGoogleBusinessProfile(value) {
+  const profile = value && typeof value === "object" ? value : {};
+  const normalizeUrl = (input) => {
+    const url = String(input || "").trim();
+    if (!url) return "";
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== "https:") throw new Error();
+      return parsed.toString();
+    } catch (_error) {
+      throw Object.assign(new Error("Gebruik voor Google Bedrijfsprofiel een geldige https-link."), { status: 400 });
+    }
+  };
+  return { profileUrl: normalizeUrl(profile.profileUrl), reviewUrl: normalizeUrl(profile.reviewUrl) };
 }
 
 function serializeQuote(quote) {
@@ -123,6 +141,7 @@ async function getSettings(prisma) {
   const record = await prisma.setting.findUnique({ where: { key: "settings" } });
   const value = { ...DEFAULT_SETTINGS, ...(record && record.value ? record.value : {}) };
   value.adviceAssumptions = normalizeAssumptions(value.adviceAssumptions);
+  value.googleBusinessProfile = normalizeGoogleBusinessProfile(value.googleBusinessProfile);
   return value;
 }
 
@@ -130,6 +149,7 @@ async function saveSettings(prisma, data) {
   const current = await getSettings(prisma);
   const value = { ...current, ...data, paymentDays: parseNumber(data.paymentDays || current.paymentDays) || 14 };
   value.adviceAssumptions = normalizeAssumptions(value.adviceAssumptions);
+  value.googleBusinessProfile = normalizeGoogleBusinessProfile(value.googleBusinessProfile);
   await prisma.setting.upsert({
     where: { key: "settings" },
     update: { value },
@@ -205,6 +225,7 @@ async function listCollection(prisma, collection) {
     const rows = await prisma.salesOpportunity.findMany({ orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }] });
     return rows.map(serializeSalesOpportunity);
   }
+  if (collection === "salesAppointments") return prisma.salesAppointment.findMany({ orderBy: [{ date: "asc" }, { startTime: "asc" }] });
   throw Object.assign(new Error("Onbekende collectie."), { status: 404 });
 }
 
@@ -333,6 +354,8 @@ function invoiceData(item) {
 
 function installationData(item) {
   const workOrder = item.workOrder && typeof item.workOrder === "object" ? item.workOrder : undefined;
+  const workTypes = ["air_conditioning", "heat_pump", "boiler", "home_battery", "other"];
+  const qualificationCheck = item.qualificationCheck && typeof item.qualificationCheck === "object" ? item.qualificationCheck : undefined;
   return stripUndefined({
     id: item.id || undefined,
     customerId: item.customerId,
@@ -344,6 +367,8 @@ function installationData(item) {
     status: item.status || "ingepland",
     installer: item.installer || "",
     employeeId: item.employeeId || null,
+    workType: workTypes.includes(item.workType) ? item.workType : "other",
+    qualificationCheck,
     notes: item.notes || "",
     workOrder,
     createdAt: asDate(item.createdAt) || undefined
@@ -402,6 +427,33 @@ function salesOpportunityData(item) {
     followUpDate: String(item.followUpDate || ""),
     notes: String(item.notes || ""),
     lostReason: String(item.lostReason || ""),
+    createdAt: asDate(item.createdAt) || undefined
+  });
+}
+
+function salesAppointmentData(item) {
+  const title = String(item.title || "").trim();
+  const date = String(item.date || "");
+  const startTime = String(item.startTime || "09:00");
+  const endTime = String(item.endTime || "09:30");
+  if (!title) throw Object.assign(new Error("Titel ontbreekt bij salesafspraak."), { status: 400 });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw Object.assign(new Error("Kies een geldige afspraakdatum."), { status: 400 });
+  if (!/^\d{2}:\d{2}$/.test(startTime) || !/^\d{2}:\d{2}$/.test(endTime) || endTime <= startTime) {
+    throw Object.assign(new Error("De eindtijd moet na de starttijd liggen."), { status: 400 });
+  }
+  return stripUndefined({
+    id: item.id || undefined,
+    title,
+    type: APPOINTMENT_TYPES.includes(item.type) ? item.type : "overig",
+    status: APPOINTMENT_STATUSES.includes(item.status) ? item.status : "gepland",
+    date,
+    startTime,
+    endTime,
+    customerId: item.customerId || null,
+    opportunityId: item.opportunityId || null,
+    contactName: String(item.contactName || "").trim(),
+    location: String(item.location || "").trim(),
+    notes: String(item.notes || ""),
     createdAt: asDate(item.createdAt) || undefined
   });
 }
@@ -520,6 +572,12 @@ async function upsert(prisma, collection, item) {
       : await prisma.salesOpportunity.create({ data });
     return serializeSalesOpportunity(saved);
   }
+  if (collection === "salesAppointments") {
+    const appointment = salesAppointmentData(item);
+    return appointment.id
+      ? prisma.salesAppointment.update({ where: { id: appointment.id }, data: appointment })
+      : prisma.salesAppointment.create({ data: appointment });
+  }
   throw Object.assign(new Error("Onbekende collectie."), { status: 404 });
 }
 
@@ -533,6 +591,7 @@ async function remove(prisma, collection, id) {
   if (collection === "installations") return prisma.installation.delete({ where: { id } });
   if (collection === "advices") return prisma.advice.delete({ where: { id } });
   if (collection === "salesOpportunities") return prisma.salesOpportunity.delete({ where: { id } });
+  if (collection === "salesAppointments") return prisma.salesAppointment.delete({ where: { id } });
   throw Object.assign(new Error("Onbekende collectie."), { status: 404 });
 }
 
@@ -542,6 +601,16 @@ async function saveInstallationWorkOrder(prisma, id, item) {
 }
 
 async function clearBusinessData(tx) {
+  await tx.serviceDocument.deleteMany();
+  await tx.maintenanceMeasurement.deleteMany();
+  await tx.serviceReminderRun.deleteMany();
+  await tx.maintenanceVisit.deleteMany();
+  await tx.serviceRequest.deleteMany();
+  await tx.serviceContract.deleteMany();
+  await tx.customerEquipment.deleteMany();
+  await tx.serviceAuditEvent.deleteMany();
+  await tx.salesAppointment.deleteMany();
+  await tx.customerProject.deleteMany();
   await tx.invoiceLine.deleteMany();
   await tx.quoteLine.deleteMany();
   await tx.salesOpportunity.deleteMany();
@@ -583,6 +652,13 @@ async function replaceAll(prisma, payload) {
     for (const installation of payload.installations || []) await tx.installation.create({ data: installationData(installation) });
     for (const advice of payload.advices || []) await tx.advice.create({ data: adviceData(advice) });
     for (const opportunity of payload.salesOpportunities || []) await tx.salesOpportunity.create({ data: salesOpportunityData(opportunity) });
+    for (const appointment of payload.salesAppointments || []) await tx.salesAppointment.create({ data: salesAppointmentData(appointment) });
+    for (const equipment of payload.serviceEquipment || []) await tx.customerEquipment.create({ data: equipment });
+    for (const contract of payload.serviceContracts || []) await tx.serviceContract.create({ data: contract });
+    for (const serviceRequest of payload.serviceRequests || []) await tx.serviceRequest.create({ data: serviceRequest });
+    for (const visit of payload.maintenanceVisits || []) await tx.maintenanceVisit.create({ data: { ...visit, assignedEmployeeId: null, completedAt: asDate(visit.completedAt), signedAt: asDate(visit.signedAt), createdAt: asDate(visit.createdAt), updatedAt: asDate(visit.updatedAt) } });
+    for (const measurement of payload.maintenanceMeasurements || []) await tx.maintenanceMeasurement.create({ data: { ...measurement, createdAt: asDate(measurement.createdAt) } });
+    for (const document of payload.serviceDocuments || []) await tx.serviceDocument.create({ data: { ...document, content: Buffer.from(document.content || "", "base64"), createdAt: asDate(document.createdAt) } });
     const counters = payload.counters || {};
     for (const [key, value] of Object.entries(counters)) {
       await tx.counter.create({ data: { key, value: parseInt(value, 10) || 0 } });
@@ -600,7 +676,18 @@ async function replaceCollection(prisma, collection, items) {
 
 async function exportData(prisma) {
   const payload = await bootstrap(prisma);
-  payload.installations = (payload.installations || []).map(({ employeeId: _employeeId, ...installation }) => installation);
+  payload.installations = (payload.installations || []).map(({ employeeId: _employeeId, qualificationCheck: _qualificationCheck, ...installation }) => installation);
+  const [serviceEquipment, serviceContracts, serviceRequests, maintenanceVisits, maintenanceMeasurements, serviceDocuments] = await Promise.all([
+    prisma.customerEquipment.findMany(), prisma.serviceContract.findMany(), prisma.serviceRequest.findMany(), prisma.maintenanceVisit.findMany(), prisma.maintenanceMeasurement.findMany(), prisma.serviceDocument.findMany()
+  ]);
+  Object.assign(payload, {
+    serviceEquipment,
+    serviceContracts,
+    serviceRequests: serviceRequests.map(({ assignedEmployeeId: _assignedEmployeeId, ...item }) => ({ ...item, assignedEmployeeId: null })),
+    maintenanceVisits: maintenanceVisits.map(({ assignedEmployeeId: _assignedEmployeeId, ...item }) => ({ ...item, assignedEmployeeId: null })),
+    maintenanceMeasurements,
+    serviceDocuments: serviceDocuments.map((item) => ({ ...item, content: Buffer.from(item.content).toString("base64") }))
+  });
   return {
     app: "climature-bedrijfsportaal",
     version: 2,

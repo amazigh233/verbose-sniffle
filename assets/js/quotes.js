@@ -62,8 +62,8 @@
       '<div class="button-row">',
       '<button class="small-button" data-action="quote-detail" data-id="' + S.escapeHtml(quote.id) + '">Open</button>',
       '<button class="small-button" data-action="quote-edit" data-id="' + S.escapeHtml(quote.id) + '">Bewerk</button>',
-      isAcceptedStatus(quote.status) ? '<button class="small-button" data-action="quote-to-invoice" data-id="' + S.escapeHtml(quote.id) + '">Factuur</button>' : "",
-      isAcceptedStatus(quote.status) ? '<button class="small-button" data-action="quote-to-installation" data-id="' + S.escapeHtml(quote.id) + '">Planning</button>' : "",
+      S.isAdmin() && isAcceptedStatus(quote.status) ? '<button class="small-button" data-action="quote-to-invoice" data-id="' + S.escapeHtml(quote.id) + '">Factuur</button>' : "",
+      S.isAdmin() && isAcceptedStatus(quote.status) ? '<button class="small-button" data-action="quote-to-installation" data-id="' + S.escapeHtml(quote.id) + '">Planning</button>' : "",
       !isAcceptedStatus(quote.status) && quote.status !== "afgewezen" ? '<button class="small-button" data-action="quote-status" data-status="geaccepteerd" data-id="' + S.escapeHtml(quote.id) + '">Accepteer</button>' : "",
       "</div>"
     ].join("");
@@ -237,10 +237,10 @@
     var accepted = isAcceptedStatus(quote.status);
     return [
       '<div class="button-row" style="margin-top:16px;">',
-      accepted && !invoice ? '<button class="primary-button" data-action="quote-to-invoice" data-id="' + S.escapeHtml(quote.id) + '">Maak factuur</button>' : "",
-      accepted && invoice ? '<button class="ghost-button" data-action="invoice-detail" data-id="' + S.escapeHtml(invoice.id) + '">Open factuur</button>' : "",
-      accepted && !installation ? '<button class="primary-button" data-action="quote-to-installation" data-id="' + S.escapeHtml(quote.id) + '">Plan installatie</button>' : "",
-      accepted && installation ? '<button class="ghost-button" data-action="installation-detail" data-id="' + S.escapeHtml(installation.id) + '">Open installatie</button>' : "",
+      S.isAdmin() && accepted && !invoice ? '<button class="primary-button" data-action="quote-to-invoice" data-id="' + S.escapeHtml(quote.id) + '">Maak factuur</button>' : "",
+      S.isAdmin() && accepted && invoice ? '<button class="ghost-button" data-action="invoice-detail" data-id="' + S.escapeHtml(invoice.id) + '">Open factuur</button>' : "",
+      S.isAdmin() && accepted && !installation ? '<button class="primary-button" data-action="quote-to-installation" data-id="' + S.escapeHtml(quote.id) + '">Plan installatie</button>' : "",
+      S.isAdmin() && accepted && installation ? '<button class="ghost-button" data-action="installation-detail" data-id="' + S.escapeHtml(installation.id) + '">Open installatie</button>' : "",
       !accepted ? '<button class="primary-button" data-action="quote-status" data-status="geaccepteerd" data-id="' + S.escapeHtml(quote.id) + '">Accepteer offerte</button>' : "",
       '<button class="ghost-button" data-action="quote-edit" data-id="' + S.escapeHtml(quote.id) + '">Bewerk</button>',
       '<button class="ghost-button" data-action="quote-pdf" data-id="' + S.escapeHtml(quote.id) + '">Download PDF</button>',

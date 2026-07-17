@@ -18,6 +18,7 @@
       plannedDate: S.addDays(S.today(), 14),
       startTime: "09:00",
       durationHours: 4,
+      workType: "other",
       installer: "",
       status: "ingepland",
       notes: ""
@@ -32,7 +33,7 @@
       var customer = customers.find(function (item) { return item.id === installation.customerId; });
       return !q || [installation.quoteNumber, installation.status, installation.installer, S.customerName(customer)].join(" ").toLowerCase().indexOf(q) >= 0;
     }));
-    var headAction = S.isAdmin() ? '<button class="primary-button" data-action="installation-new">Nieuwe installatie</button>' : "";
+    var headAction = S.canManage("execution") ? '<button class="primary-button" data-action="installation-new">Nieuwe installatie</button>' : "";
     return [
       '<section class="section panel">',
       '<div class="panel-head"><div><p class="eyebrow">Planning</p><h2>Installaties beheren</h2></div>' + headAction + "</div>",
@@ -132,7 +133,7 @@
   function listView(installations, customers, query) {
     var rows = installations.map(function (installation) {
       var customer = customers.find(function (item) { return item.id === installation.customerId; });
-      var editButton = S.isAdmin() ? '<button class="small-button" data-action="installation-edit" data-id="' + S.escapeHtml(installation.id) + '">Bewerk</button>' : "";
+      var editButton = S.canManage("execution") ? '<button class="small-button" data-action="installation-edit" data-id="' + S.escapeHtml(installation.id) + '">Bewerk</button>' : "";
       return [
         "<tr>",
         "<td><strong>" + S.escapeHtml(S.formatDate(installation.plannedDate)) + "</strong><br><span class=\"muted\">" + S.escapeHtml(installation.startTime || "-") + "</span></td>",
@@ -242,7 +243,18 @@
   function employeeOptions(selectedId) {
     var employees = S.read("employeeDirectory", []);
     return '<option value="">Geen HR-koppeling / vrije tekst</option>' + employees.map(function (employee) {
-      return '<option value="' + S.escapeHtml(employee.id) + '"' + (employee.id === selectedId ? " selected" : "") + '>' + S.escapeHtml(employee.displayName + (employee.jobTitle ? " · " + employee.jobTitle : "")) + "</option>";
+      var qualification = employee.qualified === false ? " · ⚠ " + (employee.warnings || []).map(function (warning) { return warning.label; }).join(", ") : employee.qualified === true ? " · ✓ geschikt" : "";
+      return '<option value="' + S.escapeHtml(employee.id) + '"' + (employee.id === selectedId ? " selected" : "") + '>' + S.escapeHtml(employee.displayName + (employee.jobTitle ? " · " + employee.jobTitle : "") + qualification) + "</option>";
+    }).join("");
+  }
+
+  function workTypeLabel(value) {
+    return ({ air_conditioning: "Airconditioning", heat_pump: "Warmtepomp", boiler: "Cv-ketel", home_battery: "Thuisbatterij", other: "Overig" })[value] || "Overig";
+  }
+
+  function workTypeOptions(selected) {
+    return [["air_conditioning","Airconditioning"],["heat_pump","Warmtepomp"],["boiler","Cv-ketel"],["home_battery","Thuisbatterij"],["other","Overig"]].map(function (item) {
+      return '<option value="' + item[0] + '"' + (item[0] === selected ? " selected" : "") + '>' + item[1] + '</option>';
     }).join("");
   }
 
@@ -257,7 +269,9 @@
       '<label class="field">Datum<input name="plannedDate" type="date" required value="' + S.escapeHtml(data.plannedDate || S.today()) + '"></label>',
       '<label class="field">Starttijd<input name="startTime" type="time" value="' + S.escapeHtml(data.startTime || "09:00") + '"></label>',
       '<label class="field">Duur in uren<input name="durationHours" type="number" min="0.5" step="0.5" value="' + S.escapeHtml(data.durationHours || 4) + '"></label>',
-      S.isAdmin() && S.isHrPortalEnabled() ? '<label class="field">Werknemer<select name="employeeId">' + employeeOptions(data.employeeId || "") + '</select></label>' : "",
+      '<label class="field">Werksoort<select name="workType" required>' + workTypeOptions(data.workType || "other") + '</select></label>',
+      S.canManage("execution") && S.isHrPortalEnabled() ? '<label class="field">Werknemer<select name="employeeId">' + employeeOptions(data.employeeId || "") + '</select></label>' : "",
+      S.canManage("execution") && S.isHrPortalEnabled() ? '<div class="field full" data-qualification-warning></div>' : "",
       '<label class="field">Monteur (weergavenaam)<input name="installer" value="' + S.escapeHtml(data.installer || "") + '" placeholder="Naam monteur"></label>',
       '<label class="field">Status<select name="status">' + statusOptions(data.status || "ingepland") + '</select></label>',
       '<label class="field full">Notities<textarea name="notes" rows="5">' + S.escapeHtml(data.notes || "") + "</textarea></label>",
@@ -271,14 +285,15 @@
     var installation = S.getAll("installations").find(function (item) { return item.id === id; });
     if (!installation) return renderList("");
     var customer = S.getAll("customers").find(function (item) { return item.id === installation.customerId; });
-    var adminButtons = S.isAdmin()
-      ? '<button class="ghost-button" data-action="installation-edit" data-id="' + S.escapeHtml(installation.id) + '">Bewerk</button>' + (installation.quoteId ? '<button class="ghost-button" data-action="quote-detail" data-id="' + S.escapeHtml(installation.quoteId) + '">Open offerte</button>' : "") + '<button class="danger-button" data-action="installation-delete" data-id="' + S.escapeHtml(installation.id) + '">Verwijder</button>'
+    var adminButtons = S.canManage("execution")
+      ? '<button class="ghost-button" data-action="installation-edit" data-id="' + S.escapeHtml(installation.id) + '">Bewerk</button>' + (S.isAdmin() && installation.quoteId ? '<button class="ghost-button" data-action="quote-detail" data-id="' + S.escapeHtml(installation.quoteId) + '">Open offerte</button>' : "") + '<button class="danger-button" data-action="installation-delete" data-id="' + S.escapeHtml(installation.id) + '">Verwijder</button>'
       : "";
     return [
       '<section class="grid two section">',
       '<div class="panel">',
       '<div class="panel-head"><div><p class="eyebrow">Installatie</p><h2>' + S.escapeHtml(S.formatDate(installation.plannedDate)) + '</h2></div><span class="status-pill ' + statusClass(installation.status) + '">' + S.escapeHtml(installation.status || "ingepland") + '</span></div>',
-      '<div class="detail-list">' + detail("Klant", S.customerName(customer)) + detail("Offerte", installation.quoteNumber || "-") + detail("Starttijd", installation.startTime || "-") + detail("Duur", (installation.durationHours || 4) + " uur") + detail("Monteur", installation.installer || "-") + detail("Notities", installation.notes || "-") + "</div>",
+      '<div class="detail-list">' + detail("Klant", S.customerName(customer)) + detail("Offerte", installation.quoteNumber || "-") + detail("Werksoort", workTypeLabel(installation.workType)) + detail("Starttijd", installation.startTime || "-") + detail("Duur", (installation.durationHours || 4) + " uur") + detail("Monteur", installation.installer || "-") + detail("Notities", installation.notes || "-") + "</div>",
+      S.canManage("execution") ? qualificationCheckNotice(installation.qualificationCheck) : "",
       '<div class="button-row" style="margin-top:16px;"><a class="primary-button" target="_blank" rel="noopener" href="' + S.escapeHtml(googleCalendarUrl(installation, customer)) + '">Zet in Google Agenda</a><button class="ghost-button" data-action="installation-workorder-print" data-id="' + S.escapeHtml(installation.id) + '">Print werkbon</button>' + adminButtons + "</div>",
       "</div>",
       workOrderPanel(installation, customer),
@@ -339,6 +354,13 @@
     return "<div><span>" + S.escapeHtml(label) + "</span><strong>" + S.escapeHtml(value || "-") + "</strong></div>";
   }
 
+  function qualificationCheckNotice(check) {
+    if (!check) return '<div class="notice warn" style="margin-top:14px;">Geen HR-kwalificatiecontrole beschikbaar voor deze planning.</div>';
+    if (check.qualified) return '<div class="notice ok" style="margin-top:14px;">✓ De gekoppelde monteur voldeed op de geplande datum aan de ingestelde eisen.</div>';
+    var labels = (check.warnings || []).map(function (warning) { return warning.label; }).join(", ");
+    return '<div class="notice warn" style="margin-top:14px;"><strong>Kwalificatiewaarschuwing:</strong> ' + S.escapeHtml(labels || "Geen gekoppelde monteur") + '</div>';
+  }
+
   function createFromQuote(quoteId) {
     var quote = S.getAll("quotes").find(function (item) { return item.id === quoteId; });
     if (!quote) return null;
@@ -366,12 +388,42 @@
     }
     if (form.dataset.id) data.id = form.dataset.id;
     data.durationHours = S.parseNumber(data.durationHours) || 4;
-    return S.upsert("installations", data).then(function (saved) {
-      C.app.toast("Installatie opgeslagen.");
+    return S.listEmployeeDirectory({ workType: data.workType || "other", plannedDate: data.plannedDate }).then(function (employees) {
+      var selected = employees.find(function (employee) { return employee.id === data.employeeId; });
+      if (selected && selected.qualified === false) {
+        var labels = (selected.warnings || []).map(function (warning) { return warning.label; }).join(", ");
+        if (!window.confirm("Let op: deze monteur voldoet niet aan alle eisen voor " + workTypeLabel(data.workType) + ".\n\n" + labels + "\n\nToch inplannen?")) return null;
+      }
+      return S.upsert("installations", data);
+    }).then(function (saved) {
+      if (!saved) return null;
+      var warningCount = saved.qualificationCheck && saved.qualificationCheck.warnings ? saved.qualificationCheck.warnings.length : 0;
+      C.app.toast(warningCount ? "Installatie opgeslagen met kwalificatiewaarschuwing." : "Installatie opgeslagen.");
       C.app.navigate("installation:" + saved.id);
       return saved;
     });
   }
+
+  function refreshQualificationOptions(form) {
+    if (!form || !S.canManage("execution") || !S.isHrPortalEnabled()) return;
+    var workType = form.elements.workType.value || "other", plannedDate = form.elements.plannedDate.value || S.today(), selectedId = form.elements.employeeId.value;
+    S.listEmployeeDirectory({ workType: workType, plannedDate: plannedDate }).then(function (employees) {
+      var select = form.elements.employeeId;
+      select.innerHTML = employeeOptions(selectedId);
+      select.value = selectedId;
+      var selected = employees.find(function (employee) { return employee.id === selectedId; });
+      var warning = form.querySelector("[data-qualification-warning]");
+      if (!warning) return;
+      if (!selected) warning.innerHTML = '<span class="muted">Kies een HR-werknemer om de kwalificaties te controleren.</span>';
+      else if (selected.qualified) warning.innerHTML = '<div class="notice ok">✓ Monteur voldoet op deze datum aan de ingestelde eisen.</div>';
+      else warning.innerHTML = '<div class="notice warn"><strong>Waarschuwing:</strong> ' + S.escapeHtml((selected.warnings || []).map(function (item) { return item.label; }).join(", ")) + '</div>';
+    }).catch(function () { C.app.toast("Kwalificatiecontrole kon niet worden geladen."); });
+  }
+
+  document.addEventListener("change", function (event) {
+    var form = event.target.closest('form[data-form="installation"]');
+    if (form && ["workType", "plannedDate", "employeeId"].indexOf(event.target.name) >= 0) refreshQualificationOptions(form);
+  });
 
   function saveWorkOrderFromForm(form) {
     var installation = S.getAll("installations").find(function (item) { return item.id === form.dataset.id; });

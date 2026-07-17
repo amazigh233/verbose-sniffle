@@ -1,7 +1,7 @@
 /* Climature Bedrijfsportaal service worker — offline app-shell cache. */
 "use strict";
 
-var CACHE_VERSION = "climature-shell-v5";
+var CACHE_VERSION = "climature-shell-v13";
 
 var APP_SHELL = [
   "./",
@@ -15,8 +15,12 @@ var APP_SHELL = [
   "assets/js/pdf.js",
   "assets/js/customers.js",
   "assets/js/quotes.js",
+  "assets/js/sales-funnel.js",
+  "assets/js/sales-agenda.js",
   "assets/js/invoices.js",
   "assets/js/installations.js",
+  "assets/js/projects.js",
+  "assets/js/service.js",
   "assets/js/advice.js",
   "assets/js/reports.js",
   "assets/js/app.js"

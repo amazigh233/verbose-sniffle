@@ -30,7 +30,13 @@ function loadConfig() {
     hrKeyVersion: String(process.env.HR_KEY_VERSION || "v1"),
     clamavHost: String(process.env.CLAMAV_HOST || ""),
     clamavPort: Number(process.env.CLAMAV_PORT || 3310),
-    allowUnscannedHrFiles: booleanEnv("ALLOW_UNSCANNED_HR_FILES", false)
+    allowUnscannedHrFiles: booleanEnv("ALLOW_UNSCANNED_HR_FILES", false),
+    projectEncryptionKey: String(process.env.PROJECT_ENCRYPTION_KEY || process.env.HR_ENCRYPTION_KEY || ""),
+    projectKeyVersion: String(process.env.PROJECT_KEY_VERSION || "v1"),
+    resendApiKey: String(process.env.RESEND_API_KEY || ""),
+    projectMailFrom: String(process.env.PROJECT_MAIL_FROM || ""),
+    serviceMailFrom: String(process.env.SERVICE_MAIL_FROM || process.env.PROJECT_MAIL_FROM || ""),
+    appBaseUrl: String(process.env.APP_BASE_URL || `http://localhost:${Number(process.env.PORT || 3000)}`)
   };
   if (config.hrPortalEnabled && !config.hrEncryptionKey) {
     throw new Error("Missing required environment variable: HR_ENCRYPTION_KEY");

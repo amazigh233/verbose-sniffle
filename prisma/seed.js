@@ -4,6 +4,8 @@ require("dotenv").config();
 
 const { prisma } = require("../src/prisma");
 const { DEFAULT_PRODUCTS, DEFAULT_SETTINGS } = require("../src/defaults");
+const workforce = require("../src/hr-workforce");
+const projects = require("../src/project-data");
 
 async function main() {
   await prisma.setting.upsert({
@@ -19,6 +21,8 @@ async function main() {
       create: product
     });
   }
+  await workforce.ensureDefaults(prisma);
+  await projects.ensureTemplates(prisma);
 }
 
 main()

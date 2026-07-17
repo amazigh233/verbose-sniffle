@@ -3,7 +3,7 @@
 
   var store = window.Climature = window.Climature || {};
   var EURO = new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" });
-  var COLLECTIONS = ["customers", "customerNotes", "customerDocuments", "products", "quotes", "invoices", "installations", "advices", "salesOpportunities"];
+  var COLLECTIONS = ["customers", "customerNotes", "customerDocuments", "products", "quotes", "invoices", "installations", "advices", "salesOpportunities", "salesAppointments"];
 
   var DEFAULT_SETTINGS = {
     companyName: "Climature",
@@ -18,6 +18,8 @@
     paymentDays: 14,
     defaultInvoiceNote: "Gelieve het openstaande bedrag te voldoen binnen de betaaltermijn onder vermelding van het factuurnummer.",
     defaultQuoteTerms: "Deze offerte is vrijblijvend en geldig tot de genoemde datum. Genoemde prijzen zijn gebaseerd op de nu bekende situatie. Eventueel meerwerk, aanpassingen aan meterkast, leidingwerk, bouwkundige delen of bestaande installaties worden vooraf besproken. Planning vindt plaats in overleg na akkoord.",
+    googleBusinessProfile: { profileUrl: "", reviewUrl: "" },
+    serviceReminders: { enabled: true, daysBefore: 30 },
     adviceAssumptions: {
       energy: { gasPrice: 1.45, electricityPrice: 0.30, dynamicElectricityPrice: 0.26, gasAnnualIncrease: 5, electricityAnnualIncrease: 2 },
       battery: { feedInCost: 0.15, epexMargin: 0.22, imbalancePerKwh: 250, aggregatorFeeExternal: 25, aggregatorFeeClimature: 15 },
@@ -62,6 +64,7 @@
     installations: [],
     advices: [],
     salesOpportunities: [],
+    salesAppointments: [],
     settings: Object.assign({}, DEFAULT_SETTINGS),
     counters: {},
     users: [],
@@ -74,7 +77,7 @@
 
   function api(path, options) {
     options = options || {};
-    var headers = Object.assign({ "Content-Type": "application/json" }, options.headers || {});
+    var headers = Object.assign(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }, options.headers || {});
     if (["POST", "PUT", "PATCH", "DELETE"].indexOf(String(options.method || "GET").toUpperCase()) >= 0 && currentCsrfToken) {
       headers["X-CSRF-Token"] = currentCsrfToken;
     }
@@ -193,6 +196,19 @@
 
   function isInstaller() {
     return currentUser && currentUser.role === "installer";
+  }
+
+  function hasRole() {
+    if (!currentUser) return false;
+    return Array.prototype.slice.call(arguments).indexOf(currentUser.role) >= 0;
+  }
+
+  function canManage(portal) {
+    if (isAdmin()) return true;
+    return (portal === "crm" && hasRole("crm")) ||
+      (portal === "sales" && hasRole("sales")) ||
+      (portal === "execution" && hasRole("execution")) ||
+      (portal === "finance" && hasRole("finance"));
   }
 
   function isHrPortalEnabled() {
@@ -380,9 +396,10 @@
     });
   }
 
-  function listEmployeeDirectory() {
-    if (!isHrPortalEnabled() || !isAdmin()) return Promise.resolve([]);
-    return api("/api/admin/employee-directory").then(function (payload) {
+  function listEmployeeDirectory(filters) {
+    if (!isHrPortalEnabled() || !canManage("execution")) return Promise.resolve([]);
+    var query = new URLSearchParams(filters || {}).toString();
+    return api("/api/admin/employee-directory" + (query ? "?" + query : "")).then(function (payload) {
       cache.employeeDirectory = payload.items || [];
       return cache.employeeDirectory;
     });
@@ -432,6 +449,7 @@
   }
 
   store.storage = {
+    request: api,
     init: init,
     refresh: refresh,
     login: login,
@@ -440,6 +458,8 @@
     user: user,
     isAdmin: isAdmin,
     isInstaller: isInstaller,
+    hasRole: hasRole,
+    canManage: canManage,
     isHrPortalEnabled: isHrPortalEnabled,
     getAll: getAll,
     saveAll: saveAll,

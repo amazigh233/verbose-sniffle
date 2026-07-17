@@ -1,11 +1,12 @@
 # Productie-uitrol op Render
 
-`render.yaml` maakt vier betaalde productieonderdelen in Frankfurt aan:
+`render.yaml` maakt vijf betaalde productieonderdelen in Frankfurt aan:
 
 - de Node-webservice;
 - een afgeschermde Render Postgres-database zonder publieke IP-toegang;
 - een private ClamAV-service voor contractscans.
 - een nachtelijke back-upcronjob voor versleutelde S3-exports.
+- een dagelijkse servicecronjob voor idempotente onderhoudsherinneringen.
 
 Het werknemersportaal blijft na de eerste deployment bewust uitgeschakeld.
 
@@ -21,7 +22,8 @@ Het werknemersportaal blijft na de eerste deployment bewust uitgeschakeld.
    ```
 
 3. Vul de hash bij `ADMIN_PASSWORD_HASH` in. Render genereert `SESSION_SECRET` en de 256-bit `HR_ENCRYPTION_KEY` zelf.
-4. Exporteer en bewaar de waarde van `HR_ENCRYPTION_KEY` direct in de bedrijfswachtwoordkluis. Zonder deze sleutel zijn versleutelde HR-gegevens niet herstelbaar.
+4. Vul voor serviceberichten `RESEND_API_KEY` en een bij Resend geverifieerd `SERVICE_MAIL_FROM`-adres in.
+5. Exporteer en bewaar de waarde van `HR_ENCRYPTION_KEY` direct in de bedrijfswachtwoordkluis. Zonder deze sleutel zijn versleutelde HR-gegevens niet herstelbaar.
 
 ## 2. Eerste deployment en controle
 

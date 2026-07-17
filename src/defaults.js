@@ -13,6 +13,9 @@ const DEFAULT_SETTINGS = {
   paymentDays: 14,
   defaultInvoiceNote: "Gelieve het openstaande bedrag te voldoen binnen de betaaltermijn onder vermelding van het factuurnummer.",
   defaultQuoteTerms: "Deze offerte is vrijblijvend en geldig tot de genoemde datum. Genoemde prijzen zijn gebaseerd op de nu bekende situatie. Eventueel meerwerk, aanpassingen aan meterkast, leidingwerk, bouwkundige delen of bestaande installaties worden vooraf besproken. Planning vindt plaats in overleg na akkoord.",
+  googleBusinessProfile: { profileUrl: "", reviewUrl: "" },
+  projectDigest: { enabled: true, hour: 7, timezone: "Europe/Amsterdam", recipients: "" },
+  serviceReminders: { enabled: true, daysBefore: 30 },
   adviceAssumptions: {
     energy: {
       gasPrice: 1.45,

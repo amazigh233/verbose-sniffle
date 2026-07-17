@@ -8,23 +8,32 @@ datasource db {
 }
 
 model User {
-  id               String                @id @default(cuid())
-  username         String                @unique
-  passwordHash     String
-  role             String                @default("installer")
-  active           Boolean               @default(true)
-  mfaSecretCipher  Bytes?
-  mfaSecretIv      Bytes?
-  mfaSecretTag     Bytes?
-  mfaEnabledAt     DateTime?
-  mfaLastUsedStep  Int?
-  createdAt        DateTime              @default(now())
-  updatedAt        DateTime              @updatedAt
-  recoveryCodes    UserMfaRecoveryCode[]
-  createdContracts EmploymentContract[]  @relation("ContractCreatedBy")
-  createdNotes     EmployeeNote[]        @relation("NoteCreatedBy")
-  updatedNotes     EmployeeNote[]        @relation("NoteUpdatedBy")
-  hrAuditEvents    HrAuditEvent[]        @relation("HrAuditActor")
+  id                      String                  @id @default(cuid())
+  username                String                  @unique
+  email                   String                  @default("")
+  passwordHash            String
+  role                    String                  @default("installer")
+  active                  Boolean                 @default(true)
+  mfaSecretCipher         Bytes?
+  mfaSecretIv             Bytes?
+  mfaSecretTag            Bytes?
+  mfaEnabledAt            DateTime?
+  mfaLastUsedStep         Int?
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+  recoveryCodes           UserMfaRecoveryCode[]
+  createdContracts        EmploymentContract[]    @relation("ContractCreatedBy")
+  createdNotes            EmployeeNote[]          @relation("NoteCreatedBy")
+  updatedNotes            EmployeeNote[]          @relation("NoteUpdatedBy")
+  hrAuditEvents           HrAuditEvent[]          @relation("HrAuditActor")
+  createdQualifications   EmployeeQualification[] @relation("QualificationCreatedBy")
+  assignedChecklistItems  EmployeeChecklistItem[] @relation("ChecklistAssignedTo")
+  completedChecklistItems EmployeeChecklistItem[] @relation("ChecklistCompletedBy")
+  employeeId              String?                 @unique
+  employee                Employee?               @relation("EmployeeAccount", fields: [employeeId], references: [id], onDelete: SetNull)
+  ownedProjects           CustomerProject[]       @relation("ProjectOwner")
+  projectAuditEvents      ProjectAuditEvent[]     @relation("ProjectAuditActor")
+  serviceAuditEvents      ServiceAuditEvent[]     @relation("ServiceAuditActor")
 
   @@index([role])
   @@index([active])
@@ -42,28 +51,37 @@ model UserMfaRecoveryCode {
 }
 
 model Employee {
-  id                String               @id @default(cuid())
-  employeeNumber    String               @unique
-  firstName         String
-  lastName          String
-  workEmail         String               @default("")
-  workPhone         String               @default("")
-  jobTitle          String               @default("")
-  department        String               @default("")
-  status            String               @default("active")
-  employmentType    String               @default("permanent")
-  hoursPerWeek      Float                @default(0)
-  startDate         String
-  endDate           String               @default("")
-  privateDataCipher Bytes?
-  privateDataIv     Bytes?
-  privateDataTag    Bytes?
-  archivedAt        DateTime?
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
-  contracts         EmploymentContract[]
-  notes             EmployeeNote[]
-  installations     Installation[]
+  id                   String                  @id @default(cuid())
+  employeeNumber       String                  @unique
+  firstName            String
+  lastName             String
+  workEmail            String                  @default("")
+  workPhone            String                  @default("")
+  jobTitle             String                  @default("")
+  department           String                  @default("")
+  status               String                  @default("active")
+  employmentType       String                  @default("permanent")
+  hoursPerWeek         Float                   @default(0)
+  startDate            String
+  endDate              String                  @default("")
+  privateDataCipher    Bytes?
+  privateDataIv        Bytes?
+  privateDataTag       Bytes?
+  archivedAt           DateTime?
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  contracts            EmploymentContract[]
+  notes                EmployeeNote[]
+  installations        Installation[]
+  qualifications       EmployeeQualification[]
+  checklists           EmployeeChecklist[]
+  user                 User?                   @relation("EmployeeAccount")
+  projectMemberships   ProjectMember[]
+  assignedProjectTasks ProjectTask[]
+  workSchedules        EmployeeWorkSchedule[]
+  absences             EmployeeAbsence[]
+  maintenanceVisits    MaintenanceVisit[]
+  serviceRequests      ServiceRequest[]
 
   @@index([status])
   @@index([department])
@@ -136,19 +154,160 @@ model HrAuditEvent {
   @@index([actorId, createdAt])
 }
 
+model QualificationDefinition {
+  id                    String                     @id @default(cuid())
+  code                  String                     @unique
+  name                  String
+  kind                  String                     @default("certificate")
+  description           String                     @default("")
+  evidencePolicy        String                     @default("required")
+  defaultValidityMonths Int?
+  active                Boolean                    @default(true)
+  sortOrder             Int                        @default(0)
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+  qualifications        EmployeeQualification[]
+  requirements          QualificationRequirement[]
+
+  @@index([active, sortOrder])
+}
+
+model EmployeeQualification {
+  id                  String                  @id @default(cuid())
+  employeeId          String
+  definitionId        String
+  issuer              String                  @default("")
+  certificateNumber   String                  @default("")
+  issueDate           String                  @default("")
+  expiryDate          String                  @default("")
+  skillLevel          String                  @default("")
+  noteCipher          Bytes?
+  noteIv              Bytes?
+  noteTag             Bytes?
+  evidenceFileName    String                  @default("")
+  evidenceMimeType    String                  @default("")
+  evidenceSize        Int                     @default(0)
+  evidenceSha256      String                  @default("")
+  evidenceScanStatus  String                  @default("missing")
+  evidenceScanMessage String                  @default("")
+  evidenceCipher      Bytes?
+  evidenceIv          Bytes?
+  evidenceTag         Bytes?
+  keyVersion          String                  @default("v1")
+  archivedAt          DateTime?
+  createdById         String
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+  employee            Employee                @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  definition          QualificationDefinition @relation(fields: [definitionId], references: [id], onDelete: Restrict)
+  createdBy           User                    @relation("QualificationCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([employeeId, archivedAt])
+  @@index([definitionId, expiryDate])
+  @@index([evidenceScanStatus])
+}
+
+model QualificationRequirement {
+  id           String                  @id @default(cuid())
+  workType     String
+  definitionId String
+  minimumLevel String                  @default("")
+  active       Boolean                 @default(true)
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  definition   QualificationDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+
+  @@unique([workType, definitionId])
+  @@index([workType, active])
+}
+
+model ChecklistTemplate {
+  id         String                  @id @default(cuid())
+  type       String                  @unique
+  name       String
+  version    Int                     @default(1)
+  active     Boolean                 @default(true)
+  createdAt  DateTime                @default(now())
+  updatedAt  DateTime                @updatedAt
+  items      ChecklistTemplateItem[]
+  checklists EmployeeChecklist[]
+}
+
+model ChecklistTemplateItem {
+  id                String            @id @default(cuid())
+  templateId        String
+  title             String
+  description       String            @default("")
+  dueOffsetDays     Int               @default(0)
+  required          Boolean           @default(true)
+  sortOrder         Int               @default(0)
+  defaultAssigneeId String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  template          ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId, sortOrder])
+}
+
+model EmployeeChecklist {
+  id              String                  @id @default(cuid())
+  employeeId      String
+  templateId      String?
+  type            String
+  templateVersion Int
+  anchorDate      String
+  status          String                  @default("open")
+  sourceKey       String                  @unique
+  createdAt       DateTime                @default(now())
+  completedAt     DateTime?
+  employee        Employee                @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  template        ChecklistTemplate?      @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  items           EmployeeChecklistItem[]
+
+  @@index([employeeId, type, createdAt])
+  @@index([status])
+}
+
+model EmployeeChecklistItem {
+  id            String            @id @default(cuid())
+  checklistId   String
+  title         String
+  description   String            @default("")
+  dueDate       String
+  required      Boolean           @default(true)
+  sortOrder     Int               @default(0)
+  assignedToId  String?
+  status        String            @default("open")
+  noteCipher    Bytes?
+  noteIv        Bytes?
+  noteTag       Bytes?
+  keyVersion    String            @default("v1")
+  completedAt   DateTime?
+  completedById String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  checklist     EmployeeChecklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  assignedTo    User?             @relation("ChecklistAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  completedBy   User?             @relation("ChecklistCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
+
+  @@index([checklistId, sortOrder])
+  @@index([assignedToId, dueDate, status])
+  @@index([dueDate, status])
+}
+
 model Customer {
-  id                 String             @id @default(cuid())
+  id                 String              @id @default(cuid())
   firstName          String
   lastName           String
-  companyName        String             @default("")
+  companyName        String              @default("")
   email              String
   phone              String
   address            String
   postalCode         String
   city               String
-  notes              String             @default("")
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
+  notes              String              @default("")
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
   notesItems         CustomerNote[]
   documents          CustomerDocument[]
   quotes             Quote[]
@@ -156,6 +315,12 @@ model Customer {
   installations      Installation[]
   advices            Advice[]
   salesOpportunities SalesOpportunity[]
+  salesAppointments  SalesAppointment[]
+  projects           CustomerProject[]
+  serviceContracts   ServiceContract[]
+  serviceEquipment   CustomerEquipment[]
+  serviceRequests    ServiceRequest[]
+  maintenanceVisits  MaintenanceVisit[]
 
   @@index([email])
   @@index([postalCode])
@@ -241,37 +406,63 @@ model Quote {
   customer           Customer           @relation(fields: [customerId], references: [id], onDelete: Restrict)
   lines              QuoteLine[]
   salesOpportunities SalesOpportunity[]
+  projects           CustomerProject[]
 
   @@index([customerId])
   @@index([status])
 }
 
 model SalesOpportunity {
-  id                String    @id @default(cuid())
+  id                String             @id @default(cuid())
   title             String
-  stage             String    @default("lead")
+  stage             String             @default("lead")
   customerId        String?
   quoteId           String?
-  contactName       String    @default("")
-  companyName       String    @default("")
-  email             String    @default("")
-  phone             String    @default("")
-  source            String    @default("")
-  expectedValue     Float     @default(0)
-  probability       Float     @default(10)
-  expectedCloseDate String    @default("")
-  followUpDate      String    @default("")
-  notes             String    @default("")
-  lostReason        String    @default("")
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  customer          Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  quote             Quote?    @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  contactName       String             @default("")
+  companyName       String             @default("")
+  email             String             @default("")
+  phone             String             @default("")
+  source            String             @default("")
+  expectedValue     Float              @default(0)
+  probability       Float              @default(10)
+  expectedCloseDate String             @default("")
+  followUpDate      String             @default("")
+  notes             String             @default("")
+  lostReason        String             @default("")
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  customer          Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  quote             Quote?             @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  appointments      SalesAppointment[]
 
   @@index([customerId])
   @@index([quoteId])
   @@index([stage])
   @@index([followUpDate])
+}
+
+model SalesAppointment {
+  id            String            @id @default(cuid())
+  title         String
+  type          String            @default("belafspraak")
+  status        String            @default("gepland")
+  date          String
+  startTime     String            @default("09:00")
+  endTime       String            @default("09:30")
+  customerId    String?
+  opportunityId String?
+  contactName   String            @default("")
+  location      String            @default("")
+  notes         String            @default("")
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  customer      Customer?         @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  opportunity   SalesOpportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+
+  @@index([date, startTime])
+  @@index([customerId])
+  @@index([opportunityId])
+  @@index([status])
 }
 
 model QuoteLine {
@@ -293,24 +484,25 @@ model QuoteLine {
 }
 
 model Invoice {
-  id                  String        @id @default(cuid())
-  invoiceNumber       String        @unique
-  quoteNumber         String        @default("")
+  id                  String            @id @default(cuid())
+  invoiceNumber       String            @unique
+  quoteNumber         String            @default("")
   customerId          String
   invoiceDate         String
   dueDate             String
-  status              String        @default("concept")
-  paymentInstructions String        @default("")
-  notes               String        @default("")
-  subtotal            Float         @default(0)
-  vat                 Float         @default(0)
-  total               Float         @default(0)
+  status              String            @default("concept")
+  paymentInstructions String            @default("")
+  notes               String            @default("")
+  subtotal            Float             @default(0)
+  vat                 Float             @default(0)
+  total               Float             @default(0)
   paidAt              DateTime?
   statusUpdatedAt     DateTime?
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
-  customer            Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  customer            Customer          @relation(fields: [customerId], references: [id], onDelete: Restrict)
   lines               InvoiceLine[]
+  maintenanceVisit    MaintenanceVisit?
 
   @@index([customerId])
   @@index([quoteNumber])
@@ -336,27 +528,439 @@ model InvoiceLine {
 }
 
 model Installation {
-  id            String    @id @default(cuid())
-  customerId    String
-  quoteId       String    @default("")
-  quoteNumber   String    @default("")
-  plannedDate   String
-  startTime     String    @default("09:00")
-  durationHours Float     @default(4)
-  status        String    @default("ingepland")
-  installer     String    @default("")
-  employeeId    String?
-  notes         String    @default("")
-  workOrder     Json?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  customer      Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  employee      Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  id                 String           @id @default(cuid())
+  customerId         String
+  quoteId            String           @default("")
+  quoteNumber        String           @default("")
+  plannedDate        String
+  startTime          String           @default("09:00")
+  durationHours      Float            @default(4)
+  status             String           @default("ingepland")
+  installer          String           @default("")
+  employeeId         String?
+  workType           String           @default("other")
+  qualificationCheck Json?
+  notes              String           @default("")
+  workOrder          Json?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  customer           Customer         @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  employee           Employee?        @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  project            CustomerProject?
 
   @@index([customerId])
   @@index([quoteId])
   @@index([plannedDate])
   @@index([employeeId])
+  @@index([workType])
+}
+
+model CustomerProject {
+  id                  String              @id @default(cuid())
+  projectNumber       String              @unique
+  customerId          String
+  installationId      String?             @unique
+  quoteId             String?
+  ownerUserId         String?
+  title               String
+  workType            String              @default("other")
+  status              String              @default("preparation")
+  plannedDate         String
+  startTime           String              @default("09:00")
+  durationHours       Float               @default(4)
+  travelBufferMinutes Int                 @default(30)
+  internalNotes       String              @default("")
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  customer            Customer            @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  installation        Installation?       @relation(fields: [installationId], references: [id], onDelete: SetNull)
+  quote               Quote?              @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  owner               User?               @relation("ProjectOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  members             ProjectMember[]
+  tasks               ProjectTask[]
+  materials           ProjectMaterial[]
+  equipment           ProjectEquipment[]
+  auditEvents         ProjectAuditEvent[]
+
+  @@index([customerId, createdAt])
+  @@index([plannedDate, status])
+  @@index([ownerUserId])
+}
+
+model ProjectMember {
+  id         String          @id @default(cuid())
+  projectId  String
+  employeeId String
+  role       String          @default("assistant")
+  createdAt  DateTime        @default(now())
+  project    CustomerProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  employee   Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, employeeId])
+  @@index([employeeId, projectId])
+}
+
+model ProjectTemplate {
+  id        String                    @id @default(cuid())
+  workType  String                    @unique
+  name      String
+  version   Int                       @default(1)
+  active    Boolean                   @default(true)
+  createdAt DateTime                  @default(now())
+  updatedAt DateTime                  @updatedAt
+  tasks     ProjectTemplateTask[]
+  materials ProjectTemplateMaterial[]
+}
+
+model ProjectTemplateTask {
+  id            String          @id @default(cuid())
+  templateId    String
+  title         String
+  category      String          @default("preparation")
+  description   String          @default("")
+  dueOffsetDays Int             @default(-7)
+  required      Boolean         @default(true)
+  operational   Boolean         @default(true)
+  sortOrder     Int             @default(0)
+  template      ProjectTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId, sortOrder])
+}
+
+model ProjectTemplateMaterial {
+  id               String          @id @default(cuid())
+  templateId       String
+  name             String
+  sku              String          @default("")
+  unit             String          @default("stuk")
+  quantity         Float           @default(1)
+  supplier         String          @default("")
+  leadTimeDays     Int             @default(14)
+  safetyMarginDays Int             @default(3)
+  neededOffsetDays Int             @default(0)
+  sortOrder        Int             @default(0)
+  template         ProjectTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId, sortOrder])
+}
+
+model ProjectTask {
+  id                 String          @id @default(cuid())
+  projectId          String
+  title              String
+  category           String          @default("preparation")
+  description        String          @default("")
+  dueDate            String
+  dueOffsetDays      Int             @default(-7)
+  automaticDate      Boolean         @default(true)
+  required           Boolean         @default(true)
+  operational        Boolean         @default(true)
+  status             String          @default("open")
+  assignedEmployeeId String?
+  completedAt        DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  project            CustomerProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignedEmployee   Employee?       @relation(fields: [assignedEmployeeId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, dueDate, status])
+  @@index([assignedEmployeeId, status])
+}
+
+model ProjectMaterial {
+  id                   String          @id @default(cuid())
+  projectId            String
+  name                 String
+  sku                  String          @default("")
+  unit                 String          @default("stuk")
+  quantity             Float           @default(1)
+  supplier             String          @default("")
+  purchasePrice        Float           @default(0)
+  leadTimeDays         Int             @default(14)
+  safetyMarginDays     Int             @default(3)
+  neededOnDate         String
+  neededOffsetDays     Int             @default(0)
+  orderByDate          String
+  automaticDates       Boolean         @default(true)
+  expectedDeliveryDate String          @default("")
+  status               String          @default("to_determine")
+  orderedAt            DateTime?
+  receivedAt           DateTime?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  project              CustomerProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, orderByDate, status])
+  @@index([expectedDeliveryDate, status])
+}
+
+model EmployeeWorkSchedule {
+  id         String   @id @default(cuid())
+  employeeId String
+  weekday    Int
+  startTime  String   @default("08:00")
+  endTime    String   @default("17:00")
+  active     Boolean  @default(true)
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, weekday])
+  @@index([weekday, active])
+}
+
+model EmployeeAbsence {
+  id         String   @id @default(cuid())
+  employeeId String
+  startDate  String
+  endDate    String
+  startTime  String   @default("")
+  endTime    String   @default("")
+  type       String   @default("unavailable")
+  note       String   @default("")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, startDate, endDate])
+}
+
+model ProjectEquipment {
+  id               String          @id @default(cuid())
+  projectId        String
+  type             String
+  brand            String          @default("")
+  model            String          @default("")
+  serialNumber     String          @default("")
+  installedAt      String          @default("")
+  warrantyUntil    String          @default("")
+  providerCode     String          @default("")
+  externalIdCipher Bytes?
+  externalIdIv     Bytes?
+  externalIdTag    Bytes?
+  keyVersion       String          @default("v1")
+  connectionStatus String          @default("not_connected")
+  lastSyncAt       DateTime?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  project          CustomerProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, type])
+  @@index([providerCode, connectionStatus])
+}
+
+model ProjectAuditEvent {
+  id         String          @id @default(cuid())
+  projectId  String
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String
+  metadata   Json?
+  createdAt  DateTime        @default(now())
+  project    CustomerProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  actor      User?           @relation("ProjectAuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, createdAt])
+  @@index([actorId, createdAt])
+}
+
+model ProjectDigestRun {
+  id           String    @id @default(cuid())
+  digestDate   String
+  recipient    String
+  status       String    @default("pending")
+  attemptCount Int       @default(0)
+  providerId   String    @default("")
+  lastError    String    @default("")
+  sentAt       DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([digestDate, recipient])
+  @@index([status, digestDate])
+}
+
+model ServiceContract {
+  id                   String               @id @default(cuid())
+  contractNumber       String               @unique
+  customerId           String
+  equipmentId          String?
+  title                String
+  status               String               @default("active")
+  startDate            String
+  endDate              String               @default("")
+  price                Float                @default(0)
+  billingPeriod        String               @default("yearly")
+  maintenanceFrequency Int                  @default(12)
+  nextMaintenanceDate  String               @default("")
+  notes                String               @default("")
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  customer             Customer             @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  equipment            CustomerEquipment?   @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
+  visits               MaintenanceVisit[]
+  reminderRuns         ServiceReminderRun[]
+
+  @@index([customerId, status])
+  @@index([nextMaintenanceDate, status])
+  @@index([equipmentId])
+}
+
+model CustomerEquipment {
+  id                        String             @id @default(cuid())
+  customerId                String
+  installationId            String?
+  type                      String
+  brand                     String             @default("")
+  model                     String             @default("")
+  serialNumber              String             @default("")
+  installedAt               String             @default("")
+  warrantyUntil             String             @default("")
+  maintenanceIntervalMonths Int                @default(12)
+  lastMaintenanceDate       String             @default("")
+  nextMaintenanceDate       String             @default("")
+  status                    String             @default("active")
+  notes                     String             @default("")
+  createdAt                 DateTime           @default(now())
+  updatedAt                 DateTime           @updatedAt
+  customer                  Customer           @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  contracts                 ServiceContract[]
+  requests                  ServiceRequest[]
+  visits                    MaintenanceVisit[]
+
+  @@index([customerId, status])
+  @@index([serialNumber])
+  @@index([nextMaintenanceDate, status])
+  @@index([warrantyUntil])
+}
+
+model ServiceRequest {
+  id                 String             @id @default(cuid())
+  requestNumber      String             @unique
+  customerId         String
+  equipmentId        String?
+  title              String
+  type               String             @default("malfunction")
+  priority           String             @default("normal")
+  description        String             @default("")
+  status             String             @default("open")
+  assignedEmployeeId String?
+  preferredDate      String             @default("")
+  resolvedAt         DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  customer           Customer           @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  equipment          CustomerEquipment? @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
+  assignedEmployee   Employee?          @relation(fields: [assignedEmployeeId], references: [id], onDelete: SetNull)
+  visits             MaintenanceVisit[]
+  documents          ServiceDocument[]
+
+  @@index([customerId, status])
+  @@index([assignedEmployeeId, status])
+  @@index([priority, createdAt])
+}
+
+model MaintenanceVisit {
+  id                 String                   @id @default(cuid())
+  visitNumber        String                   @unique
+  customerId         String
+  equipmentId        String?
+  contractId         String?
+  serviceRequestId   String?
+  assignedEmployeeId String?
+  invoiceId          String?                  @unique
+  type               String                   @default("maintenance")
+  status             String                   @default("scheduled")
+  plannedDate        String
+  startTime          String                   @default("09:00")
+  durationHours      Float                    @default(2)
+  workType           String                   @default("other")
+  qualificationCheck Json?
+  diagnosis          String                   @default("")
+  workPerformed      String                   @default("")
+  materialsUsed      Json?
+  customerName       String                   @default("")
+  customerSignature  String                   @default("")
+  signedAt           DateTime?
+  completedAt        DateTime?
+  notes              String                   @default("")
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  customer           Customer                 @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  equipment          CustomerEquipment?       @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
+  contract           ServiceContract?         @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  serviceRequest     ServiceRequest?          @relation(fields: [serviceRequestId], references: [id], onDelete: SetNull)
+  assignedEmployee   Employee?                @relation(fields: [assignedEmployeeId], references: [id], onDelete: SetNull)
+  invoice            Invoice?                 @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  measurements       MaintenanceMeasurement[]
+  documents          ServiceDocument[]
+
+  @@index([plannedDate, status])
+  @@index([assignedEmployeeId, plannedDate])
+  @@index([customerId, plannedDate])
+  @@index([equipmentId])
+}
+
+model MaintenanceMeasurement {
+  id        String           @id @default(cuid())
+  visitId   String
+  name      String
+  value     Float
+  unit      String           @default("")
+  note      String           @default("")
+  createdAt DateTime         @default(now())
+  visit     MaintenanceVisit @relation(fields: [visitId], references: [id], onDelete: Cascade)
+
+  @@index([visitId])
+}
+
+model ServiceDocument {
+  id               String            @id @default(cuid())
+  serviceRequestId String?
+  visitId          String?
+  fileName         String
+  mimeType         String
+  size             Int
+  sha256           String
+  scanStatus       String            @default("quarantine")
+  scanMessage      String            @default("")
+  content          Bytes
+  createdAt        DateTime          @default(now())
+  serviceRequest   ServiceRequest?   @relation(fields: [serviceRequestId], references: [id], onDelete: Cascade)
+  visit            MaintenanceVisit? @relation(fields: [visitId], references: [id], onDelete: Cascade)
+
+  @@index([serviceRequestId])
+  @@index([visitId])
+  @@index([scanStatus])
+}
+
+model ServiceAuditEvent {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  actor      User?    @relation("ServiceAuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
+}
+
+model ServiceReminderRun {
+  id           String          @id @default(cuid())
+  contractId   String
+  reminderDate String
+  status       String          @default("pending")
+  providerId   String          @default("")
+  lastError    String          @default("")
+  sentAt       DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  contract     ServiceContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@unique([contractId, reminderDate])
+  @@index([status, reminderDate])
 }
 
 model Setting {

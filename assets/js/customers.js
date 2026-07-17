@@ -35,7 +35,8 @@
     var customers = S.getAll("customers").filter(function (customer) { return matches(customer, query || ""); });
     var rows = customers.map(function (customer) {
       var actions = '<button class="small-button" data-action="customer-detail" data-id="' + customer.id + '">Open</button>' +
-        (S.isAdmin() ? '<button class="small-button" data-action="customer-edit" data-id="' + customer.id + '">Bewerk</button>' : "");
+        (S.hasRole("admin", "installer") ? '<button class="small-button" data-action="customer-projects" data-id="' + customer.id + '">Projectcockpit</button>' : "") +
+        (S.canManage("crm") ? '<button class="small-button" data-action="customer-edit" data-id="' + customer.id + '">Bewerk</button>' : "");
       return [
         "<tr>",
         "<td><strong>" + S.escapeHtml(S.customerName(customer)) + "</strong><br><span class=\"muted\">" + S.escapeHtml([customer.firstName, customer.lastName].filter(Boolean).join(" ")) + "</span></td>",
@@ -46,7 +47,7 @@
         "</tr>"
       ].join("");
     }).join("");
-    var headActions = S.isAdmin()
+    var headActions = S.canManage("crm")
       ? '<div class="button-row"><button class="ghost-button" data-action="customer-import">Importeer aanvraag</button><button class="primary-button" data-action="customer-new">Nieuwe klant</button></div>'
       : "";
 
@@ -108,15 +109,15 @@
     var installations = S.getAll("installations").filter(function (installation) { return installation.customerId === id; });
     var advices = S.getAll("advices").filter(function (advice) { return advice.customerId === id; });
     var documents = S.getAll("customerDocuments").filter(function (document) { return document.customerId === id; });
-    var adminActions = S.isAdmin()
-      ? '<div class="button-row"><button class="small-button" data-action="customer-edit" data-id="' + id + '">Bewerk</button><button class="danger-button" data-action="customer-delete" data-id="' + id + '">Verwijder</button></div>'
+    var adminActions = S.canManage("crm")
+      ? '<div class="button-row"><button class="small-button" data-action="customer-edit" data-id="' + id + '">Bewerk</button>' + (S.isAdmin() ? '<button class="danger-button" data-action="customer-delete" data-id="' + id + '">Verwijder</button>' : "") + '</div>'
       : "";
     var quickActions = S.isAdmin()
-      ? '<div class="button-row" style="margin-top:16px;"><button class="primary-button" data-action="quote-new" data-customer-id="' + id + '">Nieuwe offerte</button><button class="ghost-button" data-action="customer-advice" data-id="' + id + '">Nieuw advies</button><button class="ghost-button" data-action="invoice-new" data-customer-id="' + id + '">Nieuwe factuur</button><button class="ghost-button" data-action="installation-new" data-customer-id="' + id + '">Installatie plannen</button><button class="ghost-button" data-action="customer-workorder-print" data-id="' + id + '">Print werkbon</button></div>'
-      : '<div class="button-row" style="margin-top:16px;"><button class="ghost-button" data-action="customer-workorder-print" data-id="' + id + '">Print werkbon</button></div>';
+      ? '<div class="button-row" style="margin-top:16px;"><button class="primary-button" data-action="customer-projects" data-id="' + id + '">Projectcockpit</button><a class="primary-button" href="#service?customerId=' + id + '">Servicehistorie</a><button class="primary-button" data-action="quote-new" data-customer-id="' + id + '">Nieuwe offerte</button><button class="ghost-button" data-action="customer-advice" data-id="' + id + '">Nieuw advies</button><button class="ghost-button" data-action="invoice-new" data-customer-id="' + id + '">Nieuwe factuur</button><button class="ghost-button" data-action="installation-new" data-customer-id="' + id + '">Installatie plannen</button><button class="ghost-button" data-action="customer-workorder-print" data-id="' + id + '">Print werkbon</button></div>'
+      : S.isInstaller() ? '<div class="button-row" style="margin-top:16px;"><button class="primary-button" data-action="customer-projects" data-id="' + id + '">Projectcockpit</button><button class="ghost-button" data-action="customer-workorder-print" data-id="' + id + '">Print werkbon</button></div>' : S.canManage("crm") ? '<div class="button-row" style="margin-top:16px;"><a class="primary-button" href="#service?customerId=' + id + '">Servicehistorie</a></div>' : "";
     var dossier = S.isAdmin()
       ? documentUploadForm(customer) + '<h3>PDF-documenten</h3>' + linkedDocuments(documents) + '<h3>Adviezen</h3>' + linkedAdvices(advices) + '<h3>Offertes</h3>' + linkedQuotes(quotes) + '<h3>Facturen</h3>' + linkedInvoices(invoices) + '<h3>Installaties</h3>' + linkedInstallations(installations)
-      : '<h3>PDF-documenten</h3>' + linkedDocuments(documents) + '<h3>Installaties</h3>' + linkedInstallations(installations);
+      : S.canManage("crm") ? documentUploadForm(customer) + '<h3>PDF-documenten</h3>' + linkedDocuments(documents) : '<h3>PDF-documenten</h3>' + linkedDocuments(documents) + '<h3>Installaties</h3>' + linkedInstallations(installations);
     return [
       '<section class="section grid two">',
       '<div class="panel">',
@@ -135,7 +136,7 @@
       dossier,
       "</div>",
       "</section>",
-      S.isAdmin() ? '<section class="section grid two">' + noteForm(customer) + timeline(customer, quotes, invoices, installations, documents) + "</section>" : ""
+      S.canManage("crm") ? '<section class="section grid two">' + noteForm(customer) + timeline(customer, quotes, invoices, installations, documents) + "</section>" : ""
     ].join("");
   }
 
@@ -167,7 +168,7 @@
   function linkedDocuments(documents) {
     if (!documents.length) return '<div class="empty-state">Nog geen PDF-documenten toegevoegd.</div>';
     return '<div class="table-wrap"><table class="data-table"><tbody>' + documents.map(function (document) {
-      var deleteButton = S.isAdmin() ? '<button class="small-button" data-action="customer-document-delete" data-id="' + S.escapeHtml(document.id) + '">Verwijder</button>' : "";
+      var deleteButton = S.canManage("crm") ? '<button class="small-button" data-action="customer-document-delete" data-id="' + S.escapeHtml(document.id) + '">Verwijder</button>' : "";
       return [
         "<tr>",
         "<td><strong>" + S.escapeHtml(document.fileName || "PDF-document") + '</strong><br><span class="muted">' + S.formatDate(String(document.createdAt || "").slice(0, 10)) + " - " + S.escapeHtml(formatBytes(document.size || 0)) + "</span></td>",

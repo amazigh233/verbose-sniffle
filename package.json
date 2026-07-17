@@ -1,6 +1,6 @@
 {
   "name": "climature-bedrijfsportaal",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "type": "commonjs",
   "engines": {
@@ -16,7 +16,9 @@
     "prisma:deploy": "prisma migrate deploy",
     "seed": "node prisma/seed.js",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "project:digest": "node scripts/send-project-digest.js",
+    "service:reminders": "node scripts/send-service-reminders.js"
   },
   "dependencies": {
     "@prisma/client": "^6.13.0",
