@@ -998,7 +998,7 @@ Voor apparatuur bestaat `src/telemetry-adapters.js`. Een adapter moet expliciet 
 5. Er is nog geen publieke, versiegestuurde integratie-API; routes zijn ontworpen voor de same-origin browserclient.
 6. De Service Worker biedt alleen een offline shell, geen offline transactiewachtrij.
 7. Sleutelrotatie gebruikt keyrings en `npm run keys:rotate`; historische sleutels moeten tot na een gecontroleerde rotatie en restoretest bewaard blijven.
-8. `GET /api/health` controleert PostgreSQL en Redis, maar niet ClamAV, Resend, CBS, RVO of object storage.
+8. `GET /api/health` controleert PostgreSQL, Redis en object storage, maar niet ClamAV, Resend, CBS of RVO.
 9. De dagelijkse projectdigest moet door een scheduler op het gewenste uur worden aangeroepen; de applicatie controleert daarna tijdzone, uur en idempotency per ontvanger/datum.
 10. Gebruik voor tests een afzonderlijke database, omdat reset- en importtests destructief zijn.
 11. CRM JSON-import bouwt installatieprojecten opnieuw op, maar los aangemaakte projecten zonder installatie zitten niet in dit exportformaat. Gebruik een volledige PostgreSQL-back-up voor exact herstel van de complete omgeving.

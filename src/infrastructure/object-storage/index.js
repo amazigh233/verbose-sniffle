@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("fs/promises");
+const fsConstants = require("fs").constants;
 const path = require("path");
 const crypto = require("crypto");
 
@@ -59,6 +60,8 @@ class LocalObjectStorage {
     return results;
   }
 
+  async health() { await fs.mkdir(this.root, { recursive: true }); await fs.access(this.root, fsConstants.R_OK | fsConstants.W_OK); return true; }
+
   async close() {}
 }
 
@@ -103,6 +106,8 @@ class S3ObjectStorage {
     } while (ContinuationToken);
     return keys;
   }
+
+  async health() { await this.client.send(new this.commands.HeadBucketCommand({ Bucket: this.bucket })); return true; }
 
   async close() { this.client.destroy(); }
 }

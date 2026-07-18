@@ -43,7 +43,7 @@ HR_KEY_VERSION=v2
 1. Bouw exact vanuit `package-lock.json` met Node 24.
 2. Voer `npm run prisma:deploy` uit vóór nieuwe applicatiecode verkeer krijgt.
 3. Voer bij oude database-BLOBs eerst de gedocumenteerde expand/migrate/contract-stappen uit (`documents:migrate-storage` en `documents:migrate-hr-storage`). Nieuwe installaties krijgen alle migraties direct.
-4. Start met `npm start` en wacht op `/api/health`; die controleert PostgreSQL en Redis.
+4. Start met `npm start` en wacht op `/api/health`; die controleert PostgreSQL, Redis en object storage.
 5. Rol instances gefaseerd uit. Gebruik dezelfde secrets en object-storagebucket op elke instance.
 6. Controleer JSON-logs op `server.started`, 5xx-categorieën en rate-limitpieken.
 
