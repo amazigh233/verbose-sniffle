@@ -308,7 +308,7 @@ Er is geen frontendframework of bundler. Scripts worden in vaste volgorde vanuit
 
 ### 5.2 API-client en cache
 
-`assets/js/storage.js` is de centrale browserdatalaag. Na login haalt `GET /api/bootstrap` de toegestane gegevens op. Deze worden alleen in het geheugen van de pagina gecachet. Mutaties gaan altijd naar de server. Na een succesvolle mutatie wordt het lokale item bijgewerkt.
+`assets/js/storage.js` is de centrale browserdatalaag. Na login haalt `GET /api/bootstrap` uitsluitend sessie-, permissie-, kleine configuratie- en referentiemetadata op. Klanten, documenten, offertes, facturen, installaties en andere domeindata komen via afzonderlijke gepagineerde endpoints. De browser bewaart geladen pagina’s alleen in het geheugen. Mutaties gaan altijd naar de server.
 
 De API-client:
 
@@ -411,7 +411,7 @@ Belangrijkste statuscodes:
 | POST | `/api/auth/login` | Open, rate-limited | Inloggen en sessie regenereren |
 | PUT | `/api/auth/me` | Ingelogd | Eigen gebruikersnaam/wachtwoord wijzigen |
 | POST | `/api/auth/logout` | Ingelogd | Sessie vernietigen |
-| GET | `/api/bootstrap` | Ingelogd | Alleen de collecties en veldprojecties van de actieve portaalrol laden |
+| GET | `/api/bootstrap` | Ingelogd | Alleen gebruiker, rol/permissies, kleine configuratie, counters en referentiemetadata |
 | GET | `/api/users` | Admin | Accounts tonen |
 | POST | `/api/users` | Admin | Account maken |
 | PUT | `/api/users/:id` | Admin | Account, rol, status of wachtwoord wijzigen |
@@ -605,7 +605,7 @@ erDiagram
 ### 8.3 Belangrijke databasekeuzes
 
 - Primaire sleutels zijn strings met Prisma `cuid()`.
-- Geldbedragen zijn momenteel `Float`. Voor boekhoudkundige precisie op grotere schaal is `Decimal` een mogelijke toekomstige verbetering.
+- Geldbedragen gebruiken Prisma `Decimal` met PostgreSQL `DECIMAL(14,2)`; hoeveelheden en btw-percentages hebben afzonderlijke passende precisie. De server rekent half-up en bouwt offerte- en factuurtotalen opnieuw op.
 - Zakelijke datums en tijden zijn meestal ISO-strings (`YYYY-MM-DD`, `HH:mm`) om lokale planningsdagen zonder tijdzoneconversie te bewaren.
 - Audit- en systeemmomenten gebruiken PostgreSQL `DateTime`.
 - Offerte- en factuurnummers zijn uniek.
@@ -629,7 +629,7 @@ Niet afzonderlijk op applicatieniveau versleuteld:
 
 - reguliere CRM-klantgegevens;
 - offertes, facturen en installatiegegevens;
-- `CustomerDocument.content`, dat als base64-tekst in PostgreSQL staat.
+- klant-, offerte- en servicebestanden in object storage (met server-side encryptiebeleid van de provider).
 
 Deze niet-versleutelde data vertrouwt op database-, infrastructuur- en back-upversleuteling. Sla daarom geen medische gegevens, BSN, identiteitskopieën, bankgegevens of salarisinformatie in reguliere CRM-velden of klantdocumenten op.
 
@@ -642,7 +642,7 @@ Deze niet-versleutelde data vertrouwt op database-, infrastructuur- en back-upve
 - Er is geen wachtwoordterugwinning; alleen een nieuwe hash kan worden ingesteld.
 - Na login wordt de sessie-ID geregenereerd tegen session fixation.
 - Vijf mislukte loginpogingen per IP/gebruikersnaam blokkeren verdere pogingen gedurende het 15-minutenvenster.
-- De limiter staat in procesgeheugen en is dus niet gedeeld tussen meerdere webinstances.
+- Login-, MFA-, wachtwoord- en API-limieten staan met TTL in Redis en gelden daardoor voor alle webinstances samen.
 
 ### 9.2 Sessies
 
@@ -755,6 +755,13 @@ Gebruik `.env.example` als basis en commit nooit `.env`.
 | `PROJECT_MAIL_FROM` | Voor digestmail | Geverifieerd afzenderadres |
 | `SERVICE_MAIL_FROM` | Voor servicemail | Geverifieerd afzenderadres; fallback naar `PROJECT_MAIL_FROM` |
 | `APP_BASE_URL` | Voor digestmail | Publieke basis-URL voor links |
+| `REDIS_URL` | Productie | Gedeelde rate limits en korte auth-cache; productie start niet zonder |
+| `OBJECT_STORAGE_PROVIDER` | Ja | `local` of `s3`; gebruik `s3` bij meerdere instances |
+| `OBJECT_STORAGE_ROOT` | Bij local | Duurzaam gemount objectpad |
+| `OBJECT_STORAGE_BUCKET` / `OBJECT_STORAGE_REGION` | Bij S3 | Private objectbucket en regio |
+| `OBJECT_STORAGE_ENDPOINT` | Optioneel | Endpoint voor S3-compatible providers |
+| `HR_ENCRYPTION_KEYS` | Bij key rotation | JSON-object met historische en actieve HR-sleutels |
+| `PROJECT_ENCRYPTION_KEYS` | Bij key rotation | JSON-object met historische en actieve projectsleutels |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Back-upcron | Beperkt IAM-account voor back-upbucket |
 | `AWS_REGION` | Back-upcron | S3-regio |
 | `HR_BACKUP_BUCKET` | Back-upcron | Private versioned bucket |
@@ -887,17 +894,18 @@ Zie ook `DEPLOY_RENDER.md` voor het operationele activeringsplan.
 
 ### 14.1 Zakelijke JSON-export
 
-De beheerfunctie exporteert CRM-collecties, instellingen, counters en de servicegegevens als JSON. Daaronder vallen apparatuur, servicecontracten, meldingen, bezoeken, meetwaarden en servicebijlagen. HR-gegevens, arbeidsovereenkomsten, HR-notities, werknemers-ID’s en projectcockpits zijn uitgesloten. Monteurkoppelingen worden bij export verwijderd. De import vervangt de zakelijke data transactioneel en bouwt projectcockpits voor geïmporteerde installaties opnieuw op.
+De beheerfunctie exporteert CRM-collecties, instellingen, counters en servicemetadata als JSON. Bestandsinhoud blijft altijd in object storage. HR-gegevens, arbeidsovereenkomsten, HR-notities, werknemers-ID’s en projectcockpits zijn uitgesloten. Monteurkoppelingen worden bij export verwijderd. De import vervangt de zakelijke data transactioneel en bouwt projectcockpits voor geïmporteerde installaties opnieuw op.
 
 Gebruik dit voor functionele zakelijke overdracht, niet als enige disaster-recoveryback-up. Een JSON-export bevat bewust geen HR-dossiers, sessies, gebruikers, MFA, auditgeschiedenis of losse handmatige projecten; alleen een volledige PostgreSQL-back-up herstelt de complete omgeving exact.
 
-### 14.2 Volledige databaseback-up
+### 14.2 Volledige back-upset
 
-De Render-cronjob:
+De back-upjob:
 
 1. maakt met `pg_dump --format=custom --compress=9` een tijdelijke dump;
-2. uploadt naar een private S3-bucket met server-side AES-256-encryptie;
-3. verwijdert het tijdelijke bestand via een shelltrap.
+2. kopieert daarnaast de volledige object-storage-inhoud onder hetzelfde tijdstip;
+3. uploadt beide naar een private S3-bucket met server-side encryptie;
+4. verwijdert tijdelijke bestanden via een shelltrap.
 
 De S3-bucket hoort block-public-access, versioning, beperkte IAM-rechten en een retentiebeleid te hebben. PostgreSQL PITR blijft daarnaast aanbevolen.
 
@@ -905,9 +913,9 @@ De S3-bucket hoort block-public-access, versioning, beperkte IAM-rechten en een 
 
 1. Maak een nieuwe tijdelijke PostgreSQL-database.
 2. Download de gekozen dump via een geautoriseerd beheerkanaal.
-3. Herstel met `pg_restore`.
-4. Koppel een tijdelijke applicatie-instantie aan de herstelde database.
-5. Controleer login, CRM-aantallen, projectrelaties, MFA en ontsleuteling van een fictief HR-document.
+3. Herstel met `pg_restore` en herstel de bijbehorende objectset naar een nieuwe bucket/prefix of volume.
+4. Koppel een tijdelijke applicatie-instantie aan database én objectopslag.
+5. Controleer login, CRM-aantallen, projectrelaties, MFA en downloads uit elk documentdomein.
 6. Leg datum, uitvoerder, back-up-ID en testresultaat vast.
 7. Herhaal minstens ieder kwartaal.
 
@@ -983,14 +991,14 @@ Voor apparatuur bestaat `src/telemetry-adapters.js`. Een adapter moet expliciet 
 
 ## 17. Bekende aandachtspunten
 
-1. De login- en MFA-rate-limiters staan in procesgeheugen. Bij meerdere instances is een gedeelde Redis/PostgreSQL-limiter wenselijk.
-2. Reguliere klantdocumenten zijn niet applicatielaag-versleuteld. Gebruik deze opslag niet voor bijzondere persoonsgegevens.
-3. Geldbedragen gebruiken `Float`; migratie naar database-`Decimal` vergroot financiële precisie.
+1. Productie vereist Redis voor gedeelde login-, MFA-, wachtwoord- en API-rate-limits en auth-cache.
+2. Reguliere klantdocumenten zijn niet applicatielaag-versleuteld; gebruik bucket/server-side encryptie en sla geen bijzondere persoonsgegevens op zonder aanvullend beleid.
+3. Alle relationele geldvelden gebruiken vaste PostgreSQL-decimalen; technische meetwaarden en percentages die geen geld zijn blijven Float.
 4. De CSP staat inline styles toe en de adviestool inline scripts. Verdere aanscherping met nonces/hashes is mogelijk.
 5. Er is nog geen publieke, versiegestuurde integratie-API; routes zijn ontworpen voor de same-origin browserclient.
 6. De Service Worker biedt alleen een offline shell, geen offline transactiewachtrij.
-7. Sleutelrotatie is niet geautomatiseerd en vereist een herencryptiemigratie.
-8. `GET /api/health` controleert alleen databasebereikbaarheid, niet ClamAV, Resend, CBS, RVO of S3.
+7. Sleutelrotatie gebruikt keyrings en `npm run keys:rotate`; historische sleutels moeten tot na een gecontroleerde rotatie en restoretest bewaard blijven.
+8. `GET /api/health` controleert PostgreSQL en Redis, maar niet ClamAV, Resend, CBS, RVO of object storage.
 9. De dagelijkse projectdigest moet door een scheduler op het gewenste uur worden aangeroepen; de applicatie controleert daarna tijdzone, uur en idempotency per ontvanger/datum.
 10. Gebruik voor tests een afzonderlijke database, omdat reset- en importtests destructief zijn.
 11. CRM JSON-import bouwt installatieprojecten opnieuw op, maar los aangemaakte projecten zonder installatie zitten niet in dit exportformaat. Gebruik een volledige PostgreSQL-back-up voor exact herstel van de complete omgeving.

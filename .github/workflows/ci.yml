@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: climature
+          POSTGRES_PASSWORD: climature
+          POSTGRES_DB: climature_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U climature -d climature_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://climature:climature@localhost:5432/climature_test?schema=public
+      SESSION_SECRET: ci-only-session-secret-that-is-at-least-32-characters
+      ADMIN_USERNAME: admin
+      E2E_ADMIN_USERNAME: admin
+      E2E_ADMIN_PASSWORD: test-password
+      REDIS_URL: redis://localhost:6379
+      NODE_ENV: test
+      HR_PORTAL_ENABLED: "false"
+      ALLOW_UNSCANNED_HR_FILES: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Configure test administrator
+        run: echo "ADMIN_PASSWORD_HASH=$(node -e \"require('bcrypt').hash('test-password',4).then(console.log)\")" >> "$GITHUB_ENV"
+      - run: npx playwright install --with-deps chromium
+      - run: npm run prisma:deploy
+      - run: npm run lint
+      - run: npm test
+      - run: npm run test:e2e
+      - run: npm audit --audit-level=high
+      - run: npx prisma validate

@@ -282,7 +282,7 @@ Route-guards en centrale collectiematrices bepalen toegang:
 | `ROLE_WRITE_COLLECTIONS` | Schrijfcollecties per portaalrol |
 | `requireHrElevation` | Admin **met** geldige MFA-elevatie |
 
-`roleBootstrap()` bouwt per sessierol een afzonderlijke payload. CRM krijgt alleen klantcollecties; Sales krijgt commerciële collecties; Uitvoering planning en projecten; Financiën facturatie; Beheer alles. Noodzakelijke domeinafhankelijkheden worden op veldniveau beperkt: kanaalrollen krijgen bijvoorbeeld klantcontactvelden zonder CRM-notities en Uitvoering krijgt alleen basismetadata van offertes. Bij installateurs worden `employeeId` en `qualificationCheck` verwijderd. Dezelfde projectie wordt ook toegepast op losse collectie-GET’s, zodat `/api/bootstrap` niet de enige beveiligingsgrens is.
+`GET /api/bootstrap` bouwt per sessierol uitsluitend identiteit, permissies, kleine configuratie, counters en referentiemetadata. Domeincollecties worden via gepagineerde endpoints geladen. Centrale policies beperken records op rol en toewijzing; bij installateurs worden daarnaast interne velden zoals `employeeId` en `qualificationCheck` uit projecties verwijderd.
 
 ### 5.4 CSRF-bescherming
 
@@ -296,7 +296,7 @@ Twee onafhankelijke controles op elke muterende request:
 
 ### 5.5 Rate limiting
 
-In-memory *failure limiters* (per IP + gebruiker):
+Redis-backed *failure limiters* (per IP + gebruiker) delen tellers over alle webinstances:
 
 - **Login**: 5 pogingen / 15 min.
 - **MFA-elevatie**: 5 pogingen / 10 min.
@@ -401,7 +401,7 @@ het patroon en de vereiste rol.
 | Groep | Voorbeeldroutes | Vereiste toegang |
 |---|---|---|
 | **Auth** | `GET /api/auth/session`, `POST /api/auth/login`, `POST /api/auth/logout`, `PUT /api/auth/me` | Publiek → sessie |
-| **Bootstrap** | `GET /api/bootstrap` | Ingelogd; collectie- en veldprojectie per rol |
+| **Bootstrap** | `GET /api/bootstrap` | Ingelogd; sessie-, permissie- en kleine referentiemetadata |
 | **Zakelijke collecties** | `GET/POST/PUT /api/collections/:collection`, `DELETE /api/collections/:collection/:id` | Lezen/schrijven volgens portaalmatrix; bulk-`PUT` alleen admin |
 | **Nummering** | `POST /api/counters/:type/next`, `GET /api/counters/:type/peek` | Admin; Sales voor offertes; Financiën voor facturen |
 | **Projecten** | `GET/POST/PUT /api/projects…`, taken/materiaal/team/equipment | Beheer: admin/Uitvoering; installateur alleen toegewezen operationele data |

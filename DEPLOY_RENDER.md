@@ -46,9 +46,9 @@ Controleer in Render dat:
 ## 3. Back-up en herstel
 
 1. Maak vooraf een private S3-bucket met versioning, block-public-access en een lifecycle van 30 dagen.
-2. Vul tijdens de Blueprint-installatie `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` en `HR_BACKUP_BUCKET` in voor een IAM-account dat uitsluitend naar die bucketprefix mag schrijven. De meegeleverde `climature-nightly-backup` cronjob draait dagelijks om 02:00 UTC en uploadt een met AES-256 versleutelde `pg_dump`.
-3. Maak vóór activering een logische back-up én een PITR-herstel naar een tijdelijke database.
-4. Verbind een tijdelijke testservice met de herstelde database en controleer login, MFA en ontsleuteling van een fictief contract.
+2. Vul tijdens de Blueprint-installatie `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `HR_BACKUP_BUCKET` en de object-storagevariabelen in voor least-privilege IAM. De nachtjob uploadt zowel `pg_dump` als een object-storagekopie.
+3. Maak vóór activering een logische back-up én herstel database en objectset naar een tijdelijke omgeving.
+4. Verbind een tijdelijke testservice en controleer login, MFA, een klantdocument, servicebijlage en ontsleuteling van een fictief contract.
 5. Documenteer datum, uitvoerder en resultaat. Herhaal deze hersteltest ieder kwartaal.
 
 De CRM JSON-export bevat opzettelijk geen werknemers, privévelden, contracten, HR-notities of werknemer-ID’s.
