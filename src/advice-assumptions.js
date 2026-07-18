@@ -2,6 +2,7 @@
 
 const readXlsxFile = require("read-excel-file/node");
 const { DEFAULT_SETTINGS } = require("./defaults");
+const { parseLocalizedNumber } = require("./numbers");
 
 const CBS_URL = "https://opendata.cbs.nl/ODataApi/OData/85592NED/TypedDataSet?$filter=Btw%20eq%20%27A048944%27";
 const RVO_LIST_URL = "https://www.rvo.nl/subsidies-financiering/isde/meldcodelijsten";
@@ -25,8 +26,7 @@ function deepMerge(base, extra) {
 }
 
 function number(value, fallback = 0) {
-  const parsed = Number(String(value == null ? "" : value).replace(",", "."));
-  return Number.isFinite(parsed) ? parsed : fallback;
+  return parseLocalizedNumber(value, fallback);
 }
 
 function moneyNumber(value) {

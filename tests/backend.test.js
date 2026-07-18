@@ -21,7 +21,8 @@ beforeAll(async () => {
     adminPasswordHash,
     port: 0,
     nodeEnv: "test",
-    isProduction: false
+    isProduction: false,
+    allowUnscannedHrFiles: true
   });
   hrApp = createApp({
     databaseUrl: process.env.DATABASE_URL,
@@ -161,11 +162,12 @@ async function createCustomer(client) {
   return response.body.item;
 }
 
-async function createInstaller(client, username = "installer") {
+async function createInstaller(client, username = "installer", employeeId = null) {
   return (await client.post("/api/users").send({
     username,
     password: "installer-pass",
-    role: "installer"
+    role: "installer",
+    employeeId
   }).expect(200)).body.item;
 }
 
@@ -262,26 +264,56 @@ describe("role access", () => {
   it("limits installers to customers, installations and work orders", async () => {
     const admin = agent();
     await login(admin);
-    await createInstaller(admin);
+    const ownEmployee = await prisma.employee.create({ data: { employeeNumber: "CL-AUTHZ-001", firstName: "Sam", lastName: "Eigen", startDate: "2026-01-01", status: "active" } });
+    const otherEmployee = await prisma.employee.create({ data: { employeeNumber: "CL-AUTHZ-002", firstName: "Piet", lastName: "Ander", startDate: "2026-01-01", status: "active" } });
+    await createInstaller(admin, "installer", ownEmployee.id);
     const customer = await createCustomer(admin);
-    await admin.post("/api/collections/installations").send({
-      customerId: customer.id,
-      plannedDate: "2026-07-30",
-      startTime: "09:00",
-      durationHours: 4,
-      installer: "Sam"
-    }).expect(200);
+    const otherCustomer = (await admin.post("/api/collections/customers").send({
+      firstName: "Andere", lastName: "Klant", email: "ander@example.com", phone: "0699999999",
+      address: "Andere straat 2", postalCode: "4321 BA", city: "Rotterdam"
+    }).expect(200)).body.item;
+    const ownInstallation = await prisma.installation.create({ data: {
+      customerId: customer.id, plannedDate: "2026-07-30", startTime: "09:00", durationHours: 4,
+      installer: "Sam Eigen", employeeId: ownEmployee.id
+    } });
+    const otherInstallation = await prisma.installation.create({ data: {
+      customerId: otherCustomer.id, plannedDate: "2026-07-31", startTime: "09:00", durationHours: 4,
+      installer: "Piet Ander", employeeId: otherEmployee.id
+    } });
+    const ownProject = (await admin.post("/api/projects").send({ customerId: customer.id, plannedDate: "2026-07-30", workType: "other", employeeId: ownEmployee.id }).expect(201)).body.item;
+    const otherProject = (await admin.post("/api/projects").send({ customerId: otherCustomer.id, plannedDate: "2026-07-31", workType: "other", employeeId: otherEmployee.id }).expect(201)).body.item;
+    await admin.post("/api/collections/customerNotes").send({ customerId: customer.id, body: "Eigen notitie" }).expect(200);
+    await admin.post("/api/collections/customerNotes").send({ customerId: otherCustomer.id, body: "Verborgen notitie" }).expect(200);
+    const pdfContent = Buffer.from("%PDF-1.4\n%%EOF");
+    await admin.post(`/api/customers/${customer.id}/documents`).attach("file", pdfContent, { filename: "eigen.pdf", contentType: "application/pdf" }).expect(201);
+    await admin.post(`/api/customers/${otherCustomer.id}/documents`).attach("file", pdfContent, { filename: "verborgen.pdf", contentType: "application/pdf" }).expect(201);
 
     const installer = agent();
     await installer.post("/api/auth/login").send({ username: "installer", password: "installer-pass" }).expect(200);
     const bootstrap = await installer.get("/api/bootstrap").expect(200);
-    expect(bootstrap.body.data.customers).toHaveLength(1);
-    expect(bootstrap.body.data.installations).toHaveLength(1);
-    expect(bootstrap.body.data.quotes).toBeUndefined();
-    expect(bootstrap.body.data.settings).toBeUndefined();
+    expect(bootstrap.body.data.user).toMatchObject({ role: "installer", employeeId: ownEmployee.id });
+    expect(bootstrap.body.data.permissions.readableCollections).toEqual(["customers", "customerNotes", "customerDocuments", "installations"]);
+    expect(bootstrap.body.data.customers).toBeUndefined();
+    expect(bootstrap.body.data.installations).toBeUndefined();
+    expect(bootstrap.body.data.customerDocuments).toBeUndefined();
+    expect(bootstrap.body.data.settings).toEqual({});
 
-    await installer.get("/api/collections/customers").expect(200);
-    await installer.get("/api/collections/installations").expect(200);
+    expect((await installer.get("/api/collections/customers").expect(200)).body.items.map((item) => item.id)).toEqual([customer.id]);
+    expect((await installer.get("/api/collections/installations").expect(200)).body.items.map((item) => item.id)).toEqual([ownInstallation.id]);
+    expect((await installer.get("/api/collections/customerNotes").expect(200)).body.items.map((item) => item.body)).toEqual(["Eigen notitie"]);
+    expect((await installer.get("/api/collections/customerDocuments").expect(200)).body.items.map((item) => item.fileName)).toEqual(["eigen.pdf"]);
+    const pagedCustomers = await installer.get("/api/customers?page=1&pageSize=25&sortBy=lastName&sortOrder=asc").expect(200);
+    expect(pagedCustomers.body).toMatchObject({ page: 1, pageSize: 25, totalItems: 1, totalPages: 1 });
+    expect(pagedCustomers.body.items.map((item) => item.id)).toEqual([customer.id]);
+    const pagedDocuments = await installer.get("/api/documents?page=1&pageSize=25").expect(200);
+    expect(pagedDocuments.body.items.map((item) => item.fileName)).toEqual(["eigen.pdf"]);
+    expect(pagedDocuments.body.items[0].content).toBeUndefined();
+    await installer.get(`/api/documents/${pagedDocuments.body.items[0].id}/download`).expect("Content-Type", /application\/pdf/).expect(200);
+    const otherDocument = await prisma.customerDocument.findFirst({ where: { customerId: otherCustomer.id } });
+    await installer.get(`/api/documents/${otherDocument.id}/download`).expect(404);
+    await installer.get(`/api/projects/${ownProject.id}`).expect(200);
+    await installer.get(`/api/projects/${otherProject.id}`).expect(404);
+    await installer.put(`/api/projects/${otherProject.id}/tasks/${otherProject.tasks[0].id}`).send({ status: "completed" }).expect(404);
     await installer.get("/api/collections/quotes").expect(403);
     await installer.get("/api/settings").expect(403);
     await installer.get("/api/users").expect(403);
@@ -290,8 +322,8 @@ describe("role access", () => {
     await installer.post("/api/collections/customers").send({ firstName: "Nope" }).expect(403);
     await installer.post("/api/collections/installations").send({ customerId: customer.id }).expect(403);
 
-    const installation = bootstrap.body.data.installations[0];
-    await installer.put(`/api/installations/${installation.id}/workorder`).send({
+    await installer.put(`/api/installations/${otherInstallation.id}/workorder`).send({ status: "uitgevoerd", workOrder: { workDone: "Onbevoegd" } }).expect(404);
+    await installer.put(`/api/installations/${ownInstallation.id}/workorder`).send({
       status: "uitgevoerd",
       workOrder: {
         workDone: "Getest",
@@ -299,9 +331,9 @@ describe("role access", () => {
         checks: { installedTested: true }
       }
     }).expect(200);
-    const updated = await admin.get("/api/bootstrap").expect(200);
-    expect(updated.body.data.installations[0].status).toBe("uitgevoerd");
-    expect(updated.body.data.installations[0].workOrder.workDone).toBe("Getest");
+    const updated = await admin.get(`/api/installations?customerId=${customer.id}&pageSize=25`).expect(200);
+    expect(updated.body.items[0].status).toBe("uitgevoerd");
+    expect(updated.body.items[0].workOrder.workDone).toBe("Getest");
   });
 
   it("isolates CRM, sales, execution and finance by portal and API collection", async () => {
@@ -319,7 +351,8 @@ describe("role access", () => {
 
     const crm = await loginAsRole("crm");
     const crmData = (await crm.get("/api/bootstrap").expect(200)).body.data;
-    expect(Object.keys(crmData).sort()).toEqual(["customerDocuments", "customerNotes", "customers"]);
+    expect(crmData.permissions.readableCollections).toEqual(["customers", "customerNotes", "customerDocuments"]);
+    expect(crmData.customers).toBeUndefined();
     await crm.get("/api/collections/customers").expect(200);
     await crm.get("/api/collections/salesOpportunities").expect(403);
     await crm.post("/api/collections/customers").send({
@@ -335,11 +368,8 @@ describe("role access", () => {
 
     const sales = await loginAsRole("sales");
     const salesData = (await sales.get("/api/bootstrap").expect(200)).body.data;
-    expect(salesData.salesOpportunities).toBeDefined();
-    expect(salesData.salesAppointments).toBeDefined();
-    expect(salesData.quotes).toBeDefined();
-    expect(salesData.invoices).toBeUndefined();
-    expect(salesData.installations).toBeUndefined();
+    expect(salesData.permissions.readableCollections).toContain("salesOpportunities");
+    expect(salesData.salesOpportunities).toBeUndefined();
     await sales.get("/api/collections/quotes").expect(200);
     await sales.get("/api/collections/invoices").expect(403);
     await sales.post("/api/collections/salesAppointments").send({ title: "Belafspraak", date: "2026-08-01", startTime: "10:00", endTime: "10:30" }).expect(200);
@@ -350,9 +380,8 @@ describe("role access", () => {
 
     const execution = await loginAsRole("execution");
     const executionData = (await execution.get("/api/bootstrap").expect(200)).body.data;
-    expect(executionData.installations).toHaveLength(1);
-    expect(executionData.invoices).toBeUndefined();
-    expect(executionData.salesOpportunities).toBeUndefined();
+    expect(executionData.permissions.readableCollections).toEqual(["customers", "quotes", "installations"]);
+    expect(executionData.installations).toBeUndefined();
     await execution.get("/api/collections/installations").expect(200);
     await execution.get("/api/collections/invoices").expect(403);
     await execution.get("/api/projects").expect(200);
@@ -361,10 +390,8 @@ describe("role access", () => {
 
     const finance = await loginAsRole("finance");
     const financeData = (await finance.get("/api/bootstrap").expect(200)).body.data;
-    expect(financeData.invoices).toBeDefined();
-    expect(financeData.quotes).toBeDefined();
-    expect(financeData.salesOpportunities).toBeUndefined();
-    expect(financeData.installations).toBeUndefined();
+    expect(financeData.permissions.readableCollections).toEqual(["customers", "products", "quotes", "invoices"]);
+    expect(financeData.invoices).toBeUndefined();
     await finance.get("/api/collections/invoices").expect(200);
     await finance.get("/api/collections/salesOpportunities").expect(403);
     await finance.post("/api/counters/invoice/next").expect(200);
@@ -376,12 +403,90 @@ describe("role access", () => {
 });
 
 describe("business data", () => {
-  it("bootstraps seeded products and settings", async () => {
+  it("paginates, searches, filters and sorts domain collections server-side", async () => {
+    const client = agent();
+    await login(client);
+    await createCustomer(client);
+    await client.post("/api/collections/customers").send({ firstName: "Ada", lastName: "Alfa", companyName: "Zon BV", email: "ada@example.com", phone: "0611111111", address: "A 1", postalCode: "1000 AA", city: "Amsterdam" }).expect(200);
+    await client.post("/api/collections/customers").send({ firstName: "Bert", lastName: "Beta", companyName: "Wind BV", email: "bert@example.com", phone: "0622222222", address: "B 2", postalCode: "2000 BB", city: "Amsterdam" }).expect(200);
+
+    const firstPage = await client.get("/api/customers?page=1&pageSize=2&sortBy=lastName&sortOrder=asc").expect(200);
+    expect(firstPage.body).toMatchObject({ page: 1, pageSize: 2, totalItems: 3, totalPages: 2 });
+    expect(firstPage.body.items.map((item) => item.lastName)).toEqual(["Alfa", "Beta"]);
+    const searched = await client.get("/api/customers?search=wind&city=Amsterdam&pageSize=25").expect(200);
+    expect(searched.body.items.map((item) => item.companyName)).toEqual(["Wind BV"]);
+    await client.get("/api/customers?pageSize=101").expect(400);
+    await client.get("/api/customers?sortBy=passwordHash").expect(400);
+  });
+
+  it("bootstraps only session metadata and lists seeded products separately", async () => {
     const client = agent();
     await login(client);
     const response = await client.get("/api/bootstrap").expect(200);
-    expect(response.body.data.products.length).toBeGreaterThan(0);
+    expect(response.body.data.products).toBeUndefined();
+    expect(response.body.data.customers).toBeUndefined();
+    expect(response.body.data.customerDocuments).toBeUndefined();
     expect(response.body.data.settings.companyName).toBe("Climature");
+    expect(response.body.data.user.role).toBe("admin");
+    expect(response.body.data.references.apiVersion).toBe(2);
+    expect((await client.get("/api/products?pageSize=25").expect(200)).body.items.length).toBeGreaterThan(0);
+  });
+
+  it("creates one concept invoice directly from an accepted quote", async () => {
+    const client = agent();
+    await login(client);
+    const customer = await createCustomer(client);
+    const quoteNumber = (await client.post("/api/counters/quote/next").expect(200)).body.value;
+    const quote = (await client.post("/api/collections/quotes").send({
+      quoteNumber,
+      customerId: customer.id,
+      quoteDate: "2026-07-18",
+      validUntil: "2026-08-18",
+      status: "geaccepteerd",
+      notes: "Conform geaccepteerde offerte.",
+      lines: [
+        { description: "Warmtepomp inclusief installatie", qty: 1, unit: "stuk", priceExVat: 10000, vatRate: 21 },
+        { description: "Actiekorting", qty: 1, unit: "post", priceExVat: -500, vatRate: 21, lineKind: "discount" }
+      ]
+    }).expect(200)).body.item;
+
+    const responses = await Promise.all([
+      client.post(`/api/quotes/${quote.id}/invoice`).send({}),
+      client.post(`/api/quotes/${quote.id}/invoice`).send({})
+    ]);
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 201]);
+    expect(responses[0].body.item.id).toBe(responses[1].body.item.id);
+    expect(responses[0].body.item).toMatchObject({
+      quoteNumber,
+      customerId: customer.id,
+      status: "concept",
+      subtotal: 9500,
+      vat: 1995,
+      total: 11495
+    });
+    expect(responses[0].body.item.lines.map((line) => line.description)).toEqual([
+      "Warmtepomp inclusief installatie",
+      "Actiekorting"
+    ]);
+    expect(await prisma.invoice.count({ where: { quoteNumber } })).toBe(1);
+  });
+
+  it("does not invoice a quote before it is accepted", async () => {
+    const client = agent();
+    await login(client);
+    const customer = await createCustomer(client);
+    const quoteNumber = (await client.post("/api/counters/quote/next").expect(200)).body.value;
+    const quote = (await client.post("/api/collections/quotes").send({
+      quoteNumber,
+      customerId: customer.id,
+      quoteDate: "2026-07-18",
+      validUntil: "2026-08-18",
+      status: "concept",
+      lines: [{ description: "Installatie", qty: 1, unit: "post", priceExVat: 1000, vatRate: 21 }]
+    }).expect(200)).body.item;
+
+    await client.post(`/api/quotes/${quote.id}/invoice`).send({}).expect(409);
+    expect(await prisma.invoice.count({ where: { quoteNumber } })).toBe(0);
   });
 
   it("creates customers, quotes, invoices and installations", async () => {
@@ -395,9 +500,23 @@ describe("business data", () => {
       quoteDate: "2026-07-08",
       validUntil: "2026-08-07",
       status: "geaccepteerd",
+      templateType: "warmtepomp",
+      designStyle: "donker",
+      documentTitle: "Comfortabel en energiezuinig verwarmen",
+      introText: "Een oplossing afgestemd op de woning.",
+      includedText: "Warmtepomp\nInstallatie\nInbedrijfstelling",
+      advantagesText: "Minder gasverbruik\nMeer comfort",
+      benefitType: "subsidie",
+      benefitLabel: "Verwachte ISDE-subsidie",
+      benefitAmount: 3025,
+      documentConfig: { version: 2, pages: [{ id: "cover", enabled: true, order: 0 }], financial: { yearlySaving: 1200 } },
       lines: [{ description: "Warmtepomp", qty: 1, unit: "stuk", priceExVat: 1000, vatRate: 21 }]
     }).expect(200)).body.item;
     expect(quote.lines[0].total).toBe(1210);
+    expect(quote.templateType).toBe("warmtepomp");
+    expect(quote.designStyle).toBe("donker");
+    expect(quote.benefitAmount).toBe(3025);
+    expect(quote.documentConfig.version).toBe(2);
 
     const invoiceNumber = (await client.post("/api/counters/invoice/next").expect(200)).body.value;
     const invoice = (await client.post("/api/collections/invoices").send({
@@ -420,17 +539,80 @@ describe("business data", () => {
       durationHours: 4
     }).expect(200);
 
-    const document = (await client.post("/api/collections/customerDocuments").send({
-      customerId: customer.id,
-      fileName: "scan.pdf",
-      mimeType: "application/pdf",
-      size: 25,
-      content: Buffer.from("%PDF-1.4\n%%EOF").toString("base64")
-    }).expect(200)).body.item;
+    const document = (await client.post(`/api/customers/${customer.id}/documents`)
+      .attach("file", Buffer.from("%PDF-1.4\n%%EOF"), { filename: "scan.pdf", contentType: "application/pdf" })
+      .expect(201)).body.item;
     expect(document.fileName).toBe("scan.pdf");
 
-    const bootstrap = await client.get("/api/bootstrap").expect(200);
-    expect(bootstrap.body.data.customerDocuments).toHaveLength(1);
+    const documents = await client.get(`/api/documents?customerId=${customer.id}&pageSize=25`).expect(200);
+    expect(documents.body.items).toHaveLength(1);
+    expect(documents.body.items[0].content).toBeUndefined();
+  });
+
+  it("stores normalized quote images and protects their content", async () => {
+    const client = agent();
+    await login(client);
+    const customer = await createCustomer(client);
+    const quoteNumber = (await client.post("/api/counters/quote/next").expect(200)).body.value;
+    const quote = (await client.post("/api/collections/quotes").send({
+      quoteNumber, customerId: customer.id, quoteDate: "2026-07-17", validUntil: "2026-08-16", status: "concept",
+      lines: [{ description: "Thuisbatterij", qty: 1, unit: "stuk", priceExVat: 1000, vatRate: 21 }]
+    }).expect(200)).body.item;
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+    const asset = (await client.post(`/api/quotes/${quote.id}/assets`).attach("file", png, { filename: "product.png", contentType: "image/png" }).expect(201)).body.item;
+    expect(asset.mimeType).toBe("image/webp");
+    expect(asset.width).toBe(1);
+    await client.get(`/api/quote-assets/${asset.id}/content`).expect("Content-Type", /image\/webp/).expect(200);
+    await client.delete(`/api/quote-assets/${asset.id}`).expect(200);
+    await client.get(`/api/quote-assets/${asset.id}/content`).expect(404);
+  });
+
+  it("stores combination quotes, recalculates eligible VAT and keeps benefits out of invoices", async () => {
+    const client = agent();
+    await login(client);
+    const customer = await createCustomer(client);
+    const quoteNumber = (await client.post("/api/counters/quote/next").expect(200)).body.value;
+    const quote = (await client.post("/api/collections/quotes").send({
+      quoteNumber,
+      customerId: customer.id,
+      quoteDate: "2026-07-18",
+      validUntil: "2026-08-17",
+      status: "geaccepteerd",
+      templateType: "combinatie",
+      documentConfig: { version: 3, components: [{ key: "thuisbatterij", type: "thuisbatterij", title: "Thuisbatterij" }, { key: "warmtepomp", type: "warmtepomp", title: "Warmtepomp" }] },
+      benefits: [
+        { id: "vat", type: "btw_refund", label: "Mogelijke btw-teruggave", amount: 9999, componentKey: "thuisbatterij", calculationMode: "eligible_vat", reviewed: true },
+        { id: "isde", type: "isde", label: "Verwachte ISDE-subsidie", amount: 3025, componentKey: "warmtepomp", calculationMode: "advice", reviewed: false }
+      ],
+      lines: [
+        { description: "Thuisbatterij", qty: 1, unit: "pakket", priceExVat: 10000, vatRate: 21, componentKey: "thuisbatterij", lineKind: "item", vatRefundEligible: true },
+        { description: "Combinatiekorting batterij", qty: 1, unit: "post", priceExVat: 500, vatRate: 21, componentKey: "thuisbatterij", lineKind: "discount", vatRefundEligible: true },
+        { description: "Warmtepomp", qty: 1, unit: "pakket", priceExVat: 8000, vatRate: 21, componentKey: "warmtepomp", lineKind: "item", vatRefundEligible: false }
+      ]
+    }).expect(200)).body.item;
+
+    expect(quote.templateType).toBe("combinatie");
+    expect(quote.lines).toHaveLength(3);
+    expect(quote.lines[1]).toMatchObject({ lineKind: "discount", priceExVat: -500, componentKey: "thuisbatterij", vatRefundEligible: true });
+    expect(quote.total).toBe(21175);
+    expect(quote.benefits).toEqual([
+      expect.objectContaining({ type: "btw_refund", amount: 1995, reviewed: true }),
+      expect.objectContaining({ type: "isde", amount: 3025, reviewed: false })
+    ]);
+
+    const invoiceNumber = (await client.post("/api/counters/invoice/next").expect(200)).body.value;
+    const invoice = (await client.post("/api/collections/invoices").send({
+      invoiceNumber,
+      quoteNumber,
+      customerId: customer.id,
+      invoiceDate: "2026-07-18",
+      dueDate: "2026-08-01",
+      status: "concept",
+      lines: quote.lines
+    }).expect(200)).body.item;
+    expect(invoice.total).toBe(quote.total);
+    expect(invoice.lines.some((line) => line.description === "Combinatiekorting batterij" && line.priceExVat === -500)).toBe(true);
+    expect(invoice.lines.some((line) => /ISDE|teruggave/i.test(line.description))).toBe(false);
   });
 
   it("creates sales opportunities and includes them in backups", async () => {
@@ -463,15 +645,14 @@ describe("business data", () => {
     }).expect(200)).body.item;
     expect(appointment.opportunityId).toBe(opportunity.id);
 
-    const listed = await client.get("/api/bootstrap").expect(200);
-    expect(listed.body.data.salesOpportunities).toHaveLength(1);
-    expect(listed.body.data.salesAppointments).toHaveLength(1);
+    expect((await client.get("/api/sales-opportunities?pageSize=25").expect(200)).body.items).toHaveLength(1);
+    expect((await client.get("/api/sales-appointments?pageSize=25").expect(200)).body.items).toHaveLength(1);
 
     const backup = (await client.get("/api/backup/export").expect(200)).body;
     await data.resetData(prisma);
     await client.post("/api/backup/import").send(backup).expect(200);
-    expect((await client.get("/api/bootstrap").expect(200)).body.data.salesOpportunities).toHaveLength(1);
-    expect((await client.get("/api/bootstrap").expect(200)).body.data.salesAppointments).toHaveLength(1);
+    expect((await client.get("/api/sales-opportunities?pageSize=25").expect(200)).body.items).toHaveLength(1);
+    expect((await client.get("/api/sales-appointments?pageSize=25").expect(200)).body.items).toHaveLength(1);
 
     await client.post("/api/collections/salesAppointments").send({
       ...appointment,
@@ -479,7 +660,7 @@ describe("business data", () => {
     }).expect(400);
 
     await client.delete(`/api/collections/salesOpportunities/${opportunity.id}`).expect(200);
-    expect((await client.get("/api/bootstrap").expect(200)).body.data.salesOpportunities).toHaveLength(0);
+    expect((await client.get("/api/sales-opportunities?pageSize=25").expect(200)).body.items).toHaveLength(0);
   });
 
   it("syncs linked sales opportunities when quote status changes", async () => {
@@ -510,8 +691,8 @@ describe("business data", () => {
       lines: quote.lines
     }).expect(200);
 
-    const bootstrap = await client.get("/api/bootstrap").expect(200);
-    const synced = bootstrap.body.data.salesOpportunities.find((item) => item.id === opportunity.id);
+    const listed = await client.get(`/api/sales-opportunities?quoteId=${quote.id}&pageSize=25`).expect(200);
+    const synced = listed.body.items.find((item) => item.id === opportunity.id);
     expect(synced.stage).toBe("gewonnen");
     expect(synced.probability).toBe(100);
   });
@@ -554,6 +735,19 @@ describe("business data", () => {
 });
 
 describe("secure HR portal", () => {
+  it("decrypts historical key versions and encrypts new data with the active key", () => {
+    const oldKey = Buffer.alloc(32, 3).toString("base64");
+    const newKey = Buffer.alloc(32, 4).toString("base64");
+    const oldConfig = { hrEncryptionKey: oldKey, hrEncryptionKeys: { v1: oldKey }, hrKeyVersion: "v1" };
+    const historical = encrypt(oldConfig, "historische HR-data");
+    const rotatedConfig = { hrEncryptionKeys: { v1: oldKey, v2: newKey }, hrKeyVersion: "v2" };
+    expect(decrypt(rotatedConfig, historical.cipher, historical.iv, historical.tag, historical.keyVersion).toString("utf8")).toBe("historische HR-data");
+    const current = encrypt(rotatedConfig, "nieuwe HR-data");
+    expect(current.keyVersion).toBe("v2");
+    expect(decrypt(rotatedConfig, current.cipher, current.iv, current.tag, "v2").toString("utf8")).toBe("nieuwe HR-data");
+    expect(() => decrypt(rotatedConfig, historical.cipher, historical.iv, historical.tag, "missing")).toThrow(/sleutelversie/i);
+  });
+
   function hrAgent() {
     return request.agent(hrApp);
   }
@@ -642,7 +836,8 @@ describe("secure HR portal", () => {
     expect(uploaded.body.item.scanStatus).toBe("clean");
 
     const stored = await prisma.employmentContract.findUnique({ where: { id: uploaded.body.item.id } });
-    expect(Buffer.from(stored.fileCipher).equals(pdf)).toBe(false);
+    expect(stored.storageKey).toMatch(/^hr\/contracts\//);
+    expect(Object.prototype.hasOwnProperty.call(stored, "fileCipher")).toBe(false);
     const downloaded = await client.get(`/api/hr/employees/${employee.id}/contracts/${stored.id}/download`).expect(200);
     expect(Buffer.from(downloaded.body).equals(pdf)).toBe(true);
     expect(downloaded.headers["cache-control"]).toContain("no-store");
@@ -681,13 +876,13 @@ describe("secure HR portal", () => {
     expect(installation.qualificationCheck.qualified).toBe(false);
     expect(installation.qualificationCheck.warnings[0].qualificationCode).toBe("VCA");
 
-    await client.post("/api/users").send({ username: "field", password: "installer-pass", role: "installer" }).expect(200);
+    await client.post("/api/users").send({ username: "field", password: "installer-pass", role: "installer", employeeId: employee.id }).expect(200);
     const installer = hrAgent();
     await installer.post("/api/auth/login").send({ username: "field", password: "installer-pass" }).expect(200);
-    const bootstrap = await installer.get("/api/bootstrap").expect(200);
-    expect(bootstrap.body.data.installations[0].installer).toBe("Sam Monteur");
-    expect(bootstrap.body.data.installations[0].employeeId).toBeUndefined();
-    expect(bootstrap.body.data.installations[0].qualificationCheck).toBeUndefined();
+    const installations = await installer.get("/api/installations?pageSize=25").expect(200);
+    expect(installations.body.items[0].installer).toBe("Sam Monteur");
+    expect(installations.body.items[0].employeeId).toBeUndefined();
+    expect(installations.body.items[0].qualificationCheck).toBeUndefined();
   });
 
   it("evaluates qualification evidence and validity against the planned date", async () => {
@@ -711,7 +906,8 @@ describe("secure HR portal", () => {
     expect(uploaded.body.item.evidenceScanStatus).toBe("clean");
 
     const stored = await prisma.employeeQualification.findUnique({ where: { id: uploaded.body.item.id } });
-    expect(Buffer.from(stored.evidenceCipher).equals(pdf)).toBe(false);
+    expect(stored.evidenceStorageKey).toMatch(/^hr\/qualifications\//);
+    expect(Object.prototype.hasOwnProperty.call(stored, "evidenceCipher")).toBe(false);
     expect(Buffer.from(stored.noteCipher).toString("utf8")).not.toContain("Alleen intern zichtbaar");
 
     const onBoundary = await client.get("/api/admin/employee-directory?workType=other&plannedDate=2026-08-01").expect(200);
@@ -892,5 +1088,106 @@ describe("advice assumptions", () => {
     } finally {
       global.fetch = originalFetch;
     }
+  });
+});
+
+describe("security hardening", () => {
+  it("blokkeert password spraying per IP over verschillende gebruikersnamen", async () => {
+    const sprayApp = createApp({
+      databaseUrl: process.env.DATABASE_URL,
+      sessionSecret: "spray-test-session-secret-at-least-32",
+      adminUsername: "admin",
+      adminPasswordHash: await bcrypt.hash("x", 4),
+      port: 0,
+      nodeEnv: "test",
+      isProduction: false
+    });
+    for (let i = 0; i < 20; i += 1) {
+      await request(sprayApp).post("/api/auth/login").send({ username: `spray-${i}`, password: "nope" }).expect(401);
+    }
+    await request(sprayApp).post("/api/auth/login").send({ username: "spray-final", password: "nope" }).expect(429);
+  });
+
+  it("weigert klantdocumenten zonder PDF-inhoud en leidt de grootte af uit de bytes", async () => {
+    const client = agent();
+    await login(client);
+    const customer = await createCustomer(client);
+    await client.post(`/api/customers/${customer.id}/documents`)
+      .attach("file", Buffer.from("MZ\x90\x00 dit is geen pdf"), { filename: "malware.pdf", contentType: "application/pdf" })
+      .expect(400);
+    const pdfBytes = Buffer.from("%PDF-1.4\n%%EOF");
+    const document = (await client.post(`/api/customers/${customer.id}/documents`)
+      .attach("file", pdfBytes, { filename: "echt.pdf", contentType: "application/pdf" })
+      .expect(201)).body.item;
+    expect(document.size).toBe(pdfBytes.length);
+  });
+
+  it("weigert service-uploads waarvan de inhoud niet bij het bestandstype past", async () => {
+    const client = request.agent(hrApp);
+    await client.post("/api/auth/login").send({ username: "admin", password: "test-password" }).expect(200);
+    const customer = await createCustomer(client);
+    const serviceRequest = (await client.post("/api/service/requests").send({
+      customerId: customer.id,
+      title: "Storing warmtepomp"
+    }).expect(201)).body.item;
+    await client.post(`/api/service/requests/${serviceRequest.id}/documents`)
+      .attach("file", Buffer.from("dit is geen png"), { filename: "foto.png", contentType: "image/png" })
+      .expect(400);
+    const uploaded = await client.post(`/api/service/requests/${serviceRequest.id}/documents`)
+      .attach("file", Buffer.from("%PDF-1.4\n%%EOF"), { filename: "rapport.pdf", contentType: "application/pdf" })
+      .expect(201);
+    expect(uploaded.body.item.fileName).toBe("rapport.pdf");
+  });
+
+  it("beperkt API-verzoeken per IP buiten de testmodus", async () => {
+    process.env.API_RATE_LIMIT = "3";
+    try {
+      const limitedApp = createApp({
+        databaseUrl: process.env.DATABASE_URL,
+        sessionSecret: "ratelimit-test-session-secret-at-least-32",
+        adminUsername: "admin",
+        adminPasswordHash: await bcrypt.hash("x", 4),
+        port: 0,
+        nodeEnv: "development",
+        isProduction: false
+      });
+      for (let i = 0; i < 3; i += 1) await request(limitedApp).get("/api/health").expect(200);
+      await request(limitedApp).get("/api/health").expect(429);
+    } finally {
+      delete process.env.API_RATE_LIMIT;
+    }
+  });
+
+  it("blokkeert wachtwoordwijziging na vijf foute pogingen", async () => {
+    const client = agent();
+    await login(client);
+    for (let i = 0; i < 5; i += 1) {
+      await client.put("/api/auth/me").send({ currentPassword: "fout-wachtwoord", newPassword: "nieuw-wachtwoord" }).expect(401);
+    }
+    await client.put("/api/auth/me").send({ currentPassword: "test-password", newPassword: "nieuw-wachtwoord" }).expect(429);
+  });
+
+  it("geeft anonieme bezoekers geen csrf-token en geen sessiecookie", async () => {
+    const response = await request(app).get("/api/auth/session").expect(200);
+    expect(response.body.authenticated).toBe(false);
+    expect(response.body.csrfToken).toBeNull();
+    expect(response.headers["set-cookie"]).toBeUndefined();
+  });
+
+  it("retourneert consistente Zod-validatiefouten en een request-ID", async () => {
+    const client = agent();
+    await login(client);
+    const response = await client.post("/api/collections/customers").send({
+      firstName: "Test",
+      email: "geen-geldig-mailadres",
+      phone: "abc"
+    }).expect(400);
+    expect(response.headers["x-request-id"]).toMatch(/^[a-f0-9-]{36}$/);
+    expect(response.body).toMatchObject({ error: "De aanvraag bevat ongeldige gegevens.", code: "VALIDATION_ERROR" });
+    expect(response.body.details).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: "email" }),
+      expect.objectContaining({ path: "phone" })
+    ]));
+    expect(JSON.stringify(response.body)).not.toContain("stack");
   });
 });

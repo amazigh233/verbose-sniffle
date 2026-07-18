@@ -113,7 +113,7 @@
       ? '<div class="button-row"><button class="small-button" data-action="customer-edit" data-id="' + id + '">Bewerk</button>' + (S.isAdmin() ? '<button class="danger-button" data-action="customer-delete" data-id="' + id + '">Verwijder</button>' : "") + '</div>'
       : "";
     var quickActions = S.isAdmin()
-      ? '<div class="button-row" style="margin-top:16px;"><button class="primary-button" data-action="customer-projects" data-id="' + id + '">Projectcockpit</button><a class="primary-button" href="#service?customerId=' + id + '">Servicehistorie</a><button class="primary-button" data-action="quote-new" data-customer-id="' + id + '">Nieuwe offerte</button><button class="ghost-button" data-action="customer-advice" data-id="' + id + '">Nieuw advies</button><button class="ghost-button" data-action="invoice-new" data-customer-id="' + id + '">Nieuwe factuur</button><button class="ghost-button" data-action="installation-new" data-customer-id="' + id + '">Installatie plannen</button><button class="ghost-button" data-action="customer-workorder-print" data-id="' + id + '">Print werkbon</button></div>'
+      ? '<div class="button-row" style="margin-top:16px;"><button class="primary-button" data-action="customer-projects" data-id="' + id + '">Projectcockpit</button><a class="primary-button" href="#service?customerId=' + id + '">Servicehistorie</a><button class="primary-button" data-action="quote-new" data-customer-id="' + id + '">Nieuwe offerte</button><button class="ghost-button" data-action="customer-advice" data-id="' + id + '">Nieuw advies</button><button class="ghost-button" data-action="customer-advice-v2" data-id="' + id + '">Advies 2.0</button><button class="ghost-button" data-action="invoice-new" data-customer-id="' + id + '">Nieuwe factuur</button><button class="ghost-button" data-action="installation-new" data-customer-id="' + id + '">Installatie plannen</button><button class="ghost-button" data-action="customer-workorder-print" data-id="' + id + '">Print werkbon</button></div>'
       : S.isInstaller() ? '<div class="button-row" style="margin-top:16px;"><button class="primary-button" data-action="customer-projects" data-id="' + id + '">Projectcockpit</button><button class="ghost-button" data-action="customer-workorder-print" data-id="' + id + '">Print werkbon</button></div>' : S.canManage("crm") ? '<div class="button-row" style="margin-top:16px;"><a class="primary-button" href="#service?customerId=' + id + '">Servicehistorie</a></div>' : "";
     var dossier = S.isAdmin()
       ? documentUploadForm(customer) + '<h3>PDF-documenten</h3>' + linkedDocuments(documents) + '<h3>Adviezen</h3>' + linkedAdvices(advices) + '<h3>Offertes</h3>' + linkedQuotes(quotes) + '<h3>Facturen</h3>' + linkedInvoices(invoices) + '<h3>Installaties</h3>' + linkedInstallations(installations)
@@ -484,44 +484,11 @@
       C.app.toast("PDF is groter dan 8 MB.");
       return;
     }
-    return readFileAsBase64(file).then(function (content) {
-      return S.upsert("customerDocuments", {
-        customerId: customerId,
-        fileName: file.name,
-        mimeType: "application/pdf",
-        size: file.size,
-        content: content
-      });
-    }).then(function () {
+    return S.uploadCustomerDocument(customerId, file).then(function () {
       form.reset();
       C.app.toast("PDF toegevoegd aan klantdossier.");
       C.app.render();
     });
-  }
-
-  function readFileAsBase64(file) {
-    return new Promise(function (resolve, reject) {
-      var reader = new FileReader();
-      reader.onload = function () {
-        resolve(String(reader.result || "").split(",")[1] || "");
-      };
-      reader.onerror = function () {
-        reject(new Error("PDF kon niet worden gelezen."));
-      };
-      reader.readAsDataURL(file);
-    });
-  }
-
-  function documentBlob(document) {
-    var binary = window.atob(document.content || "");
-    var chunks = [];
-    for (var i = 0; i < binary.length; i += 8192) {
-      var slice = binary.slice(i, i + 8192);
-      var bytes = new Uint8Array(slice.length);
-      for (var j = 0; j < slice.length; j++) bytes[j] = slice.charCodeAt(j);
-      chunks.push(bytes);
-    }
-    return new Blob(chunks, { type: "application/pdf" });
   }
 
   function openDocument(id, download) {
@@ -530,7 +497,7 @@
       C.app.toast("PDF niet gevonden.");
       return;
     }
-    var url = URL.createObjectURL(documentBlob(document));
+    var url = "/api/documents/" + encodeURIComponent(document.id) + "/download" + (download ? "" : "?disposition=inline");
     if (download) {
       var link = window.document.createElement("a");
       link.href = url;
@@ -541,7 +508,6 @@
     } else {
       window.open(url, "_blank", "noopener");
     }
-    window.setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   }
 
   function removeDocument(id) {

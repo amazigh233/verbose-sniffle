@@ -2,6 +2,8 @@
 
 const security = require("./hr-security");
 const workforce = require("./hr-workforce");
+const bootstrapCache = require("./bootstrap-cache");
+const { parseLocalizedNumber } = require("./numbers");
 
 const WORK_TYPES = ["air_conditioning", "heat_pump", "boiler", "home_battery", "other"];
 const PROJECT_STATUSES = ["preparation", "ready", "in_progress", "completed", "cancelled"];
@@ -61,7 +63,7 @@ function boolValue(value, fallback = true) {
   return value === true || value === "true" || value === "1" || value === 1;
 }
 function numberValue(value, name, min, max, fallback = 0) {
-  const result = value === "" || value == null ? fallback : Number(value);
+  const result = value === "" || value == null ? fallback : parseLocalizedNumber(value, NaN);
   if (!Number.isFinite(result) || result < min || result > max) fail(`${name} is ongeldig.`);
   return result;
 }
@@ -101,6 +103,7 @@ async function ensureTemplates(prisma) {
 async function nextProjectNumber(prisma) {
   const year = new Date().getFullYear();
   const counter = await prisma.counter.upsert({ where: { key: `project-${year}` }, update: { value: { increment: 1 } }, create: { key: `project-${year}`, value: 1 } });
+  bootstrapCache.invalidate();
   return `CL-PRJ-${year}-${String(counter.value).padStart(4, "0")}`;
 }
 
@@ -183,7 +186,7 @@ async function assertProjectAccess(prisma, user, projectId, adminOnly = false) {
   if (["admin", "execution"].includes(context.role)) return { context, admin: true };
   if (adminOnly || !context.employeeId) fail("Geen toegang.", 403);
   const member = await prisma.projectMember.findUnique({ where: { projectId_employeeId: { projectId, employeeId: context.employeeId } } });
-  if (!member) fail("Geen toegang.", 403);
+  if (!member) fail("Project niet gevonden.", 404);
   return { context, admin: false, member };
 }
 
@@ -248,10 +251,10 @@ const projectInclude = {
   auditEvents: { include: { actor: { select: { username: true } } }, orderBy: { createdAt: "desc" }, take: 50 }
 };
 
-function equipmentEncryptionConfig(config) { return { ...config, hrEncryptionKey: config.projectEncryptionKey || config.hrEncryptionKey, hrKeyVersion: config.projectKeyVersion || config.hrKeyVersion || "v1" }; }
+function equipmentEncryptionConfig(config) { return { ...config, hrEncryptionKey: config.projectEncryptionKey || config.hrEncryptionKey, hrEncryptionKeys: config.projectEncryptionKeys || {}, hrKeyVersion: config.projectKeyVersion || config.hrKeyVersion || "v1" }; }
 function serializeEquipment(config, item, admin) {
   let externalDeviceId = "";
-  if (admin && item.externalIdCipher) externalDeviceId = security.decrypt(equipmentEncryptionConfig(config), item.externalIdCipher, item.externalIdIv, item.externalIdTag).toString("utf8");
+  if (admin && item.externalIdCipher) externalDeviceId = security.decrypt(equipmentEncryptionConfig(config), item.externalIdCipher, item.externalIdIv, item.externalIdTag, item.keyVersion).toString("utf8");
   return { id: item.id, type: item.type, brand: item.brand, model: item.model, serialNumber: item.serialNumber, installedAt: item.installedAt, warrantyUntil: item.warrantyUntil, providerCode: item.providerCode, connectionStatus: item.connectionStatus, lastSyncAt: item.lastSyncAt, externalDeviceId };
 }
 async function serializeProject(prisma, config, row, admin) {
@@ -274,7 +277,7 @@ async function listProjects(prisma, config, user, query = {}) {
   if (!["admin", "execution", "installer"].includes(context.role)) fail("Geen toegang.", 403);
   const where = { customerId: query.customerId || undefined, status: query.status || undefined, members: context.role === "installer" ? { some: { employeeId: context.employeeId || "__none__" } } : undefined };
   const [total, rows] = await prisma.$transaction([prisma.customerProject.count({ where }), prisma.customerProject.findMany({ where, include: projectInclude, orderBy: [{ plannedDate: "asc" }, { createdAt: "desc" }], skip: (page - 1) * pageSize, take: pageSize })]);
-  return { items: await Promise.all(rows.map((row) => serializeProject(prisma, config, row, ["admin", "execution"].includes(context.role)))), total, page, pageSize };
+  return { items: await Promise.all(rows.map((row) => serializeProject(prisma, config, row, ["admin", "execution"].includes(context.role)))), totalItems: total, totalPages: total === 0 ? 0 : Math.ceil(total / pageSize), page, pageSize };
 }
 
 async function updateProject(prisma, user, id, input) {
@@ -293,7 +296,10 @@ async function updateProject(prisma, user, id, input) {
   };
   const saved = await prisma.customerProject.update({ where: { id }, data });
   if (plannedDate !== current.plannedDate) await recalculateDates(prisma, id, plannedDate);
-  if (current.installationId) await prisma.installation.update({ where: { id: current.installationId }, data: { plannedDate, startTime: data.startTime, durationHours: data.durationHours } });
+  if (current.installationId) {
+    await prisma.installation.update({ where: { id: current.installationId }, data: { plannedDate, startTime: data.startTime, durationHours: data.durationHours } });
+    bootstrapCache.invalidate();
+  }
   await audit(prisma, id, access.context.id, "project.updated", "project", id, { plannedDate, status: data.status, warningOverrideReason: warningOverrideReason || undefined, warningCodes: currentReadiness.warnings.map((item) => item.code) });
   return saved;
 }

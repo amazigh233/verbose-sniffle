@@ -1,0 +1,6 @@
+ALTER TABLE "Quote" ADD COLUMN "benefits" JSONB;
+
+ALTER TABLE "QuoteLine"
+ADD COLUMN "componentKey" TEXT NOT NULL DEFAULT 'general',
+ADD COLUMN "lineKind" TEXT NOT NULL DEFAULT 'item',
+ADD COLUMN "vatRefundEligible" BOOLEAN NOT NULL DEFAULT false;

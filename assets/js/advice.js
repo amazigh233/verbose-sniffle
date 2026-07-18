@@ -18,7 +18,8 @@
     return [
       '<section class="section advice-tool-embed">',
       '<iframe id="advice-tool-frame" class="advice-tool-frame" src="' + S.escapeHtml(src) + '" title="Climature adviestools"></iframe>',
-      "</section>"
+      "</section>",
+      C.adviceV2 ? C.adviceV2.render(customerId || "", false) : ""
     ].join("");
   }
 

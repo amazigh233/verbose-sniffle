@@ -1,29 +1,38 @@
 /* Climature Bedrijfsportaal service worker — offline app-shell cache. */
 "use strict";
 
-var CACHE_VERSION = "climature-shell-v13";
+var CACHE_VERSION = "climature-shell-v24";
 
 var APP_SHELL = [
   "./",
   "index.html",
   "manifest.webmanifest",
   "assets/icons/icon.svg",
-  "assets/css/app.css",
+  "assets/quote-library/thuisbatterij.webp",
+  "assets/quote-library/warmtepomp.webp",
+  "assets/quote-library/cv-ketel.webp",
+  "assets/quote-library/airco.webp",
+  "assets/quote-library/maatwerk.webp",
+  "assets/css/app.css?v=24",
   "assets/adviestools.html",
   "assets/vendor/jspdf.umd.min.js",
-  "assets/js/storage.js",
-  "assets/js/pdf.js",
+  "assets/vendor/html2canvas.min.js",
+  "assets/js/storage.js?v=18",
+  "assets/js/quote-document.js?v=18",
+  "assets/js/pdf.js?v=24",
   "assets/js/customers.js",
-  "assets/js/quotes.js",
+  "assets/js/quotes.js?v=18",
   "assets/js/sales-funnel.js",
   "assets/js/sales-agenda.js",
-  "assets/js/invoices.js",
+  "assets/js/invoices.js?v=18",
   "assets/js/installations.js",
   "assets/js/projects.js",
-  "assets/js/service.js",
-  "assets/js/advice.js",
+  "assets/js/service.js?v=17",
+  "assets/js/advice-v2-engine.js?v=24",
+  "assets/js/advice-v2.js?v=24",
+  "assets/js/advice.js?v=16",
   "assets/js/reports.js",
-  "assets/js/app.js"
+  "assets/js/app.js?v=18"
 ];
 
 self.addEventListener("install", function (event) {

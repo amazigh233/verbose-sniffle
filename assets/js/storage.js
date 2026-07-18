@@ -4,6 +4,18 @@
   var store = window.Climature = window.Climature || {};
   var EURO = new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" });
   var COLLECTIONS = ["customers", "customerNotes", "customerDocuments", "products", "quotes", "invoices", "installations", "advices", "salesOpportunities", "salesAppointments"];
+  var COLLECTION_ENDPOINTS = {
+    customers: "/api/customers",
+    customerNotes: "/api/notes",
+    customerDocuments: "/api/documents",
+    products: "/api/products",
+    quotes: "/api/quotes",
+    invoices: "/api/invoices",
+    installations: "/api/installations",
+    advices: "/api/advices",
+    salesOpportunities: "/api/sales-opportunities",
+    salesAppointments: "/api/sales-appointments"
+  };
 
   var DEFAULT_SETTINGS = {
     companyName: "Climature",
@@ -152,9 +164,35 @@
 
   function refresh() {
     return api("/api/bootstrap").then(function (payload) {
-      applyData(payload.data);
-      authenticated = true;
-      return cache;
+      var bootstrap = payload.data || {};
+      applyData(bootstrap);
+      if (bootstrap.user) currentUser = bootstrap.user;
+      var legacyPayload = COLLECTIONS.some(function (collection) { return Array.isArray(bootstrap[collection]); });
+      if (legacyPayload) {
+        authenticated = true;
+        return cache;
+      }
+      var readable = bootstrap.permissions && Array.isArray(bootstrap.permissions.readableCollections)
+        ? bootstrap.permissions.readableCollections
+        : [];
+      return Promise.all(readable.filter(function (collection) {
+        return Boolean(COLLECTION_ENDPOINTS[collection]);
+      }).map(function (collection) {
+        return loadAllPages(COLLECTION_ENDPOINTS[collection], 1, []).then(function (items) {
+          cache[collection] = items;
+        });
+      })).then(function () {
+        authenticated = true;
+        return cache;
+      });
+    });
+  }
+
+  function loadAllPages(endpoint, page, items) {
+    return api(endpoint + "?page=" + page + "&pageSize=100").then(function (payload) {
+      var combined = items.concat(payload.items || []);
+      if (payload.totalPages && page < payload.totalPages) return loadAllPages(endpoint, page + 1, combined);
+      return combined;
     });
   }
 
@@ -239,13 +277,31 @@
   }
 
   function money(value) {
-    return EURO.format(Number.isFinite(value) ? value : 0);
+    return EURO.format(parseNumber(value));
   }
 
   function parseNumber(value) {
-    var normalized = String(value || "").replace(/\./g, "").replace(",", ".");
-    var parsed = parseFloat(normalized);
+    if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+    if (value == null || value === "") return 0;
+    var normalized = String(value).trim().replace(/[\s\u00a0€$£']/g, "").replace(/[^\d,\.\-+]/g, "");
+    if (!normalized) return 0;
+    var comma = normalized.lastIndexOf(",");
+    var dot = normalized.lastIndexOf(".");
+    if (comma >= 0 && dot >= 0) {
+      var decimal = comma > dot ? "," : ".";
+      normalized = normalized.replace(decimal === "," ? /\./g : /,/g, "").replace(decimal, ".");
+    } else if (comma >= 0) {
+      normalized = normalized.replace(/\./g, "").replace(",", ".");
+    } else {
+      normalized = normalized.replace(/,/g, "");
+    }
+    var parsed = Number(normalized);
     return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  function roundMoney(value) {
+    var number = parseNumber(value);
+    return Math.round((number + Math.sign(number) * Number.EPSILON) * 100) / 100;
   }
 
   function escapeHtml(value) {
@@ -271,11 +327,13 @@
 
   function calculateTotals(lines) {
     var normalized = (lines || []).map(function (line) {
-      var qty = parseNumber(line.qty);
-      var priceExVat = parseNumber(line.priceExVat);
+      var lineKind = line.lineKind === "discount" || parseNumber(line.priceExVat) < 0 ? "discount" : "item";
+      var qty = Math.abs(parseNumber(line.qty));
+      var rawPrice = parseNumber(line.priceExVat);
+      var priceExVat = lineKind === "discount" ? -Math.abs(rawPrice) : Math.max(0, rawPrice);
       var vatRate = parseNumber(line.vatRate);
-      var subtotal = qty * priceExVat;
-      var vat = subtotal * (vatRate / 100);
+      var subtotal = roundMoney(qty * priceExVat);
+      var vat = roundMoney(subtotal * (vatRate / 100));
       return {
         description: String(line.description || "").trim(),
         qty: qty,
@@ -284,15 +342,18 @@
         vatRate: vatRate,
         subtotal: subtotal,
         vat: vat,
-        total: subtotal + vat,
-        productId: line.productId || ""
+        total: roundMoney(subtotal + vat),
+        productId: line.productId || "",
+        componentKey: line.componentKey || "general",
+        lineKind: lineKind,
+        vatRefundEligible: Boolean(line.vatRefundEligible)
       };
     }).filter(function (line) {
       return line.description || line.qty || line.priceExVat;
     });
-    var subtotal = normalized.reduce(function (sum, line) { return sum + line.subtotal; }, 0);
-    var vat = normalized.reduce(function (sum, line) { return sum + line.vat; }, 0);
-    return { lines: normalized, subtotal: subtotal, vat: vat, total: subtotal + vat };
+    var subtotal = roundMoney(normalized.reduce(function (sum, line) { return sum + line.subtotal; }, 0));
+    var vat = roundMoney(normalized.reduce(function (sum, line) { return sum + line.vat; }, 0));
+    return { lines: normalized, subtotal: subtotal, vat: vat, total: roundMoney(subtotal + vat) };
   }
 
   function getAll(collection) {
@@ -328,6 +389,17 @@
       method: "DELETE"
     }).then(function () {
       cache[collection] = getAll(collection).filter(function (item) { return item.id !== id; });
+    });
+  }
+
+  function uploadCustomerDocument(customerId, file) {
+    var form = new FormData();
+    form.append("file", file);
+    return api("/api/customers/" + encodeURIComponent(customerId) + "/documents", { method: "POST", body: form }).then(function (payload) {
+      var items = getAll("customerDocuments").slice();
+      items.unshift(payload.item);
+      cache.customerDocuments = items;
+      return payload.item;
     });
   }
 
@@ -468,6 +540,7 @@
     resetData: resetData,
     upsert: upsert,
     remove: remove,
+    uploadCustomerDocument: uploadCustomerDocument,
     read: read,
     write: write,
     nextNumber: nextNumber,

@@ -2,6 +2,11 @@
 
 const bcrypt = require("bcrypt");
 
+// Vaste dummy-hash (bcrypt cost 12 van weggegooide willekeurige bytes) zodat
+// inlogpogingen met onbekende gebruikersnamen even lang duren als met
+// bestaande; de bijbehorende plaintext bestaat niet meer.
+const DUMMY_PASSWORD_HASH = "$2b$12$uB/GWSMI6O0Cdd7SLAj5U.DzqLjFOl4wVepFsrGsYF0buRyz7tjJG";
+
 const ROLES = ["admin", "crm", "sales", "execution", "finance", "installer"];
 const USER_SELECT = {
   id: true,
@@ -89,7 +94,7 @@ async function login(prisma, config, usernameValue, password) {
   await ensureBootstrapAdmin(prisma, config);
   const username = normalizeUsername(usernameValue);
   const user = username ? await prisma.user.findUnique({ where: { username } }) : null;
-  const validPassword = user ? await bcrypt.compare(String(password || ""), user.passwordHash) : false;
+  const validPassword = await bcrypt.compare(String(password || ""), user ? user.passwordHash : DUMMY_PASSWORD_HASH);
   if (!user || !user.active || !validPassword) {
     throw publicError("Inlognaam of wachtwoord is onjuist.", 401);
   }

@@ -9,7 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="assets/icons/icon.svg">
   <link rel="apple-touch-icon" href="assets/icons/icon.svg">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="assets/css/app.css">
+  <link rel="stylesheet" href="assets/css/app.css?v=24">
 </head>
 <body class="auth-locked">
   <section class="login-screen" aria-label="Inloggen">
@@ -65,7 +65,8 @@
           <a href="#sales-funnel" data-route-link="sales-funnel">1. Sales funnel</a>
           <a href="#sales-agenda" data-route-link="sales-agenda">2. Sales agenda</a>
           <a href="#advice" data-route-link="advice">3. Advies</a>
-          <a href="#quotes" data-route-link="quotes">4. Offertes</a>
+          <a href="#advice-v2" data-route-link="advice-v2">4. Advies Tool 2.0</a>
+          <a href="#quotes" data-route-link="quotes">5. Offertes</a>
         </section>
 
         <section class="nav-group" data-nav-group data-portal="execution">
@@ -87,6 +88,7 @@
         <section class="nav-group" data-nav-group data-portal="management">
           <p class="nav-group-label">Beheer</p>
           <a href="#management-portal" data-route-link="management-portal">Overzicht</a>
+          <a href="#quote-studio" data-route-link="quote-studio">Offertebouwer</a>
           <a href="#products" data-route-link="products">Producten</a>
           <a href="#messages" data-route-link="messages">Tekstgenerator</a>
           <a href="#google-business" data-route-link="google-business">Google Bedrijfsprofiel</a>
@@ -114,18 +116,22 @@
   <div id="print-document" aria-hidden="true"></div>
 
   <script src="assets/vendor/jspdf.umd.min.js"></script>
-  <script src="assets/js/storage.js"></script>
-  <script src="assets/js/pdf.js"></script>
+  <script src="assets/vendor/html2canvas.min.js"></script>
+  <script src="assets/js/storage.js?v=18"></script>
+  <script src="assets/js/quote-document.js?v=18"></script>
+  <script src="assets/js/pdf.js?v=24"></script>
   <script src="assets/js/customers.js"></script>
-  <script src="assets/js/quotes.js"></script>
+  <script src="assets/js/quotes.js?v=19"></script>
   <script src="assets/js/sales-funnel.js"></script>
   <script src="assets/js/sales-agenda.js"></script>
-  <script src="assets/js/invoices.js"></script>
+  <script src="assets/js/invoices.js?v=19"></script>
   <script src="assets/js/installations.js"></script>
   <script src="assets/js/projects.js"></script>
-  <script src="assets/js/service.js"></script>
-  <script src="assets/js/advice.js"></script>
+  <script src="assets/js/service.js?v=17"></script>
+  <script src="assets/js/advice-v2-engine.js?v=24"></script>
+  <script src="assets/js/advice-v2.js?v=24"></script>
+  <script src="assets/js/advice.js?v=16"></script>
   <script src="assets/js/reports.js"></script>
-  <script src="assets/js/app.js"></script>
+  <script src="assets/js/app.js?v=18"></script>
 </body>
 </html>

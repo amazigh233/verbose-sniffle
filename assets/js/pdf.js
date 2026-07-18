@@ -164,6 +164,11 @@
     }).join("");
   }
 
+  function bulletHtml(value) {
+    var items = String(value || "").split(/\n+/).filter(Boolean);
+    return items.length ? '<ul class="print-check-list">' + items.map(function (item) { return '<li>' + S.escapeHtml(item) + '</li>'; }).join("") + '</ul>' : "";
+  }
+
   function buildHtml(type, doc) {
     var settings = S.settings();
     var customers = S.getAll("customers");
@@ -176,21 +181,24 @@
     var note = type === "quote" ? (doc.notes || settings.defaultQuoteTerms) : (doc.notes || settings.defaultInvoiceNote);
 
     return [
-      '<div class="print-page">',
+      '<div class="print-page' + (type === "quote" && doc.designStyle === "donker" ? " quote-print-dark" : "") + '">',
+      type === "quote" ? '<section class="quote-print-hero"><div class="print-brand">' + logoSvg + '<span>CLIMATURE</span></div><small>OFFERTE OP MAAT</small><h1>' + S.escapeHtml(doc.documentTitle || "Uw energieoplossing op maat") + '</h1></section>' : "",
       '<header class="print-header">',
-      '<div class="print-brand">' + logoSvg + '<span>CLIMATURE</span></div>',
+      type === "quote" ? '<div><strong>' + S.escapeHtml(S.customerName(customer)) + '</strong><br>' + S.escapeHtml(customer.address || "") + '<br>' + S.escapeHtml([customer.postalCode, customer.city].filter(Boolean).join(" ")) + '</div>' : '<div class="print-brand">' + logoSvg + '<span>CLIMATURE</span></div>',
       '<div><strong>' + title + " " + S.escapeHtml(number) + '</strong><br>Datum: ' + S.escapeHtml(S.formatDate(date)) + '<br>' + S.escapeHtml(secondary) + (doc.quoteNumber && type === "invoice" ? "<br>Offerte: " + S.escapeHtml(doc.quoteNumber) : "") + "</div>",
       "</header>",
+      type === "quote" && doc.introText ? '<section class="print-box quote-print-intro"><h2>Dank voor uw aanvraag</h2><p>' + S.escapeHtml(doc.introText).replace(/\n/g, "<br>") + '</p></section>' : "",
       '<section class="print-grid">',
       '<div class="print-box"><h2>Klant</h2>' + linesHtml(customerLines(customer)) + "</div>",
       '<div class="print-box"><h2>Climature</h2>' + linesHtml(companyLines(settings)) + "</div>",
       "</section>",
+      type === "quote" && (doc.includedText || doc.advantagesText) ? '<section class="print-grid quote-print-content"><div class="print-box"><h2>Dit is inbegrepen</h2>' + bulletHtml(doc.includedText) + '</div><div class="print-box"><h2>Waarom deze keuze?</h2>' + bulletHtml(doc.advantagesText) + '</div></section>' : "",
       '<section class="print-box"><h2>Specificatie</h2><table class="print-table"><thead><tr><th>Omschrijving</th><th class="num">Aantal</th><th>Eenheid</th><th class="num">Prijs excl.</th><th class="num">BTW</th><th class="num">Totaal incl.</th></tr></thead><tbody>',
       lineRows(totals.lines),
       '<tr><td colspan="3"></td><td class="num"><strong>' + S.money(totals.subtotal) + '</strong></td><td class="num"><strong>' + S.money(totals.vat) + '</strong></td><td class="num"><strong>' + S.money(totals.total) + "</strong></td></tr>",
       "</tbody></table></section>",
       '<section class="print-grid">',
-      '<div class="print-box"><h2>Totalen</h2>' + linesHtml(["Subtotaal: " + S.money(totals.subtotal), "BTW: " + S.money(totals.vat), "Totaal incl. BTW: " + S.money(totals.total), type === "invoice" && settings.companyIban ? "IBAN: " + settings.companyIban : ""]) + "</div>",
+      '<div class="print-box"><h2>Investeringsoverzicht</h2>' + linesHtml(["Subtotaal: " + S.money(totals.subtotal), "BTW: " + S.money(totals.vat), "Totaal incl. BTW: " + S.money(totals.total), type === "quote" && doc.benefitType && doc.benefitType !== "geen" ? (doc.benefitLabel || "Verwacht voordeel") + ": - " + S.money(doc.benefitAmount || 0) : "", type === "quote" && doc.benefitType && doc.benefitType !== "geen" ? "Netto na verwacht voordeel: " + S.money(Math.max(0, totals.total - Number(doc.benefitAmount || 0))) : "", type === "invoice" && settings.companyIban ? "IBAN: " + settings.companyIban : ""]) + (type === "quote" && doc.benefitType && doc.benefitType !== "geen" ? '<p class="print-disclaimer">Indicatief; afhankelijk van actuele voorwaarden en goedkeuring.</p>' : "") + "</div>",
       '<div class="print-box"><h2>' + (type === "quote" ? "Voorwaarden" : "Betaling") + "</h2><p>" + S.escapeHtml(note).replace(/\n/g, "<br>") + "</p></div>",
       "</section>",
       "</div>"
@@ -205,6 +213,77 @@
   function printWorkOrder(customer, installation) {
     if (!customer) return;
     document.getElementById("print-document").innerHTML = buildWorkOrderHtml(customer, installation);
+    window.setTimeout(function () { window.print(); }, 60);
+  }
+
+  function adviceSuggestionHtml(title, items) {
+    return '<div class="print-box"><h2>' + S.escapeHtml(title) + '</h2>' + ((items || []).length ? '<ul class="print-check-list">' + items.map(function (item) {
+      return '<li><strong>' + S.escapeHtml(item.title) + '</strong><br>' + S.escapeHtml(item.reason) + '<br><small>' + S.escapeHtml(item.effect) + '</small></li>';
+    }).join("") + '</ul>' : '<p>Geen acties in deze categorie.</p>') + '</div>';
+  }
+
+  function adviceTechnologyHtml(title, result) {
+    if (!result) return "";
+    var product = result.product && result.product.name || "Nog geen productselectie";
+    var status = { "installatieklaar": "Installatieklaar", "technisch-kansrijk": "Technisch kansrijk · opname vereist", "eerst-aanpassen": "Eerst aanpassen", "onvoldoende-gegevens": "Onvoldoende gegevens", "niet-rendabel": "Geen rendabel advies" }[result.status];
+    var sizeRange = title === "Warmtepomp" ? result.requiredKwRange : result.ranges && result.ranges.capacity;
+    var size = sizeRange ? String(sizeRange.low).replace(".", ",") + "–" + String(sizeRange.high).replace(".", ",") + " " + sizeRange.unit : title === "Warmtepomp" ? String(result.requiredKw).replace(".", ",") + " kW" : result.recommendedKwh + " kWh";
+    var savingRange = result.ranges && result.ranges.yearlySaving;
+    var paybackRange = result.ranges && result.ranges.payback;
+    return [
+      '<div class="print-box">',
+      '<h2>' + S.escapeHtml(title) + '</h2>',
+      '<h3>' + S.escapeHtml(result.label) + '</h3>',
+      '<p><strong>Status:</strong> ' + S.escapeHtml(status || (result.readiness + "/100")) + '<br>',
+      '<strong>' + (title === "Warmtepomp" ? "Vermogen" : "Capaciteit") + ':</strong> ' + S.escapeHtml(size) + '<br>',
+      '<strong>Product:</strong> ' + S.escapeHtml(product) + '<br>',
+      '<strong>Investering netto:</strong> ' + S.money(result.netInvestment || result.investment || 0) + '<br>',
+      result.subsidy ? '<strong>Indicatieve subsidie:</strong> ' + S.money(result.subsidy) + '<br>' : '',
+      '<strong>Jaarlijks voordeel:</strong> ' + (savingRange ? S.money(savingRange.low) + "–" + S.money(savingRange.high) : S.money(result.yearlySaving || 0)) + '<br>',
+      '<strong>Terugverdientijd:</strong> ' + (paybackRange && paybackRange.high ? S.escapeHtml(String(paybackRange.low).replace(".", ",") + "–" + String(paybackRange.high).replace(".", ",")) + ' jaar' : result.paybackYears ? S.escapeHtml(String(result.paybackYears).replace(".", ",")) + ' jaar' : '—') + '</p>',
+      result.blockers && result.blockers.length ? '<p><strong>Aandachtspunten:</strong><br>' + result.blockers.map(S.escapeHtml).join('<br>') + '</p>' : '',
+      '</div>'
+    ].join("");
+  }
+
+  function buildAdviceV2Html(result, customer) {
+    var settings = S.settings();
+    var address = result.input && [result.input.address, result.input.city].filter(Boolean).join(", ");
+    if (Number(result.version || 0) >= 3) {
+      var moduleLabel = { warmtepomp: "Warmtepompadvies", batterij: "Thuisbatterijadvies", combinatie: "Combinatieadvies" }[result.module] || "Woningadvies";
+      var checks = result.requiredChecks || [];
+      var actions = result.actions || [];
+      var sources = result.assumptions && result.assumptions.sources || {};
+      var sourceText = Object.keys(sources).map(function (key) { var source = sources[key] || {}; return [source.label, source.period].filter(Boolean).join(" · "); }).filter(Boolean).join(" · ");
+      return [
+        '<div class="print-page advice-v2-print">',
+        '<header class="print-header"><div class="print-brand">' + logoSvg + '<span>CLIMATURE</span></div><div><strong>' + S.escapeHtml(moduleLabel) + '</strong><br>Datum: ' + S.formatDate(S.today()) + '<br>Zekerheid: ' + S.escapeHtml(result.inputQuality.label) + '<br>Rekenversie: ' + S.escapeHtml(result.engineVersion) + '</div></header>',
+        '<section class="print-box"><p><strong>ONS ADVIES</strong></p><h1>' + S.escapeHtml(result.recommendation.title) + '</h1><p>' + S.escapeHtml(result.recommendation.rationale) + '</p><p>' + S.escapeHtml(S.customerName(customer) || "Losse woningscan") + (address ? '<br>' + S.escapeHtml(address) : '') + '</p></section>',
+        checks.length ? '<section class="print-box"><h2>Vóór definitieve offerte controleren</h2><ol>' + checks.map(function (check) { return '<li>' + S.escapeHtml(check) + '</li>'; }).join('') + '</ol></section>' : '',
+        '<section class="print-grid">' + adviceTechnologyHtml("Warmtepomp", result.warmtepomp) + adviceTechnologyHtml("Thuisbatterij", result.batterij) + '</section>',
+        result.alternative ? '<section class="print-box"><h2>Passend alternatief</h2><h3>' + S.escapeHtml(result.alternative.title) + '</h3><p>' + S.escapeHtml(result.alternative.difference || "Alternatief scenario ter vergelijking.") + '</p></section>' : '',
+        '<section class="print-box"><h2>Actieplan</h2><ol>' + actions.map(function (item) { return '<li><strong>' + S.escapeHtml(item.title) + '</strong> · ' + S.escapeHtml(item.owner) + '<br><small>' + S.escapeHtml(item.reason) + '</small></li>'; }).join('') + '</ol></section>',
+        '<section class="print-box"><h2>Aannames, bronnen en voorbehoud</h2><p>Gas: ' + S.money(result.assumptions.gasPrice) + '/m³ · stroom: ' + S.money(result.assumptions.electricityPrice) + '/kWh · teruglevering: ' + S.money(result.assumptions.feedInCost) + '/kWh · EPEX-marge: ' + S.money(result.assumptions.epexMargin) + '/kWh.</p><p>' + S.escapeHtml(sourceText || "Centrale portaalinstellingen") + '</p><p>Bedragen, opbrengsten en dimensionering zijn indicatief. De definitieve offerte volgt na technische opname en controle van actuele voorwaarden.</p><p>' + S.escapeHtml(settings.companyName) + ' · ' + S.escapeHtml(settings.companyPhone) + ' · ' + S.escapeHtml(settings.companyEmail) + '</p></section>',
+        '<footer class="workorder-footer">Climature · Advies Tool 2.0 · rekenversie ' + S.escapeHtml(result.engineVersion) + '</footer>',
+        '</div>'
+      ].join("");
+    }
+    return [
+      '<div class="print-page advice-v2-print">',
+      '<header class="print-header"><div class="print-brand">' + logoSvg + '<span>CLIMATURE</span></div><div><strong>Advies Tool 2.0</strong><br>Datum: ' + S.formatDate(S.today()) + '<br>Betrouwbaarheid: ' + S.escapeHtml(result.confidence.label) + ' (' + result.confidence.score + '/100)</div></header>',
+      '<section class="print-box"><h1>Gecombineerd woningadvies</h1><p>' + S.escapeHtml(S.customerName(customer) || "Losse woningscan") + (address ? '<br>' + S.escapeHtml(address) : '') + '</p><p>Dit rapport combineert een warmtepomp- en thuisbatterijscan met een concreet prioriteitenplan.</p></section>',
+      '<section class="print-grid">' + adviceTechnologyHtml("Warmtepomp", result.warmtepomp) + adviceTechnologyHtml("Thuisbatterij", result.batterij) + '</section>',
+      '<h2>Prioriteitenplan</h2><section class="print-grid">' + adviceSuggestionHtml("Nu doen", result.suggestions.now) + adviceSuggestionHtml("Eerst verbeteren", result.suggestions.first) + '</section>',
+      adviceSuggestionHtml("Later overwegen", result.suggestions.later),
+      '<section class="print-box"><h2>Aannames en voorbehoud</h2><p>Gas: ' + S.money(result.assumptions.gasPrice) + '/m³ · stroom: ' + S.money(result.assumptions.electricityPrice) + '/kWh · teruglevering: ' + S.money(result.assumptions.feedInCost) + '/kWh · EPEX-marge: ' + S.money(result.assumptions.epexMargin) + '/kWh.</p><p>Alle bedragen en besparingen zijn indicatief. Definitieve dimensionering, subsidie en opbrengst volgen na technische opname en controle van actuele voorwaarden.</p><p>' + S.escapeHtml(settings.companyName) + ' · ' + S.escapeHtml(settings.companyPhone) + ' · ' + S.escapeHtml(settings.companyEmail) + '</p></section>',
+      '<footer class="workorder-footer">Climature · Advies Tool 2.0</footer>',
+      '</div>'
+    ].join("");
+  }
+
+  function printAdviceV2(result, customer) {
+    if (!result) return;
+    document.getElementById("print-document").innerHTML = buildAdviceV2Html(result, customer || {});
     window.setTimeout(function () { window.print(); }, 60);
   }
 
@@ -264,6 +343,38 @@
     companyLines(settings).slice(0, 5).forEach(function (line, index) { if (line) text(line, 106, y + 14 + index * 5); });
     y += 52;
 
+    if (type === "quote" && (doc.documentTitle || doc.introText)) {
+      addPage(32);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(18, 60, 36);
+      pdf.setFontSize(16);
+      y = wrapped(doc.documentTitle || "Uw energieoplossing op maat", margin, y, 182, 6) + 2;
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(16, 32, 23);
+      pdf.setFontSize(9);
+      y = wrapped(doc.introText || "", margin, y, 182, 4.5) + 7;
+    }
+
+    if (type === "quote" && (doc.includedText || doc.advantagesText)) {
+      [{ title: "Dit is inbegrepen", value: doc.includedText }, { title: "Waarom deze keuze?", value: doc.advantagesText }].forEach(function (block) {
+        if (!block.value) return;
+        addPage(18);
+        pdf.setFont("helvetica", "bold");
+        pdf.setTextColor(18, 60, 36);
+        pdf.setFontSize(11);
+        text(block.title, margin, y);
+        y += 6;
+        pdf.setFont("helvetica", "normal");
+        pdf.setTextColor(16, 32, 23);
+        pdf.setFontSize(9);
+        String(block.value).split(/\n+/).filter(Boolean).forEach(function (item) {
+          addPage(8);
+          y = wrapped("✓  " + item, margin + 2, y, 178, 4.3) + 1;
+        });
+        y += 4;
+      });
+    }
+
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(9);
     text("Omschrijving", margin, y);
@@ -304,6 +415,21 @@
     text(S.money(totals.total), 196, y, { align: "right" });
     y += 14;
 
+    if (type === "quote" && doc.benefitType && doc.benefitType !== "geen") {
+      addPage(24);
+      pdf.setFillColor(242, 247, 231);
+      pdf.roundedRect(margin, y - 5, 182, 21, 2, 2, "F");
+      pdf.setFontSize(10);
+      pdf.setTextColor(31, 107, 58);
+      text(doc.benefitLabel || "Verwacht voordeel", margin + 4, y + 2);
+      text("- " + S.money(doc.benefitAmount || 0), 192, y + 2, { align: "right" });
+      pdf.setFont("helvetica", "bold");
+      text("Netto investering", margin + 4, y + 10);
+      text(S.money(Math.max(0, totals.total - Number(doc.benefitAmount || 0))), 192, y + 10, { align: "right" });
+      y += 25;
+      pdf.setTextColor(16, 32, 23);
+    }
+
     addPage(42);
     pdf.setFontSize(13);
     text(type === "quote" ? "Voorwaarden" : "Betaling", margin, y);
@@ -322,10 +448,17 @@
   }
 
   store.pdf = {
-    printQuote: function (quote) { print("quote", quote); },
+    printQuote: function (quote) {
+      var customer = S.getAll("customers").find(function (item) { return item.id === quote.customerId; }) || {};
+      return store.quoteDocument.print(quote, customer, S.settings(), store.quoteDocument.normalizeConfig(quote));
+    },
     printInvoice: function (invoice) { print("invoice", invoice); },
     printWorkOrder: printWorkOrder,
-    downloadQuote: function (quote) { drawPdf("quote", quote); },
+    printAdviceV2: printAdviceV2,
+    downloadQuote: function (quote) {
+      var customer = S.getAll("customers").find(function (item) { return item.id === quote.customerId; }) || {};
+      return store.quoteDocument.downloadPdf(quote, customer, S.settings(), store.quoteDocument.normalizeConfig(quote));
+    },
     downloadInvoice: function (invoice) { drawPdf("invoice", invoice); }
   };
 }());

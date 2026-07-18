@@ -17,23 +17,36 @@
     "seed": "node prisma/seed.js",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:server": "npm run prisma:deploy && npm run seed && node src/server.js",
+    "lint": "node scripts/lint.js",
     "project:digest": "node scripts/send-project-digest.js",
-    "service:reminders": "node scripts/send-service-reminders.js"
+    "service:reminders": "node scripts/send-service-reminders.js",
+    "keys:rotate": "node scripts/rotate-encryption-keys.js",
+    "documents:migrate-storage": "node scripts/migrate-document-storage.js",
+    "documents:migrate-hr-storage": "node scripts/migrate-hr-document-storage.js",
+    "documents:prune-storage": "node scripts/prune-object-storage.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1090.0",
     "@prisma/client": "^6.13.0",
     "bcrypt": "^6.0.0",
+    "compression": "^1.8.1",
     "connect-pg-simple": "^10.0.0",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
     "express-session": "^1.18.2",
     "helmet": "^8.1.0",
+    "html2canvas": "^1.4.1",
     "multer": "^2.0.2",
     "otplib": "^13.4.1",
     "pg": "^8.16.3",
+    "pino": "^9.14.0",
     "prisma": "^6.13.0",
     "qrcode": "^1.5.4",
-    "read-excel-file": "^9.2.0"
+    "read-excel-file": "^9.2.0",
+    "redis": "^5.12.1",
+    "sharp": "^0.34.5",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@playwright/test": "^1.54.1",

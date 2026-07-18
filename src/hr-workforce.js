@@ -2,6 +2,7 @@
 
 const crypto = require("crypto");
 const security = require("./hr-security");
+const { storageKey } = require("./infrastructure/object-storage/file-policy");
 
 const WORK_TYPES = ["air_conditioning", "heat_pump", "boiler", "home_battery", "other"];
 const QUALIFICATION_KINDS = ["certificate", "training", "license", "skill"];
@@ -173,7 +174,7 @@ function validatePdf(file) {
 
 function serializeQualification(config, row) {
   let note = "";
-  if (row.noteCipher) note = security.decrypt(config, row.noteCipher, row.noteIv, row.noteTag).toString("utf8");
+  if (row.noteCipher) note = security.decrypt(config, row.noteCipher, row.noteIv, row.noteTag, row.keyVersion).toString("utf8");
   return {
     id: row.id, employeeId: row.employeeId, definitionId: row.definitionId, definition: row.definition,
     issuer: row.issuer, certificateNumber: row.certificateNumber, issueDate: row.issueDate,
@@ -193,7 +194,7 @@ async function listEmployeeQualifications(prisma, config, employeeId, includeArc
   return rows.map((row) => serializeQualification(config, row));
 }
 
-async function saveEmployeeQualification(prisma, config, actorId, employeeId, id, input, file) {
+async function saveEmployeeQualification(prisma, config, objectStorage, actorId, employeeId, id, input, file) {
   const [employee, definition] = await Promise.all([
     prisma.employee.findUnique({ where: { id: employeeId }, select: { id: true } }),
     prisma.qualificationDefinition.findUnique({ where: { id: cleanText(input.definitionId, "Kwalificatie", 100, true) } })
@@ -217,24 +218,35 @@ async function saveEmployeeQualification(prisma, config, actorId, employeeId, id
     keyVersion: encryptedNote ? encryptedNote.keyVersion : config.hrKeyVersion || "v1"
   };
   const fileName = validatePdf(file);
+  let storedKey = "";
   if (fileName) {
     const scan = await security.scanWithClamav(config, file.buffer);
-    const encrypted = security.encrypt(config, file.buffer);
+    const encrypted = security.encryptFileEnvelope(config, file.buffer);
+    storedKey = storageKey(`hr/qualifications/${employeeId}`);
+    await objectStorage.put(storedKey, encrypted.content, { mimeType: "application/octet-stream" });
     Object.assign(data, {
       evidenceFileName: fileName, evidenceMimeType: "application/pdf", evidenceSize: file.size,
       evidenceSha256: crypto.createHash("sha256").update(file.buffer).digest("hex"),
       evidenceScanStatus: scan.clean ? "clean" : "quarantine", evidenceScanMessage: scan.message || "",
-      evidenceCipher: encrypted.cipher, evidenceIv: encrypted.iv, evidenceTag: encrypted.tag, keyVersion: encrypted.keyVersion
+      evidenceStorageKey: storedKey, keyVersion: encrypted.keyVersion
     });
   }
   let row;
-  if (id) {
-    const existing = await prisma.employeeQualification.findFirst({ where: { id, employeeId } });
-    if (!existing) fail("Kwalificatie niet gevonden.", 404);
-    row = await prisma.employeeQualification.update({ where: { id }, data, include: { definition: true, createdBy: { select: { username: true } } } });
-  } else {
-    row = await prisma.employeeQualification.create({ data: { ...data, employeeId, createdById: actorId }, include: { definition: true, createdBy: { select: { username: true } } } });
+  let previousKey = "";
+  try {
+    if (id) {
+      const existing = await prisma.employeeQualification.findFirst({ where: { id, employeeId } });
+      if (!existing) fail("Kwalificatie niet gevonden.", 404);
+      previousKey = fileName ? existing.evidenceStorageKey || "" : "";
+      row = await prisma.employeeQualification.update({ where: { id }, data, include: { definition: true, createdBy: { select: { username: true } } } });
+    } else {
+      row = await prisma.employeeQualification.create({ data: { ...data, employeeId, createdById: actorId }, include: { definition: true, createdBy: { select: { username: true } } } });
+    }
+  } catch (error) {
+    if (storedKey) await objectStorage.delete(storedKey).catch(() => {});
+    throw error;
   }
+  if (previousKey) await objectStorage.delete(previousKey).catch(() => {});
   return serializeQualification(config, row);
 }
 
@@ -244,19 +256,19 @@ async function archiveQualification(prisma, employeeId, id) {
   return prisma.employeeQualification.update({ where: { id }, data: { archivedAt: new Date() } });
 }
 
-async function rescanQualification(prisma, config, employeeId, id) {
+async function rescanQualification(prisma, config, objectStorage, employeeId, id) {
   const row = await prisma.employeeQualification.findFirst({ where: { id, employeeId } });
-  if (!row || !row.evidenceCipher) fail("Bewijsdocument niet gevonden.", 404);
-  const buffer = security.decrypt(config, row.evidenceCipher, row.evidenceIv, row.evidenceTag);
+  if (!row || !row.evidenceStorageKey) fail("Bewijsdocument niet gevonden.", 404);
+  const buffer = security.decryptFileEnvelope(config, await objectStorage.get(row.evidenceStorageKey), row.keyVersion);
   const scan = await security.scanWithClamav(config, buffer);
   return prisma.employeeQualification.update({ where: { id }, data: { evidenceScanStatus: scan.clean ? "clean" : "quarantine", evidenceScanMessage: scan.message || "" } });
 }
 
-async function qualificationFile(prisma, config, employeeId, id) {
+async function qualificationFile(prisma, config, objectStorage, employeeId, id) {
   const row = await prisma.employeeQualification.findFirst({ where: { id, employeeId } });
-  if (!row || !row.evidenceCipher) fail("Bewijsdocument niet gevonden.", 404);
+  if (!row || !row.evidenceStorageKey) fail("Bewijsdocument niet gevonden.", 404);
   if (row.evidenceScanStatus !== "clean") fail("Bewijsdocument is nog niet veilig vrijgegeven.", 423);
-  const buffer = security.decrypt(config, row.evidenceCipher, row.evidenceIv, row.evidenceTag);
+  const buffer = security.decryptFileEnvelope(config, await objectStorage.get(row.evidenceStorageKey), row.keyVersion);
   if (crypto.createHash("sha256").update(buffer).digest("hex") !== row.evidenceSha256) fail("Integriteitscontrole van bewijsdocument is mislukt.", 500);
   return { row, buffer };
 }
@@ -403,7 +415,7 @@ async function ensureAutomaticChecklists(prisma, employee, previousStatus) {
 
 function serializeTask(config, item) {
   let note = "";
-  if (item.noteCipher) note = security.decrypt(config, item.noteCipher, item.noteIv, item.noteTag).toString("utf8");
+  if (item.noteCipher) note = security.decrypt(config, item.noteCipher, item.noteIv, item.noteTag, item.keyVersion).toString("utf8");
   return { id: item.id, title: item.title, description: item.description, dueDate: item.dueDate, required: item.required, sortOrder: item.sortOrder, status: item.status, note, assignedToId: item.assignedToId, assignedTo: item.assignedTo ? item.assignedTo.username : "", completedBy: item.completedBy ? item.completedBy.username : "", completedAt: item.completedAt };
 }
 

@@ -2,6 +2,7 @@
 
 const crypto = require("crypto");
 const security = require("./hr-security");
+const { storageKey } = require("./infrastructure/object-storage/file-policy");
 
 const EMPLOYEE_STATUSES = ["active", "leave", "ended", "archived"];
 const EMPLOYMENT_TYPES = ["permanent", "temporary", "on_call", "contractor", "intern"];
@@ -66,6 +67,7 @@ function employeePayload(config, input, current) {
     privateDataCipher: encrypted.cipher,
     privateDataIv: encrypted.iv,
     privateDataTag: encrypted.tag,
+    privateDataKeyVersion: encrypted.keyVersion,
     archivedAt: status === "archived" ? (current && current.archivedAt) || new Date() : null
   };
 }
@@ -120,7 +122,7 @@ function serializeNote(config, row) {
     id: row.id,
     employeeId: row.employeeId,
     category: row.category,
-    body: security.decrypt(config, row.bodyCipher, row.bodyIv, row.bodyTag).toString("utf8"),
+    body: security.decrypt(config, row.bodyCipher, row.bodyIv, row.bodyTag, row.keyVersion).toString("utf8"),
     createdBy: row.createdBy ? row.createdBy.username : "",
     updatedBy: row.updatedBy ? row.updatedBy.username : "",
     createdAt: row.createdAt,
@@ -152,7 +154,7 @@ async function listEmployees(prisma, query) {
     prisma.employee.count({ where }),
     prisma.employee.findMany({ where, include: { _count: { select: { contracts: true } } }, orderBy: [{ status: "asc" }, { lastName: "asc" }, { firstName: "asc" }], skip: (page - 1) * pageSize, take: pageSize })
   ]);
-  return { items: rows.map(employeeSummary), page, pageSize, total };
+  return { items: rows.map(employeeSummary), page, pageSize, totalItems: total, totalPages: total === 0 ? 0 : Math.ceil(total / pageSize) };
 }
 
 async function getEmployee(prisma, config, id) {
@@ -209,15 +211,19 @@ function validatePdf(file) {
   return name;
 }
 
-async function createContract(prisma, config, actorId, employeeId, input, file) {
+async function createContract(prisma, config, objectStorage, actorId, employeeId, input, file) {
   const employee = await prisma.employee.findUnique({ where: { id: employeeId }, select: { id: true } });
   if (!employee) throw security.publicError("Werknemer niet gevonden.", 404);
   const fileName = validatePdf(file);
   const metadata = contractData(input);
   const scan = await security.scanWithClamav(config, file.buffer);
-  const encrypted = security.encrypt(config, file.buffer);
-  const row = await prisma.employmentContract.create({
-    data: {
+  const encrypted = security.encryptFileEnvelope(config, file.buffer);
+  const key = storageKey(`hr/contracts/${employeeId}`);
+  await objectStorage.put(key, encrypted.content, { mimeType: "application/octet-stream" });
+  let row;
+  try {
+    row = await prisma.employmentContract.create({
+      data: {
       ...metadata,
       employeeId,
       fileName,
@@ -226,31 +232,33 @@ async function createContract(prisma, config, actorId, employeeId, input, file) 
       sha256: crypto.createHash("sha256").update(file.buffer).digest("hex"),
       scanStatus: scan.clean ? "clean" : "quarantine",
       scanMessage: scan.message || "",
-      fileCipher: encrypted.cipher,
-      fileIv: encrypted.iv,
-      fileTag: encrypted.tag,
+      storageKey: key,
       keyVersion: encrypted.keyVersion,
       createdById: actorId
-    },
-    include: { createdBy: { select: { username: true } } }
-  });
+      },
+      include: { createdBy: { select: { username: true } } }
+    });
+  } catch (error) {
+    await objectStorage.delete(key).catch(() => {});
+    throw error;
+  }
   return serializeContract(row);
 }
 
-async function rescanContract(prisma, config, id) {
+async function rescanContract(prisma, config, objectStorage, id) {
   const row = await prisma.employmentContract.findUnique({ where: { id } });
   if (!row) throw security.publicError("Contract niet gevonden.", 404);
-  const buffer = security.decrypt(config, row.fileCipher, row.fileIv, row.fileTag);
+  const buffer = security.decryptFileEnvelope(config, await objectStorage.get(row.storageKey), row.keyVersion);
   const scan = await security.scanWithClamav(config, buffer);
   const saved = await prisma.employmentContract.update({ where: { id }, data: { scanStatus: scan.clean ? "clean" : "quarantine", scanMessage: scan.message || "" }, include: { createdBy: { select: { username: true } } } });
   return serializeContract(saved);
 }
 
-async function contractFile(prisma, config, employeeId, id) {
+async function contractFile(prisma, config, objectStorage, employeeId, id) {
   const row = await prisma.employmentContract.findFirst({ where: { id, employeeId } });
   if (!row) throw security.publicError("Contract niet gevonden.", 404);
   if (row.scanStatus !== "clean") throw security.publicError("Contract is nog niet veilig vrijgegeven.", 423);
-  const buffer = security.decrypt(config, row.fileCipher, row.fileIv, row.fileTag);
+  const buffer = security.decryptFileEnvelope(config, await objectStorage.get(row.storageKey), row.keyVersion);
   const hash = crypto.createHash("sha256").update(buffer).digest("hex");
   if (hash !== row.sha256) throw security.publicError("Integriteitscontrole van contract is mislukt.", 500);
   return { row, buffer };

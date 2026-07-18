@@ -23,12 +23,14 @@
     "sales-funnel": ["Sales", "Sales funnel"],
     "sales-agenda": ["Sales", "Sales agenda"],
     advice: ["Sales", "Advies-tool"],
+    "advice-v2": ["Sales", "Advies Tool 2.0"],
     projects: ["Uitvoering", "Projectcockpits"],
     installations: ["Uitvoering", "Installaties"],
     service: ["Service", "Service & onderhoud"],
     invoices: ["Financiën", "Facturen"],
     reports: ["Financiën", "Rapportage"],
     products: ["Beheer & tools", "Producten"],
+    "quote-studio": ["Beheer & tools", "Offertebouwer"],
     messages: ["Beheer & tools", "Tekstgenerator"],
     "google-business": ["Beheer & tools", "Google Bedrijfsprofiel"],
     settings: ["Beheer & tools", "Instellingen"],
@@ -60,10 +62,10 @@
       return "execution";
     }
     if (baseRoute === "crm-portal" || baseRoute === "customers") return "crm";
-    if (["sales-portal", "sales-funnel", "sales-agenda", "advice", "quotes"].indexOf(baseRoute) >= 0) return "sales";
+    if (["sales-portal", "sales-funnel", "sales-agenda", "advice", "advice-v2", "quotes"].indexOf(baseRoute) >= 0) return "sales";
     if (["execution-portal", "projects", "installations"].indexOf(baseRoute) >= 0) return "execution";
     if (["finance-portal", "invoices", "reports"].indexOf(baseRoute) >= 0) return "finance";
-    if (["management-portal", "products", "messages", "google-business", "settings"].indexOf(baseRoute) >= 0) return "management";
+    if (["management-portal", "quote-studio", "products", "messages", "google-business", "settings"].indexOf(baseRoute) >= 0) return "management";
     return "global";
   }
 
@@ -170,6 +172,7 @@
     if (baseRoute === "installations" && S.canManage("execution")) return '<button class="primary-button" data-action="installation-new">Nieuwe installatie</button>';
     if (baseRoute === "service" && S.canManage("execution")) return '<button class="primary-button" data-action="service-visit-new">Bezoek plannen</button>';
     if (baseRoute === "products" && S.isAdmin()) return '<button class="primary-button" data-action="product-new">Nieuw product</button>';
+    if (baseRoute === "quote-studio" && S.canManage("sales")) return '<button class="primary-button" data-action="quote-new">Nieuwe offerte op maat</button>';
     if (baseRoute === "advice") return "";
     return "";
   }
@@ -210,6 +213,7 @@
     else if (path.indexOf("customer-edit:") === 0) appEl.innerHTML = C.customers.renderForm(findByRoute("customers", path));
     else if (path.indexOf("customer:") === 0) appEl.innerHTML = C.customers.renderDetail(path.split(":")[1]);
     else if (path === "quotes") appEl.innerHTML = C.quotes.renderList("");
+    else if (path === "quote-studio") appEl.innerHTML = C.quotes.renderList("");
     else if (path === "quote-new") appEl.innerHTML = C.quotes.renderForm(customerSeed());
     else if (path.indexOf("quote-edit:") === 0) appEl.innerHTML = C.quotes.renderForm(findByRoute("quotes", path));
     else if (path.indexOf("quote:") === 0) appEl.innerHTML = C.quotes.renderDetail(path.split(":")[1]);
@@ -246,6 +250,8 @@
     else if (path.indexOf("service-visit:") === 0) appEl.innerHTML = C.service.visitDetail(path.split(":")[1]);
     else if (path === "advice") appEl.innerHTML = C.advice.render();
     else if (path.indexOf("advice:") === 0) appEl.innerHTML = C.advice.render(path.split(":")[1]);
+    else if (path === "advice-v2") appEl.innerHTML = C.adviceV2.render("", true);
+    else if (path.indexOf("advice-v2:") === 0) appEl.innerHTML = C.adviceV2.render(path.split(":")[1], true);
     else if (path === "products") appEl.innerHTML = products();
     else if (path === "google-business") appEl.innerHTML = googleBusinessProfile();
     else if (path === "product-new") appEl.innerHTML = productForm();
@@ -344,7 +350,7 @@
     return portalOverview("Beheer", "Applicatie en stamdata beheren", "Configuratie en hulpmiddelen staan los van de dagelijkse werkprocessen.", [
       metric("Producten", S.getAll("products").length), metric("Betaaltermijn", Number(S.settings().paymentDays || 14) + " dagen"), metric("HR-portaal", S.isHrPortalEnabled() ? "Actief" : "Uit")
     ], [
-      portalLink("products", "Producten", "Beheer catalogus en prijzen."), portalLink("messages", "Tekstgenerator", "Maak klantcommunicatie."), portalLink("google-business", "Google Bedrijfsprofiel", "Werk profielgegevens, foto's en beoordelingen bij."), portalLink("settings", "Instellingen", "Bedrijf, accounts en aannames.")
+      portalLink("quote-studio", "Offertebouwer", "Ontwerp offertes met producttemplates en regelingen."), portalLink("products", "Producten", "Beheer catalogus en prijzen."), portalLink("messages", "Tekstgenerator", "Maak klantcommunicatie."), portalLink("google-business", "Google Bedrijfsprofiel", "Werk profielgegevens, foto's en beoordelingen bij."), portalLink("settings", "Instellingen", "Bedrijf, accounts en aannames.")
     ]) + '<section class="section portal-management-grid"><a class="panel portal-management-card" href="#google-business"><p class="eyebrow">Online vindbaarheid</p><h2>Google Bedrijfsprofiel</h2><p class="muted">Open het officiële Google-beheer en bewaar de profiel- en beoordelingslink.</p></a><a class="panel portal-management-card" href="#settings"><p class="eyebrow">Configuratie</p><h2>Instellingen en accounts</h2><p class="muted">Beheer bedrijfsgegevens, gebruikers, adviesaannames, digest en back-ups.</p></a>' + (S.isHrPortalEnabled() ? '<a class="panel portal-management-card" href="/medewerkers/"><p class="eyebrow">Beveiligd</p><h2>Werknemersportaal</h2><p class="muted">Open HR-dossiers, kwalificaties, roosters en checklists met extra verificatie.</p></a>' : "") + "</section>";
   }
 
@@ -1137,6 +1143,7 @@
     if (action === "customer-document-download") return C.customers.openDocument(target.dataset.id, true);
     if (action === "customer-document-delete") return C.customers.removeDocument(target.dataset.id);
     if (action === "customer-advice") navigate("advice:" + target.dataset.id);
+    if (action === "customer-advice-v2") navigate("advice-v2:" + target.dataset.id);
     if (action === "advice-quote") return C.advice.createQuoteFromAdvice(target.dataset.id);
     if (action === "advice-delete") return C.customers.removeAdvice(target.dataset.id);
     if (action === "quote-new") navigate(target.dataset.customerId ? "quote-new?customerId=" + target.dataset.customerId : "quote-new");
@@ -1145,12 +1152,22 @@
     if (action === "quote-edit") navigate("quote-edit:" + target.dataset.id);
     if (action === "quote-delete") return C.quotes.remove(target.dataset.id);
     if (action === "quote-status") return C.quotes.updateStatus(target.dataset.id, target.dataset.status);
-    if (action === "quote-to-invoice") navigate("invoice-from-quote:" + target.dataset.id);
+    if (action === "quote-to-invoice") return C.invoices.saveFromQuote(target.dataset.id, target);
     if (action === "quote-to-installation") navigate("installation-from-quote:" + target.dataset.id);
-    if (action === "quote-pdf") C.pdf.downloadQuote(find("quotes", target.dataset.id));
-    if (action === "quote-print") C.pdf.printQuote(find("quotes", target.dataset.id));
+    if (action === "quote-pdf") return C.pdf.downloadQuote(find("quotes", target.dataset.id));
+    if (action === "quote-print") return C.pdf.printQuote(find("quotes", target.dataset.id));
     if (action === "quote-add-line") addLine("quote");
     if (action === "quote-remove-line") removeLine(target, "quote");
+    if (action === "quote-add-component") C.quotes.addComponent(target.closest("form"));
+    if (action === "quote-remove-component") C.quotes.removeComponent(target);
+    if (action === "quote-add-benefit") C.quotes.addBenefit(target.closest("form"));
+    if (action === "quote-remove-benefit") C.quotes.removeBenefit(target);
+    if (action === "quote-template") C.quotes.applyTemplate(target.closest("form"), target.dataset.template);
+    if (action === "quote-page-move") C.quotes.movePage(target);
+    if (action === "quote-library-image") C.quotes.chooseLibraryImage(target);
+    if (action === "quote-component-image") C.quotes.chooseComponentImage(target);
+    if (action === "quote-zoom") C.quotes.zoomPreview(target.closest("form"), target.dataset.delta);
+    if (action === "quote-draft-pdf") return C.quotes.downloadDraft(target.closest("form"));
     if (action === "invoice-new") navigate(target.dataset.customerId ? "invoice-new?customerId=" + target.dataset.customerId : "invoice-new");
     if (action === "invoices") navigate("invoices");
     if (action === "invoice-detail") navigate("invoice:" + target.dataset.id);
@@ -1277,7 +1294,10 @@
   function handleInput(event) {
     var form = event.target.closest("form");
     if (!form) return;
-    if (form.dataset.form === "quote") C.quotes.recalc(form);
+    if (form.dataset.form === "quote") {
+      C.quotes.syncLegacyContent(form, event.target);
+      C.quotes.recalc(form);
+    }
     if (form.dataset.form === "invoice") C.invoices.recalc(form);
     if (form.dataset.form === "message") updateMessage(form);
   }
@@ -1289,6 +1309,11 @@
       C.quotes.fillProduct(event.target);
       C.quotes.recalc(form);
     }
+    if (action === "quote-benefit-change") C.quotes.changeBenefit(form, event.target);
+    if (action === "quote-page-jump") C.quotes.jumpPage(form, event.target.value);
+    if (action === "quote-image-upload") return C.quotes.uploadImage(form, event.target.files && event.target.files[0]);
+    if (action === "quote-component-image-upload") return C.quotes.uploadComponentImage(form, event.target.files && event.target.files[0], event.target.closest("[data-component]"));
+    if (event.target.closest("[data-page-row]")) C.quotes.updatePreview(form);
     if (action === "invoice-load-quote") {
       C.invoices.applyQuote(form, event.target.value);
     }
@@ -1467,7 +1492,9 @@
       handleInput(event);
       handleSearch(event);
     });
-    document.addEventListener("change", handleChange);
+    document.addEventListener("change", function (event) {
+      Promise.resolve(handleChange(event)).catch(function (error) { toast(error.message || "Wijziging verwerken mislukt."); });
+    });
     document.addEventListener("submit", function (event) {
       Promise.resolve(handleSubmit(event)).catch(function (error) {
         toast(error.message || "Opslaan mislukt.");

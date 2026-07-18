@@ -103,7 +103,7 @@
   }
 
   function parseRows(value, kind) {
-    return String(value || "").split("\n").map(function (line) { return line.trim(); }).filter(Boolean).map(function (line) { var p = line.split("|").map(function (x) { return x.trim(); }); return kind === "measurements" ? { name: p[0], value: Number(String(p[1] || "0").replace(",", ".")), unit: p[2] || "", note: p[3] || "" } : { description: p[0], quantity: Number(String(p[1] || "1").replace(",", ".")), unit: p[2] || "stuk", priceExVat: Number(String(p[3] || "0").replace(",", ".")) }; });
+    return String(value || "").split("\n").map(function (line) { return line.trim(); }).filter(Boolean).map(function (line) { var p = line.split("|").map(function (x) { return x.trim(); }); return kind === "measurements" ? { name: p[0], value: S.parseNumber(p[1] || "0"), unit: p[2] || "", note: p[3] || "" } : { description: p[0], quantity: S.parseNumber(p[1] || "1"), unit: p[2] || "stuk", priceExVat: S.parseNumber(p[3] || "0") }; });
   }
   function submit(form) {
     if (form.dataset.form === "service-document") { var fd = new FormData(form); return S.request("/api/service/visits/" + encodeURIComponent(form.dataset.id) + "/documents", { method: "POST", body: fd }).then(function () { C.app.toast("Bijlage opgeslagen."); return refresh(); }); }

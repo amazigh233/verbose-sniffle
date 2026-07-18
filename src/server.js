@@ -4,10 +4,12 @@ const path = require("path");
 const crypto = require("crypto");
 const express = require("express");
 const session = require("express-session");
+const compression = require("compression");
 const PgSession = require("connect-pg-simple")(session);
 const helmet = require("helmet");
 const pg = require("pg");
 const multer = require("multer");
+const sharp = require("sharp");
 const QRCode = require("qrcode");
 const { loadConfig } = require("./config");
 const { prisma } = require("./prisma");
@@ -17,7 +19,21 @@ const hr = require("./hr-data");
 const hrSecurity = require("./hr-security");
 const workforce = require("./hr-workforce");
 const projects = require("./project-data");
-const service = require("./service-data");
+const { registerProjectRoutes } = require("./modules/projects/routes");
+const { registerServiceRoutes } = require("./modules/service/routes");
+const { registerCustomerRoutes } = require("./modules/customers/routes");
+const { registerQuoteRoutes } = require("./modules/quotes/routes");
+const { registerInvoiceRoutes } = require("./modules/invoices/routes");
+const { registerInstallationRoutes } = require("./modules/installations/routes");
+const authorization = require("./middleware/authorization");
+const { createObjectStorage } = require("./infrastructure/object-storage");
+const { createCoordinationStore } = require("./infrastructure/coordination");
+const { createLogger } = require("./infrastructure/logger");
+const { scanFile, storageKey, validateFile } = require("./infrastructure/object-storage/file-policy");
+const { Prisma } = require("@prisma/client");
+const authValidation = require("./modules/auth/validation");
+const { validateCollectionWrite } = require("./modules/collections/validation");
+const { validateMutationEnvelope, validateParam } = require("./shared/validation");
 
 const ROLE_COLLECTIONS = {
   crm: ["customers", "customerNotes", "customerDocuments"],
@@ -33,6 +49,36 @@ const ROLE_WRITE_COLLECTIONS = {
   finance: ["invoices"]
 };
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const RESOURCE_COLLECTIONS = {
+  notes: "customerNotes",
+  documents: "customerDocuments",
+  products: "products",
+  advices: "advices",
+  "sales-opportunities": "salesOpportunities",
+  "sales-appointments": "salesAppointments"
+};
+
+function apiJsonValue(value) {
+  if (Prisma.Decimal.isDecimal(value) || value && value.constructor && value.constructor.name === "Decimal") return value.toNumber();
+  if (Array.isArray(value)) return value.map(apiJsonValue);
+  if (value && Object.getPrototypeOf(value) === Object.prototype) {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, apiJsonValue(item)]));
+  }
+  return value;
+}
+
+function errorCodeForStatus(status) {
+  if (status === 400) return "BAD_REQUEST";
+  if (status === 401) return "UNAUTHORIZED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 423) return "LOCKED";
+  if (status === 429) return "RATE_LIMITED";
+  if (status === 503) return "DEPENDENCY_UNAVAILABLE";
+  return status >= 500 ? "INTERNAL_ERROR" : "REQUEST_FAILED";
+}
 
 function requestOrigin(req) {
   return `${req.protocol}://${req.get("host")}`;
@@ -54,23 +100,19 @@ function timingSafeEqual(left, right) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-function createFailureLimiter({ limit, windowMs }) {
-  const attempts = new Map();
+function createFailureLimiter({ store, namespace, limit, windowMs }) {
   return {
-    check(key) {
-      const now = Date.now();
-      const item = attempts.get(key);
-      if (!item || item.resetAt <= now) return true;
-      return item.count < limit;
-    },
-    fail(key) {
-      const now = Date.now();
-      const item = attempts.get(key);
-      if (!item || item.resetAt <= now) attempts.set(key, { count: 1, resetAt: now + windowMs });
-      else item.count += 1;
-    },
-    success(key) { attempts.delete(key); }
+    async check(key) { return Number(await store.getJson(`climature:fail:${namespace}:${key}`) || 0) < limit; },
+    async fail(key) { await store.increment(`climature:fail:${namespace}:${key}`, windowMs); },
+    async success(key) { await store.delete(`climature:fail:${namespace}:${key}`); }
   };
+}
+
+// Fixed-window teller per sleutel (IP). Bewust zonder timers: opruiming
+// gebeurt lazy bij expiratie en via de size-cap, zodat de event loop
+// (en de testsuite) niet opengehouden wordt.
+function createRateLimiter({ store, namespace, limit, windowMs }) {
+  return async function allow(key) { return await store.increment(`climature:rate:${namespace}:${key}`, windowMs) <= limit; };
 }
 
 function asyncHandler(fn) {
@@ -145,6 +187,9 @@ function executionQuotes(items) {
 }
 
 function collectionForRole(collection, items, role) {
+  if (collection === "customerDocuments") {
+    return (items || []).map(({ content: _content, storageKey: _storageKey, sha256: _sha256, scanMessage: _scanMessage, ...document }) => document);
+  }
   if (collection === "customers" && ["sales", "execution", "finance"].includes(role)) return channelCustomers(items);
   if (collection === "quotes" && role === "execution") return executionQuotes(items);
   if (collection === "installations" && role === "installer") {
@@ -169,6 +214,26 @@ function settingsForRole(settings, role) {
   if (role === "finance") return { ...company, paymentDays: settings.paymentDays, defaultInvoiceNote: settings.defaultInvoiceNote };
   if (role === "execution") return company;
   return {};
+}
+
+function permissionsForRole(role) {
+  const readableCollections = role === "admin" ? data.COLLECTIONS.slice() : (ROLE_COLLECTIONS[role] || []).slice();
+  const writableCollections = role === "admin" ? data.COLLECTIONS.slice() : (ROLE_WRITE_COLLECTIONS[role] || []).slice();
+  return {
+    readableCollections,
+    writableCollections,
+    manageUsers: role === "admin",
+    manageSettings: role === "admin",
+    exportBackup: role === "admin",
+    manageProjects: ["admin", "execution"].includes(role),
+    updateAssignedWork: role === "installer"
+  };
+}
+
+function countersForRole(counters, role) {
+  if (role === "admin") return counters;
+  const allowed = role === "sales" ? "quote-" : role === "finance" ? "invoice-" : "__none__";
+  return Object.fromEntries(Object.entries(counters || {}).filter(([key]) => key.startsWith(allowed)));
 }
 
 function roleBootstrap(fullData, role) {
@@ -204,17 +269,72 @@ function createApp(config = loadConfig()) {
     hrKeyVersion: "v1",
     clamavHost: "",
     clamavPort: 3310,
-    allowUnscannedHrFiles: false
+    allowUnscannedHrFiles: false,
+    objectStorageProvider: "local",
+    objectStorageRoot: path.join(__dirname, "..", ".data", "objects"),
+    redisUrl: ""
   }, config);
   const app = express();
-  const pool = new pg.Pool({ connectionString: config.databaseUrl });
-  const loginLimiter = createFailureLimiter({ limit: 5, windowMs: 15 * 60 * 1000 });
-  const mfaLimiter = createFailureLimiter({ limit: 5, windowMs: 10 * 60 * 1000 });
+  app.use((_req, res, next) => {
+    const sendJson = res.json.bind(res);
+    res.json = (body) => {
+      const value = apiJsonValue(body);
+      if (res.statusCode >= 400 && value && value.error && !value.code) value.code = errorCodeForStatus(res.statusCode);
+      return sendJson(value);
+    };
+    next();
+  });
+  const objectStorage = createObjectStorage(config);
+  const coordination = createCoordinationStore(config);
+  const logger = createLogger(config);
+  const deleteStoredObjects = async (keys, requestId) => {
+    const unique = [...new Set((keys || []).filter(Boolean))];
+    const results = await Promise.allSettled(unique.map((key) => objectStorage.delete(key)));
+    const failed = results.filter((result) => result.status === "rejected").length;
+    if (failed) logger.error({ requestId, errorCategory: "OBJECT_CLEANUP_FAILED", failedObjects: failed }, "storage.cleanup_failed");
+  };
+  const businessStorageKeys = async () => (await Promise.all([
+    prisma.customerDocument.findMany({ select: { storageKey: true } }),
+    prisma.quoteAsset.findMany({ select: { storageKey: true } }),
+    prisma.serviceDocument.findMany({ select: { storageKey: true } })
+  ])).flat().map((item) => item.storageKey).filter(Boolean);
+  const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 5, idleTimeoutMillis: 30000 });
+  const loginLimiter = createFailureLimiter({ store: coordination, namespace: "login-account", limit: 5, windowMs: 15 * 60 * 1000 });
+  const loginIpLimiter = createFailureLimiter({ store: coordination, namespace: "login-ip", limit: 20, windowMs: 15 * 60 * 1000 });
+  const mfaLimiter = createFailureLimiter({ store: coordination, namespace: "mfa", limit: 5, windowMs: 10 * 60 * 1000 });
+  const passwordChangeLimiter = createFailureLimiter({ store: coordination, namespace: "password", limit: 5, windowMs: 15 * 60 * 1000 });
+
+  // Korte cache voor de per-request hervalidatie van de ingelogde gebruiker.
+  // Uitgeschakeld in tests; wijzigingen via de API invalideren direct.
+  const userCacheTtlMs = config.nodeEnv === "test" ? 0 : Number(process.env.AUTH_CACHE_TTL_MS || 30000);
+  const getCachedUser = async (id) => userCacheTtlMs <= 0 ? null : coordination.getJson(`climature:auth-user:${id}`);
+  const cacheUser = async (user) => {
+    if (userCacheTtlMs <= 0 || !user) return;
+    await coordination.setJson(`climature:auth-user:${user.id}`, user, userCacheTtlMs);
+  };
+  const invalidateUser = (id) => coordination.delete(`climature:auth-user:${id}`);
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 1, fields: 12 } });
 
   if (config.isProduction) app.set("trust proxy", 1);
 
   app.disable("x-powered-by");
+  app.use((req, res, next) => {
+    const supplied = String(req.get("x-request-id") || "");
+    req.id = /^[a-zA-Z0-9_-]{8,100}$/.test(supplied) ? supplied : crypto.randomUUID();
+    res.set("X-Request-ID", req.id);
+    const startedAt = process.hrtime.bigint();
+    res.once("finish", () => {
+      logger.info({
+        requestId: req.id,
+        userId: req.session && req.session.user ? req.session.user.id : null,
+        method: req.method,
+        route: req.route && req.route.path ? req.route.path : req.path,
+        statusCode: res.statusCode,
+        durationMs: Number(process.hrtime.bigint() - startedAt) / 1e6
+      }, "request.completed");
+    });
+    next();
+  });
   app.use(helmet({ contentSecurityPolicy: false, hsts: config.isProduction }));
   app.use((req, res, next) => {
     const adviceTool = req.path.endsWith("/assets/adviestools.html");
@@ -234,18 +354,45 @@ function createApp(config = loadConfig()) {
     res.setHeader("Referrer-Policy", "no-referrer");
     next();
   });
-  app.use(express.json({ limit: "12mb" }));
+  app.use(compression());
+  const jsonSmall = express.json({ limit: "1mb" });
+  const jsonLarge = express.json({ limit: "12mb" });
+  // Alleen gecontroleerde beheerimport mag een grotere JSON-body sturen.
+  const LARGE_JSON_PATHS = /^\/api\/backup\/import$/;
+  app.use((req, res, next) => (LARGE_JSON_PATHS.test(req.path) ? jsonLarge : jsonSmall)(req, res, next));
+  app.use(validateMutationEnvelope);
+  ["id", "employeeId", "materialId", "taskId", "memberId", "equipmentId", "absenceId", "checklistId", "itemId", "collection", "type"].forEach((name) => {
+    app.param(name, (req, _res, next, value) => {
+      try { validateParam(value, name); next(); }
+      catch (error) { next(error); }
+    });
+  });
   app.use((req, res, next) => {
     if (req.path.startsWith("/api/")) res.set("Cache-Control", "no-store");
     next();
   });
+
+  // Globale per-IP limiter vóór de session-middleware, zodat misbruik geen
+  // Postgres-sessiereads veroorzaakt. Uitgeschakeld in tests: de testsuite
+  // vuurt honderden verzoeken vanaf één IP.
+  const apiRateLimit = config.nodeEnv === "test" ? null : createRateLimiter({ store: coordination, namespace: "api", limit: Number(process.env.API_RATE_LIMIT || 600), windowMs: 60 * 1000 });
+  const heavyRateLimit = config.nodeEnv === "test" ? null : createRateLimiter({ store: coordination, namespace: "heavy", limit: 5, windowMs: 60 * 1000 });
+  const heavyLimitGuard = asyncHandler(async (req, res, next) => {
+    if (heavyRateLimit && !await heavyRateLimit(`${req.ip}:${req.path}`)) return res.status(429).json({ error: "Te veel aanvragen. Probeer later opnieuw." });
+    next();
+  });
+  app.use("/api", asyncHandler(async (req, res, next) => {
+    if (apiRateLimit && !await apiRateLimit(req.ip)) return res.status(429).json({ error: "Te veel aanvragen. Probeer later opnieuw." });
+    next();
+  }));
+  const sessionCookieName = config.isProduction ? "__Host-climature.sid" : "climature.sid";
   app.use(session({
     store: new PgSession({
       pool,
       tableName: "session",
       createTableIfMissing: false
     }),
-    name: config.isProduction ? "__Host-climature.sid" : "climature.sid",
+    name: sessionCookieName,
     secret: config.sessionSecret,
     resave: false,
     saveUninitialized: false,
@@ -265,14 +412,22 @@ function createApp(config = loadConfig()) {
     if (!protectedPath) return next();
     const now = Date.now();
     if (req.session.loginAt && now - req.session.loginAt > 8 * 60 * 60 * 1000) {
-      req.session.destroy(() => {});
-      res.status(401).json({ error: "Sessie verlopen." });
+      req.session.destroy(() => {
+        res.clearCookie(sessionCookieName, { path: "/" });
+        res.status(401).json({ error: "Sessie verlopen." });
+      });
       return;
     }
-    const current = await prisma.user.findUnique({ where: { id: req.session.user.id }, select: { id: true, username: true, role: true, active: true, employeeId: true } });
+    let current = await getCachedUser(req.session.user.id);
+    if (!current) {
+      current = await prisma.user.findUnique({ where: { id: req.session.user.id }, select: { id: true, username: true, role: true, active: true, employeeId: true } });
+      await cacheUser(current);
+    }
     if (!current || !current.active || current.role !== req.session.user.role) {
-      req.session.destroy(() => {});
-      res.status(401).json({ error: "Sessie is niet meer geldig." });
+      req.session.destroy(() => {
+        res.clearCookie(sessionCookieName, { path: "/" });
+        res.status(401).json({ error: "Sessie is niet meer geldig." });
+      });
       return;
     }
     req.session.user = users.sessionUser(current);
@@ -285,34 +440,43 @@ function createApp(config = loadConfig()) {
     if (req.path === "/api/auth/login") return next();
     if (!req.session || !req.session.user) return next();
     const supplied = req.get("x-csrf-token");
-    const testBypass = config.nodeEnv === "test" && !req.get("origin") && !supplied;
+    const testBypass = config.nodeEnv === "test" && !config.isProduction && !req.get("origin") && !supplied;
     if (testBypass || timingSafeEqual(supplied, csrfToken(req))) return next();
     res.status(403).json({ error: "Ongeldig beveiligingstoken." });
   });
 
   app.get("/api/health", asyncHandler(async (_req, res) => {
     await prisma.$queryRaw`SELECT 1`;
-    res.json({ ok: true });
+    await Promise.all([coordination.health(), objectStorage.health()]);
+    res.json({ ok: true, dependencies: { postgres: "ok", coordination: "ok", objectStorage: "ok" } });
   }));
 
   app.get("/api/auth/session", (req, res) => {
+    // Geen token (en dus geen sessierij) voor anonieme bezoekers; het echte
+    // token komt uit de login-respons en de login-POST is CSRF-exempt.
+    const authenticated = Boolean(req.session && req.session.user);
     res.json({
-      authenticated: Boolean(req.session && req.session.user),
-      user: req.session.user || null,
-      csrfToken: req.session ? csrfToken(req) : null,
+      authenticated,
+      user: authenticated ? req.session.user : null,
+      csrfToken: authenticated ? csrfToken(req) : null,
       features: { hrPortalEnabled: Boolean(config.hrPortalEnabled) }
     });
   });
 
-  app.post("/api/auth/login", asyncHandler(async (req, res) => {
+  app.post("/api/auth/login", authValidation.login, asyncHandler(async (req, res) => {
     const loginKey = `${req.ip}:${users.normalizeUsername(req.body.username)}`;
-    if (!loginLimiter.check(loginKey)) throw Object.assign(new Error("Te veel inlogpogingen. Probeer later opnieuw."), { status: 429 });
+    if (!await loginLimiter.check(loginKey) || !await loginIpLimiter.check(req.ip)) {
+      throw Object.assign(new Error("Te veel inlogpogingen. Probeer later opnieuw."), { status: 429 });
+    }
     let user;
     try {
       user = await users.login(prisma, config, req.body.username, req.body.password);
-      loginLimiter.success(loginKey);
+      // Bewust geen loginIpLimiter.success: één geldige login mag het
+      // per-IP spraybudget niet resetten.
+      await loginLimiter.success(loginKey);
     } catch (error) {
-      loginLimiter.fail(loginKey);
+      await loginLimiter.fail(loginKey);
+      await loginIpLimiter.fail(req.ip);
       throw error;
     }
     req.session.regenerate((error) => {
@@ -326,8 +490,18 @@ function createApp(config = loadConfig()) {
     });
   }));
 
-  app.put("/api/auth/me", requireAuth, asyncHandler(async (req, res) => {
-    const user = await users.updateMe(prisma, req.session.user, req.body || {});
+  app.put("/api/auth/me", requireAuth, authValidation.updateProfile, asyncHandler(async (req, res) => {
+    const key = req.session.user.id;
+    if (!await passwordChangeLimiter.check(key)) throw Object.assign(new Error("Te veel pogingen. Probeer later opnieuw."), { status: 429 });
+    let user;
+    try {
+      user = await users.updateMe(prisma, req.session.user, req.body || {});
+      await passwordChangeLimiter.success(key);
+    } catch (error) {
+      if (error.status === 401) await passwordChangeLimiter.fail(key);
+      throw error;
+    }
+    await invalidateUser(req.session.user.id);
     req.session.user = users.sessionUser(user);
     res.json({ user: req.session.user });
   }));
@@ -338,7 +512,7 @@ function createApp(config = loadConfig()) {
         res.status(500).json({ error: "Uitloggen mislukt." });
         return;
       }
-      res.clearCookie(config.isProduction ? "__Host-climature.sid" : "climature.sid", { path: "/" });
+      res.clearCookie(sessionCookieName, { path: "/" });
       res.json({ authenticated: false });
     });
   });
@@ -361,6 +535,7 @@ function createApp(config = loadConfig()) {
       cipher: encrypted.cipher.toString("base64"),
       iv: encrypted.iv.toString("base64"),
       tag: encrypted.tag.toString("base64"),
+      keyVersion: encrypted.keyVersion,
       expiresAt: Date.now() + 10 * 60 * 1000
     };
     const uri = hrSecurity.authenticator.keyuri(user.username, "Climature HR", secret);
@@ -370,7 +545,7 @@ function createApp(config = loadConfig()) {
   app.post("/api/hr/mfa/setup/confirm", ...hrAdmin, asyncHandler(async (req, res) => {
     const pending = req.session.pendingMfa;
     if (!pending || pending.expiresAt < Date.now()) throw Object.assign(new Error("MFA-inrichting is verlopen. Begin opnieuw."), { status: 400 });
-    const secret = hrSecurity.decrypt(config, Buffer.from(pending.cipher, "base64"), Buffer.from(pending.iv, "base64"), Buffer.from(pending.tag, "base64")).toString("utf8");
+    const secret = hrSecurity.decrypt(config, Buffer.from(pending.cipher, "base64"), Buffer.from(pending.iv, "base64"), Buffer.from(pending.tag, "base64"), pending.keyVersion || "v1").toString("utf8");
     if (!hrSecurity.authenticator.check(String(req.body.code || ""), secret)) throw Object.assign(new Error("Authenticatorcode is onjuist."), { status: 401 });
     const codes = hrSecurity.recoveryCodes();
     await prisma.$transaction(async (tx) => {
@@ -387,18 +562,18 @@ function createApp(config = loadConfig()) {
 
   app.post("/api/hr/elevate", ...hrAdmin, asyncHandler(async (req, res) => {
     const key = `${req.ip}:${req.session.user.id}`;
-    if (!mfaLimiter.check(key)) throw Object.assign(new Error("Te veel verificatiepogingen. Probeer later opnieuw."), { status: 429 });
+    if (!await mfaLimiter.check(key)) throw Object.assign(new Error("Te veel verificatiepogingen. Probeer later opnieuw."), { status: 429 });
     try {
       const user = await hrSecurity.verifyPassword(prisma, req.session.user, req.body.password);
       if (!user.mfaEnabledAt) throw Object.assign(new Error("Authenticator moet eerst worden ingesteld."), { status: 409 });
       const method = await hrSecurity.verifySecondFactor(prisma, config, user, req.body.code);
       req.session.hrAuthorizedAt = Date.now();
       req.session.hrLastActivityAt = Date.now();
-      mfaLimiter.success(key);
+      await mfaLimiter.success(key);
       await hrSecurity.audit(prisma, config, req, "session.elevated", "user", user.id, { method });
       res.json({ elevated: true });
     } catch (error) {
-      mfaLimiter.fail(key);
+      await mfaLimiter.fail(key);
       throw error;
     }
   }));
@@ -443,13 +618,18 @@ function createApp(config = loadConfig()) {
     if (String(req.body.confirmEmployeeNumber || "").toUpperCase() !== employee.employeeNumber) throw Object.assign(new Error("Personeelsnummer ter bevestiging komt niet overeen."), { status: 400 });
     const user = await hrSecurity.verifyPassword(prisma, req.session.user, req.body.password);
     await hrSecurity.verifySecondFactor(prisma, config, user, req.body.code);
+    const [contractObjects, qualificationObjects] = await Promise.all([
+      prisma.employmentContract.findMany({ where: { employeeId: employee.id }, select: { storageKey: true } }),
+      prisma.employeeQualification.findMany({ where: { employeeId: employee.id, evidenceStorageKey: { not: null } }, select: { evidenceStorageKey: true } })
+    ]);
     await hrSecurity.audit(prisma, config, req, "employee.purged", "employee", employee.id, { employeeNumber: employee.employeeNumber });
     await prisma.employee.delete({ where: { id: employee.id } });
+    await deleteStoredObjects(contractObjects.concat(qualificationObjects).map((item) => item.storageKey || item.evidenceStorageKey), req.id);
     res.json({ ok: true });
   }));
 
   app.post("/api/hr/employees/:id/contracts", ...hrProtected, upload.single("file"), asyncHandler(async (req, res) => {
-    const item = await hr.createContract(prisma, config, req.session.user.id, req.params.id, req.body || {}, req.file);
+    const item = await hr.createContract(prisma, config, objectStorage, req.session.user.id, req.params.id, req.body || {}, req.file);
     await hrSecurity.audit(prisma, config, req, "contract.uploaded", "employee", req.params.id, { contractId: item.id, scanStatus: item.scanStatus });
     res.status(201).json({ item });
   }));
@@ -467,13 +647,13 @@ function createApp(config = loadConfig()) {
   app.post("/api/hr/employees/:employeeId/contracts/:id/rescan", ...hrProtected, asyncHandler(async (req, res) => {
     const existing = await prisma.employmentContract.findFirst({ where: { id: req.params.id, employeeId: req.params.employeeId } });
     if (!existing) throw Object.assign(new Error("Contract niet gevonden."), { status: 404 });
-    const item = await hr.rescanContract(prisma, config, existing.id);
+    const item = await hr.rescanContract(prisma, config, objectStorage, existing.id);
     await hrSecurity.audit(prisma, config, req, "contract.rescanned", "employee", req.params.employeeId, { contractId: item.id, scanStatus: item.scanStatus });
     res.json({ item });
   }));
 
   app.get("/api/hr/employees/:employeeId/contracts/:id/download", ...hrProtected, asyncHandler(async (req, res) => {
-    const file = await hr.contractFile(prisma, config, req.params.employeeId, req.params.id);
+    const file = await hr.contractFile(prisma, config, objectStorage, req.params.employeeId, req.params.id);
     await hrSecurity.audit(prisma, config, req, "contract.downloaded", "employee", req.params.employeeId, { contractId: file.row.id });
     res.set({
       "Content-Type": "application/pdf",
@@ -551,13 +731,13 @@ function createApp(config = loadConfig()) {
   }));
 
   app.post("/api/hr/employees/:id/qualifications", ...hrProtected, upload.single("file"), asyncHandler(async (req, res) => {
-    const item = await workforce.saveEmployeeQualification(prisma, config, req.session.user.id, req.params.id, null, req.body || {}, req.file);
+    const item = await workforce.saveEmployeeQualification(prisma, config, objectStorage, req.session.user.id, req.params.id, null, req.body || {}, req.file);
     await hrSecurity.audit(prisma, config, req, "qualification.created", "employee", req.params.id, { qualificationId: item.id, definitionCode: item.definition.code, scanStatus: item.evidenceScanStatus });
     res.status(201).json({ item });
   }));
 
   app.put("/api/hr/employees/:employeeId/qualifications/:id", ...hrProtected, upload.single("file"), asyncHandler(async (req, res) => {
-    const item = await workforce.saveEmployeeQualification(prisma, config, req.session.user.id, req.params.employeeId, req.params.id, req.body || {}, req.file);
+    const item = await workforce.saveEmployeeQualification(prisma, config, objectStorage, req.session.user.id, req.params.employeeId, req.params.id, req.body || {}, req.file);
     await hrSecurity.audit(prisma, config, req, "qualification.updated", "employee", req.params.employeeId, { qualificationId: item.id, definitionCode: item.definition.code, scanStatus: item.evidenceScanStatus });
     res.json({ item });
   }));
@@ -569,13 +749,13 @@ function createApp(config = loadConfig()) {
   }));
 
   app.post("/api/hr/employees/:employeeId/qualifications/:id/rescan", ...hrProtected, asyncHandler(async (req, res) => {
-    const item = await workforce.rescanQualification(prisma, config, req.params.employeeId, req.params.id);
+    const item = await workforce.rescanQualification(prisma, config, objectStorage, req.params.employeeId, req.params.id);
     await hrSecurity.audit(prisma, config, req, "qualification.rescanned", "employee", req.params.employeeId, { qualificationId: item.id, scanStatus: item.evidenceScanStatus });
     res.json({ item });
   }));
 
   app.get("/api/hr/employees/:employeeId/qualifications/:id/download", ...hrProtected, asyncHandler(async (req, res) => {
-    const file = await workforce.qualificationFile(prisma, config, req.params.employeeId, req.params.id);
+    const file = await workforce.qualificationFile(prisma, config, objectStorage, req.params.employeeId, req.params.id);
     await hrSecurity.audit(prisma, config, req, "qualification.downloaded", "employee", req.params.employeeId, { qualificationId: file.row.id });
     res.set({ "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(file.row.evidenceFileName)}`, "Content-Length": String(file.buffer.length), "Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff" });
     res.send(file.buffer);
@@ -614,73 +794,7 @@ function createApp(config = loadConfig()) {
     res.json({ items: await workforce.directory(prisma, req.query.workType, req.query.plannedDate) });
   }));
 
-  app.get("/api/projects/actions", requireRole("admin", "execution"), asyncHandler(async (req, res) => {
-    res.json({ items: await projects.actionCenter(prisma, req.session.user, req.query || {}) });
-  }));
-
-  app.get("/api/projects", requireRole("admin", "execution", "installer"), asyncHandler(async (req, res) => {
-    res.json(await projects.listProjects(prisma, config, req.session.user, req.query || {}));
-  }));
-
-  app.post("/api/projects", requireRole("admin", "execution"), asyncHandler(async (req, res) => {
-    const project = await projects.createProject(prisma, req.body || {}, req.session.user.id);
-    res.status(201).json({ item: await projects.getProject(prisma, config, req.session.user, project.id) });
-  }));
-
-  app.get("/api/projects/:id", requireRole("admin", "execution", "installer"), asyncHandler(async (req, res) => {
-    res.json({ item: await projects.getProject(prisma, config, req.session.user, req.params.id) });
-  }));
-
-  app.put("/api/projects/:id", requireRole("admin", "execution"), asyncHandler(async (req, res) => {
-    await projects.updateProject(prisma, req.session.user, req.params.id, req.body || {});
-    res.json({ item: await projects.getProject(prisma, config, req.session.user, req.params.id) });
-  }));
-
-  app.post("/api/projects/:id/materials", requireRole("admin", "execution"), asyncHandler(async (req, res) => {
-    res.status(201).json({ item: await projects.saveMaterial(prisma, req.session.user, req.params.id, null, req.body || {}) });
-  }));
-
-  app.put("/api/projects/:id/materials/:materialId", requireRole("admin", "execution"), asyncHandler(async (req, res) => {
-    res.json({ item: await projects.saveMaterial(prisma, req.session.user, req.params.id, req.params.materialId, req.body || {}) });
-  }));
-
-  app.delete("/api/projects/:id/materials/:materialId", requireRole("admin", "execution"), asyncHandler(async (req, res) => {
-    await projects.removeMaterial(prisma, req.session.user, req.params.id, req.params.materialId);
-    res.json({ ok: true });
-  }));
-
-  app.post("/api/projects/:id/tasks", requireRole("admin", "execution"), asyncHandler(async (req, res) => {
-    res.status(201).json({ item: await projects.saveTask(prisma, req.session.user, req.params.id, null, req.body || {}) });
-  }));
-
-  app.put("/api/projects/:id/tasks/:taskId", requireRole("admin", "execution", "installer"), asyncHandler(async (req, res) => {
-    res.json({ item: await projects.saveTask(prisma, req.session.user, req.params.id, req.params.taskId, req.body || {}) });
-  }));
-
-  app.post("/api/projects/:id/team", requireRole("admin", "execution"), asyncHandler(async (req, res) => {
-    res.json({ item: await projects.saveMember(prisma, req.session.user, req.params.id, req.body || {}) });
-  }));
-
-  app.delete("/api/projects/:id/team/:memberId", requireRole("admin", "execution"), asyncHandler(async (req, res) => {
-    await projects.removeMember(prisma, req.session.user, req.params.id, req.params.memberId);
-    res.json({ ok: true });
-  }));
-
-  app.post("/api/projects/:id/equipment", requireRole("admin", "execution", "installer"), asyncHandler(async (req, res) => {
-    res.status(201).json({ item: await projects.saveEquipment(prisma, config, req.session.user, req.params.id, null, req.body || {}) });
-  }));
-
-  app.put("/api/projects/:id/equipment/:equipmentId", requireRole("admin", "execution", "installer"), asyncHandler(async (req, res) => {
-    res.json({ item: await projects.saveEquipment(prisma, config, req.session.user, req.params.id, req.params.equipmentId, req.body || {}) });
-  }));
-
-  app.get("/api/project-templates", requireRole("admin", "execution"), asyncHandler(async (_req, res) => {
-    res.json({ items: await projects.listTemplates(prisma) });
-  }));
-
-  app.get("/api/employee-availability", requireRole("admin", "execution"), asyncHandler(async (req, res) => {
-    res.json({ items: await projects.availabilityDirectory(prisma, req.query || {}) });
-  }));
+  registerProjectRoutes({ app, asyncHandler, config, prisma, requireRole });
 
   app.get("/api/hr/employees/:id/work-schedule", ...hrProtected, asyncHandler(async (req, res) => {
     const items = await prisma.employeeWorkSchedule.findMany({ where: { employeeId: req.params.id }, orderBy: { weekday: "asc" } });
@@ -717,72 +831,21 @@ function createApp(config = loadConfig()) {
   }));
 
   app.get("/api/bootstrap", requireAuth, asyncHandler(async (req, res) => {
-    const payload = await data.bootstrap(prisma);
-    res.json({ data: roleBootstrap(payload, req.session.user.role) });
+    const role = req.session.user.role;
+    const [settings, counters] = await Promise.all([data.getSettings(prisma), data.getCounters(prisma)]);
+    const roleSettings = role === "admin" ? settings : settingsForRole(settings, role);
+    res.json({ data: {
+      user: req.session.user,
+      role,
+      permissions: permissionsForRole(role),
+      settings: roleSettings,
+      counters: countersForRole(counters, role),
+      dashboard: {},
+      references: { apiVersion: 2 }
+    } });
   }));
 
-  const serviceReader = requireRole("admin", "execution", "installer", "finance", "crm");
-  const serviceManager = requireRole("admin", "execution");
-
-  app.get("/api/service/dashboard", serviceReader, asyncHandler(async (req, res) => {
-    res.json(await service.dashboard(prisma, req.session.user));
-  }));
-
-  app.get("/api/service/bootstrap", serviceReader, asyncHandler(async (req, res) => {
-    res.json(await service.bootstrap(prisma, req.session.user, req.query || {}));
-  }));
-
-  app.post("/api/service/equipment", serviceManager, asyncHandler(async (req, res) => {
-    res.status(201).json({ item: await service.saveEquipment(prisma, req.session.user, null, req.body || {}) });
-  }));
-  app.put("/api/service/equipment/:id", serviceManager, asyncHandler(async (req, res) => {
-    res.json({ item: await service.saveEquipment(prisma, req.session.user, req.params.id, req.body || {}) });
-  }));
-
-  app.post("/api/service/contracts", serviceManager, asyncHandler(async (req, res) => {
-    res.status(201).json({ item: await service.saveContract(prisma, req.session.user, null, req.body || {}) });
-  }));
-  app.put("/api/service/contracts/:id", serviceManager, asyncHandler(async (req, res) => {
-    res.json({ item: await service.saveContract(prisma, req.session.user, req.params.id, req.body || {}) });
-  }));
-
-  app.post("/api/service/requests", serviceManager, asyncHandler(async (req, res) => {
-    res.status(201).json({ item: await service.saveRequest(prisma, req.session.user, null, req.body || {}) });
-  }));
-  app.put("/api/service/requests/:id", serviceManager, asyncHandler(async (req, res) => {
-    res.json({ item: await service.saveRequest(prisma, req.session.user, req.params.id, req.body || {}) });
-  }));
-
-  app.get("/api/service/availability", serviceManager, asyncHandler(async (req, res) => {
-    res.json({ items: await service.availability(prisma, req.query || {}) });
-  }));
-  app.post("/api/service/visits", serviceManager, asyncHandler(async (req, res) => {
-    res.status(201).json({ item: await service.saveVisit(prisma, req.session.user, null, req.body || {}) });
-  }));
-  app.put("/api/service/visits/:id", requireRole("admin", "execution", "installer"), asyncHandler(async (req, res) => {
-    res.json({ item: await service.saveVisit(prisma, req.session.user, req.params.id, req.body || {}) });
-  }));
-  app.post("/api/service/visits/:id/invoice", requireRole("admin", "execution", "finance"), asyncHandler(async (req, res) => {
-    res.status(201).json({ item: await service.createInvoice(prisma, req.session.user, req.params.id) });
-  }));
-  app.post("/api/service/visits/:id/confirmation", serviceManager, asyncHandler(async (req, res) => {
-    res.json(await service.sendVisitConfirmation(prisma, config, req.session.user, req.params.id));
-  }));
-
-  app.post("/api/service/requests/:id/documents", serviceManager, upload.single("file"), asyncHandler(async (req, res) => {
-    res.status(201).json({ item: await service.saveDocument(prisma, config, req.session.user, "request", req.params.id, req.file) });
-  }));
-  app.post("/api/service/visits/:id/documents", requireRole("admin", "execution", "installer"), upload.single("file"), asyncHandler(async (req, res) => {
-    res.status(201).json({ item: await service.saveDocument(prisma, config, req.session.user, "visit", req.params.id, req.file) });
-  }));
-  app.get("/api/service/documents/:id/download", requireRole("admin", "execution", "installer"), asyncHandler(async (req, res) => {
-    const item = await service.documentFile(prisma, req.session.user, req.params.id);
-    res.set({ "Content-Type": item.mimeType, "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(item.fileName)}`, "Content-Length": String(item.content.length), "Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff" });
-    res.send(item.content);
-  }));
-  app.post("/api/service/reminders/run", serviceManager, asyncHandler(async (req, res) => {
-    res.json({ items: await service.sendReminders(prisma, config, req.session.user) });
-  }));
+  registerServiceRoutes({ app, asyncHandler, config, objectStorage, prisma, requireRole, upload });
 
   app.get("/api/users", requireRole("admin"), asyncHandler(async (_req, res) => {
     res.json({ items: await users.listUsers(prisma) });
@@ -793,7 +856,9 @@ function createApp(config = loadConfig()) {
   }));
 
   app.put("/api/users/:id", requireRole("admin"), asyncHandler(async (req, res) => {
-    res.json({ item: await users.updateUser(prisma, req.params.id, req.body || {}) });
+    const item = await users.updateUser(prisma, req.params.id, req.body || {});
+    await invalidateUser(req.params.id);
+    res.json({ item });
   }));
 
   app.get("/api/settings", requireRole("admin"), asyncHandler(async (_req, res) => {
@@ -818,19 +883,136 @@ function createApp(config = loadConfig()) {
     res.json({ value: await data.peekNumber(prisma, req.params.type) });
   }));
 
+  app.post("/api/quotes/:id/invoice", requireRole("admin", "finance"), asyncHandler(async (req, res) => {
+    const result = await data.createInvoiceFromQuote(prisma, req.params.id);
+    res.status(result.created ? 201 : 200).json(result);
+  }));
+
   app.get("/api/collections/:collection", requireAuth, asyncHandler(async (req, res) => {
     const collection = requireCollection(req);
     if (!canReadCollection(req.session.user, collection)) {
       res.status(403).json({ error: "Geen toegang." });
       return;
     }
-    const items = await data.listCollection(prisma, collection);
-    res.json({ items: collectionForRole(collection, items, req.session.user.role) });
+    const where = await authorization.collectionWhere(prisma, req.session.user, collection);
+    const page = await data.listCollectionPage(prisma, collection, req.query || {}, where);
+    page.items = collectionForRole(collection, page.items, req.session.user.role);
+    res.json(page);
   }));
 
-  app.post("/api/collections/:collection", requireAuth, asyncHandler(async (req, res) => {
+  const pagedDomainDependencies = { app, asyncHandler, prisma, requireAuth };
+  registerCustomerRoutes({ ...pagedDomainDependencies, project: (items, role) => collectionForRole("customers", items, role) });
+  registerQuoteRoutes({ ...pagedDomainDependencies, project: (items, role) => collectionForRole("quotes", items, role) });
+  registerInvoiceRoutes({ ...pagedDomainDependencies, project: (items, role) => collectionForRole("invoices", items, role) });
+  registerInstallationRoutes({ ...pagedDomainDependencies, project: (items, role) => collectionForRole("installations", items, role) });
+
+  for (const [resource, collection] of Object.entries(RESOURCE_COLLECTIONS)) {
+    app.get(`/api/${resource}`, requireAuth, asyncHandler(async (req, res) => {
+      if (!canReadCollection(req.session.user, collection)) return res.status(403).json({ error: "Geen toegang." });
+      const where = await authorization.collectionWhere(prisma, req.session.user, collection);
+      const page = await data.listCollectionPage(prisma, collection, req.query || {}, where);
+      page.items = collectionForRole(collection, page.items, req.session.user.role);
+      res.json(page);
+    }));
+  }
+
+  app.post("/api/customers/:id/documents", requireRole("admin", "crm"), upload.single("file"), asyncHandler(async (req, res) => {
+    const customer = await prisma.customer.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!customer) throw Object.assign(new Error("Klant niet gevonden."), { status: 404 });
+    const metadata = validateFile(req.file, ["pdf"]);
+    const scan = await scanFile(config, req.file.buffer);
+    const key = storageKey("customer-documents");
+    await objectStorage.put(key, req.file.buffer, metadata);
+    try {
+      const item = await prisma.customerDocument.create({ data: { customerId: customer.id, fileName: metadata.fileName, mimeType: metadata.mimeType, size: metadata.size, sha256: metadata.sha256, scanStatus: "clean", scanMessage: scan.message || "", storageKey: key } });
+      res.status(201).json({ item: { id: item.id, customerId: item.customerId, fileName: item.fileName, mimeType: item.mimeType, size: item.size, scanStatus: item.scanStatus, createdAt: item.createdAt, updatedAt: item.updatedAt } });
+    } catch (error) {
+      await objectStorage.delete(key).catch(() => {});
+      throw error;
+    }
+  }));
+
+  app.get("/api/documents/:id/download", requireRole("admin", "crm", "installer"), asyncHandler(async (req, res) => {
+    const scope = await authorization.collectionWhere(prisma, req.session.user, "customerDocuments");
+    const item = await prisma.customerDocument.findFirst({ where: scope ? { AND: [{ id: req.params.id }, scope] } : { id: req.params.id } });
+    if (!item) throw Object.assign(new Error("Document niet gevonden."), { status: 404 });
+    if (item.scanStatus !== "clean" && item.storageKey) throw Object.assign(new Error("Document is nog niet veilig vrijgegeven."), { status: 423 });
+    const content = await objectStorage.get(item.storageKey);
+    if (!content.length || content.subarray(0, 5).toString("ascii") !== "%PDF-") throw Object.assign(new Error("Document is beschadigd."), { status: 500 });
+    const checksum = crypto.createHash("sha256").update(content).digest("hex");
+    if (item.sha256 && checksum !== item.sha256) throw Object.assign(new Error("Integriteitscontrole van document is mislukt."), { status: 500 });
+    const disposition = req.query.disposition === "inline" ? "inline" : "attachment";
+    res.set({ "Content-Type": "application/pdf", "Content-Disposition": `${disposition}; filename*=UTF-8''${encodeURIComponent(item.fileName)}`, "Content-Length": String(content.length), "Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff" });
+    res.send(content);
+  }));
+
+  const quoteAssetManager = requireRole("admin", "sales");
+  app.get("/api/quotes/:id/assets", quoteAssetManager, asyncHandler(async (req, res) => {
+    const quote = await prisma.quote.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!quote) throw Object.assign(new Error("Offerte niet gevonden."), { status: 404 });
+    const items = await prisma.quoteAsset.findMany({
+      where: { quoteId: quote.id },
+      select: { id: true, quoteId: true, role: true, fileName: true, mimeType: true, size: true, width: true, height: true, createdAt: true },
+      orderBy: { createdAt: "desc" }
+    });
+    res.json({ items });
+  }));
+
+  app.post("/api/quotes/:id/assets", quoteAssetManager, upload.single("file"), asyncHandler(async (req, res) => {
+    if (!req.file) throw Object.assign(new Error("Kies eerst een afbeelding."), { status: 400 });
+    const allowed = new Set(["image/jpeg", "image/png", "image/webp"]);
+    if (!allowed.has(req.file.mimetype)) throw Object.assign(new Error("Gebruik een JPG-, PNG- of WebP-afbeelding."), { status: 400 });
+    validateFile(req.file, ["jpeg", "png", "webp"]);
+    const scan = await scanFile(config, req.file.buffer);
+    const quote = await prisma.quote.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!quote) throw Object.assign(new Error("Offerte niet gevonden."), { status: 404 });
+    let content;
+    try {
+      content = await sharp(req.file.buffer, { failOn: "error", limitInputPixels: 40_000_000 })
+        .rotate()
+        .resize({ width: 2400, height: 2400, fit: "inside", withoutEnlargement: true })
+        .webp({ quality: 88 })
+        .toBuffer();
+    } catch (_error) {
+      throw Object.assign(new Error("De afbeelding is beschadigd of heeft een ongeldig formaat."), { status: 400 });
+    }
+    const metadata = await sharp(content).metadata();
+    const key = storageKey("quote-assets");
+    const sha256 = crypto.createHash("sha256").update(content).digest("hex");
+    await objectStorage.put(key, content, { mimeType: "image/webp", sha256 });
+    let item;
+    try {
+      item = await prisma.quoteAsset.create({ data: {
+        quoteId: quote.id, role: "product", fileName: String(req.file.originalname || "offerte-afbeelding.webp").replace(/[\\/\0\r\n]/g, "_").slice(0, 240),
+        mimeType: "image/webp", size: content.length, width: metadata.width || 0, height: metadata.height || 0,
+        sha256, scanStatus: "clean", scanMessage: scan.message || "", storageKey: key
+      }});
+    } catch (error) { await objectStorage.delete(key).catch(() => {}); throw error; }
+    res.status(201).json({ item: { id: item.id, quoteId: item.quoteId, role: item.role, fileName: item.fileName, mimeType: item.mimeType, size: item.size, width: item.width, height: item.height, createdAt: item.createdAt } });
+  }));
+
+  app.get("/api/quote-assets/:id/content", quoteAssetManager, asyncHandler(async (req, res) => {
+    const item = await prisma.quoteAsset.findUnique({ where: { id: req.params.id } });
+    if (!item || item.scanStatus !== "clean" && item.storageKey) throw Object.assign(new Error("Afbeelding niet gevonden."), { status: 404 });
+    const content = await objectStorage.get(item.storageKey);
+    if (item.sha256 && crypto.createHash("sha256").update(content).digest("hex") !== item.sha256) throw Object.assign(new Error("Integriteitscontrole van afbeelding is mislukt."), { status: 500 });
+    res.set({ "Content-Type": item.mimeType, "Content-Length": String(content.length), "Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff" });
+    res.send(content);
+  }));
+
+  app.delete("/api/quote-assets/:id", quoteAssetManager, asyncHandler(async (req, res) => {
+    const item = await prisma.quoteAsset.delete({ where: { id: req.params.id } });
+    await deleteStoredObjects([item.storageKey], req.id);
+    res.json({ ok: true });
+  }));
+
+  app.post("/api/collections/:collection", requireAuth, (req, res, next) => {
     const collection = requireCollection(req);
-    if (!canWriteCollection(req.session.user, collection)) return res.status(403).json({ error: "Geen toegang." });
+    if (!canWriteCollection(req.session.user, collection)) return res.status(403).json({ error: "Geen toegang.", code: "FORBIDDEN" });
+    next();
+  }, validateCollectionWrite, asyncHandler(async (req, res) => {
+    const collection = requireCollection(req);
+    if (collection === "customerDocuments") throw Object.assign(new Error("Gebruik de beveiligde documentuploadroute."), { status: 400 });
     const input = { ...(req.body || {}) };
     if (collection === "installations") {
       input.qualificationCheck = input.employeeId ? await workforce.checkEmployeeQualifications(prisma, input.employeeId, input.workType, input.plannedDate) : null;
@@ -853,26 +1035,43 @@ function createApp(config = loadConfig()) {
   app.delete("/api/collections/:collection/:id", requireAuth, asyncHandler(async (req, res) => {
     const collection = requireCollection(req);
     if (!canWriteCollection(req.session.user, collection)) return res.status(403).json({ error: "Geen toegang." });
+    let storageKeysToDelete = [];
+    if (collection === "customerDocuments") {
+      const existing = await prisma.customerDocument.findUnique({ where: { id: req.params.id }, select: { storageKey: true } });
+      storageKeysToDelete = existing && existing.storageKey ? [existing.storageKey] : [];
+    } else if (collection === "customers") {
+      storageKeysToDelete = (await prisma.customerDocument.findMany({ where: { customerId: req.params.id }, select: { storageKey: true } })).map((item) => item.storageKey);
+    } else if (collection === "quotes") {
+      storageKeysToDelete = (await prisma.quoteAsset.findMany({ where: { quoteId: req.params.id }, select: { storageKey: true } })).map((item) => item.storageKey);
+    }
     await data.remove(prisma, collection, req.params.id);
+    await deleteStoredObjects(storageKeysToDelete, req.id);
     res.json({ ok: true });
   }));
 
   app.put("/api/installations/:id/workorder", requireRole("admin", "execution", "installer"), asyncHandler(async (req, res) => {
+    await authorization.assertInstallationAccess(prisma, req.session.user, req.params.id);
     res.json({ item: await data.saveInstallationWorkOrder(prisma, req.params.id, req.body || {}) });
   }));
 
-  app.get("/api/backup/export", requireRole("admin"), asyncHandler(async (_req, res) => {
+  app.get("/api/backup/export", requireRole("admin"), heavyLimitGuard, asyncHandler(async (_req, res) => {
     res.json(await data.exportData(prisma));
   }));
 
-  app.post("/api/backup/import", requireRole("admin"), asyncHandler(async (req, res) => {
+  app.post("/api/backup/import", requireRole("admin"), heavyLimitGuard, asyncHandler(async (req, res) => {
+    const previousKeys = await businessStorageKeys();
     await data.importData(prisma, req.body);
     await projects.ensureProjectsForExistingInstallations(prisma);
+    const retainedKeys = new Set(await businessStorageKeys());
+    await deleteStoredObjects(previousKeys.filter((key) => !retainedKeys.has(key)), req.id);
     res.json({ data: await data.bootstrap(prisma) });
   }));
 
-  app.post("/api/admin/reset", requireRole("admin"), asyncHandler(async (_req, res) => {
-    res.json({ data: await data.resetData(prisma) });
+  app.post("/api/admin/reset", requireRole("admin"), heavyLimitGuard, asyncHandler(async (req, res) => {
+    const previousKeys = await businessStorageKeys();
+    const reset = await data.resetData(prisma);
+    await deleteStoredObjects(previousKeys, req.id);
+    res.json({ data: reset });
   }));
 
   app.use("/medewerkers", hrEnabled, requireRole("admin"), (req, res, next) => {
@@ -898,14 +1097,24 @@ function createApp(config = loadConfig()) {
   });
 
   app.use((error, _req, res, _next) => {
+    if (error && error.type === "entity.too.large") return res.status(413).json({ error: "De aanvraag is te groot." });
     const uploadTooLarge = error && error.code === "LIMIT_FILE_SIZE";
     const status = uploadTooLarge ? 413 : (error.status || 500);
-    const message = uploadTooLarge ? "PDF is groter dan 8 MB." : (status >= 500 ? "Er ging iets mis op de server." : error.message);
-    if (status >= 500) console.error(error);
-    res.status(status).json({ error: message });
+    const message = uploadTooLarge ? "Bestand is groter dan 8 MB." : (status >= 500 ? "Er ging iets mis op de server." : error.message);
+    // Alleen stack/melding loggen: Prisma-errors kunnen queryparameters
+    // met persoonsgegevens bevatten.
+    if (status >= 500) logger.error({ requestId: _req.id, userId: _req.session && _req.session.user ? _req.session.user.id : null, route: _req.path, statusCode: status, errorCategory: error && (error.code || error.name) || "Error" }, "request.failed");
+    res.status(status).json({
+      error: message,
+      code: status >= 500 ? "INTERNAL_ERROR" : (error.code || errorCodeForStatus(status)),
+      ...(status < 500 && Array.isArray(error.details) ? { details: error.details } : {})
+    });
   });
 
   app.locals.pool = pool;
+  app.locals.objectStorage = objectStorage;
+  app.locals.coordination = coordination;
+  app.locals.logger = logger;
   return app;
 }
 
@@ -917,17 +1126,40 @@ async function main() {
   const config = loadConfig();
   const app = createApp(config);
   await users.ensureBootstrapAdmin(prisma, config);
-  await data.bootstrap(prisma);
+  await data.ensureDefaults(prisma);
   await workforce.ensureDefaults(prisma);
   await projects.ensureProjectsForExistingInstallations(prisma);
-  app.listen(config.port, () => {
-    console.log(`Climature Bedrijfsportaal draait op http://localhost:${config.port}`);
+  const server = app.listen(config.port, () => {
+    app.locals.logger.info({ port: config.port }, "server.started");
   });
+  let shuttingDown = false;
+  const shutdown = async (signal) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    app.locals.logger.info({ signal }, "server.shutdown_started");
+    const forced = setTimeout(() => {
+      app.locals.logger.error({ signal }, "server.shutdown_forced");
+      if (typeof server.closeAllConnections === "function") server.closeAllConnections();
+    }, 25_000);
+    forced.unref();
+    await new Promise((resolve) => server.close(resolve));
+    await Promise.allSettled([
+      app.locals.coordination.close(),
+      app.locals.objectStorage.close(),
+      app.locals.pool.end(),
+      prisma.$disconnect()
+    ]);
+    clearTimeout(forced);
+    app.locals.logger.info({ signal }, "server.shutdown_complete");
+  };
+  process.once("SIGTERM", () => { shutdown("SIGTERM").catch(() => { process.exitCode = 1; }); });
+  process.once("SIGINT", () => { shutdown("SIGINT").catch(() => { process.exitCode = 1; }); });
+  return { app, server, shutdown };
 }
 
 if (require.main === module) {
   main().catch(async (error) => {
-    console.error(error.message || error);
+    process.stderr.write(`${error.message || error}\n`);
     await prisma.$disconnect().catch(() => {});
     process.exit(1);
   });

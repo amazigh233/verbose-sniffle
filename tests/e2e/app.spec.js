@@ -59,6 +59,151 @@ test("login page loads", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Inloggen" })).toBeVisible();
 });
 
+test("advice v2 keeps draft state and renders after revisiting the advice route", async ({ page }) => {
+  const pageErrors = [];
+  page.on("pageerror", (error) => pageErrors.push(error));
+  await page.route("**/api/auth/session", (route) => route.fulfill({ json: { authenticated: true, user: { id: "a1", username: "admin", role: "admin" }, csrfToken: "test-token", features: { hrPortalEnabled: true } } }));
+  await page.route("**/api/bootstrap", (route) => route.fulfill({ json: { data: {
+    customers: [], customerNotes: [], customerDocuments: [], products: [], quotes: [], invoices: [], installations: [], advices: [], salesOpportunities: [], salesAppointments: [], settings: { companyName: "Climature" }, counters: {}
+  } } }));
+  await page.goto("/#advice-v2");
+  await page.locator('[data-advice-v2-step="1"] [data-action="advice-v2-next"]').click();
+  await expect(page.locator('[data-advice-v2-step="2"]')).toBeVisible();
+  await page.evaluate(() => { window.location.hash = "#portals"; });
+  await expect(page.getByRole("heading", { name: "Waar wilt u werken?" })).toBeVisible();
+  await page.evaluate(() => { window.location.hash = "#advice-v2"; });
+  await expect(page.locator('[data-advice-v2-step="2"]')).toBeVisible();
+  await page.locator('[data-advice-v2-step="2"] [data-action="advice-v2-next"]').dispatchEvent('click');
+  await page.locator('[data-advice-v2-step="3"] [data-action="advice-v2-calculate"]').dispatchEvent('click');
+  await expect(page.getByRole("heading", { name: /Ons advies:/ })).toBeVisible();
+  expect(pageErrors).toEqual([]);
+});
+
+test("advice v2 creates a component-aware combination quote with VAT refund and ISDE", async ({ page }) => {
+  let quotePayload;
+  const pageErrors = [];
+  const apiRequests = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("request", (request) => { if (request.url().includes("/api/")) apiRequests.push(request.method() + " " + request.url()); });
+  const assumptions = {
+    energy: { gasPrice: 1.45, electricityPrice: 0.30 },
+    battery: { feedInCost: 0.15, epexMargin: 0.22, imbalancePerKwh: 250 },
+    warmtepompProducts: {
+      hybride: [{ name: "Hybride 8 kW", kw: 8, priceIncl: 12000, subsidy: 3025 }],
+      allelectric: [{ name: "All-electric 10 kW", kw: 10, priceIncl: 18000, subsidy: 3500 }]
+    },
+    batteryProducts: {
+      "1fase": [{ name: "Batterij 10 kWh", kwh: 10, priceExVat: 9000 }],
+      "3fase": [{ name: "Batterij 15 kWh", kwh: 15, priceExVat: 12000 }]
+    }
+  };
+  await page.route("**/api/auth/session", (route) => route.fulfill({ json: { authenticated: true, user: { id: "a1", username: "admin", role: "admin" }, csrfToken: "test-token", features: { hrPortalEnabled: true } } }));
+  await page.route("**/api/bootstrap", (route) => route.fulfill({ json: { data: {
+    customers: [{ id: "c1", firstName: "Test", lastName: "Klant", address: "Dreef 1", postalCode: "1234 AB", city: "Utrecht" }],
+    customerNotes: [], customerDocuments: [], products: [], quotes: [], invoices: [], installations: [], advices: [], salesOpportunities: [], salesAppointments: [], settings: { companyName: "Climature", adviceAssumptions: assumptions }, counters: {}
+  } } }));
+  await page.route("**/api/collections/advices", async (route) => {
+    const body = route.request().postDataJSON();
+    await route.fulfill({ json: { item: { ...body, id: body.id || "a1" } } });
+  });
+  await page.route("**/api/counters/quote/next", (route) => route.fulfill({ json: { value: "CL-OFF-2026-0099" } }));
+  await page.route("**/api/collections/quotes", async (route) => {
+    quotePayload = route.request().postDataJSON();
+    await route.fulfill({ json: { item: { ...quotePayload, id: "q1" } } });
+  });
+
+  await page.goto("/#advice-v2:c1");
+  await page.locator('select[name="energyLabel"]').selectOption("A");
+  await page.locator('select[name="energyLabelQuality"]').selectOption("bekend");
+  for (const value of ["dak", "gevel", "vloer", "glas"]) await page.locator(`input[name="insulation"][value="${value}"]`).check({ force: true });
+  await page.locator('select[name="insulationQuality"]').selectOption("bekend");
+  await page.locator('[data-advice-v2-step="1"] [data-action="advice-v2-next"]').click();
+  await page.locator('select[name="gasQuality"]').selectOption("bekend");
+  await page.locator('select[name="emitters"]').selectOption("vloer");
+  await page.locator('input[name="pvCount"]').fill("12");
+  await expect(page.locator('[data-advice-v2-step="2"] :invalid')).toHaveCount(0);
+  await page.locator('[data-advice-v2-step="2"] [data-action="advice-v2-next"]').dispatchEvent('click');
+  await expect(page.locator('[data-advice-v2-root]')).toHaveAttribute('data-current-step', '3');
+  await page.getByRole("button", { name: "Bereken scherp advies →" }).click();
+  await expect(page.locator('[data-advice-v2-product]:checked')).toHaveCount(2);
+  await page.getByRole("button", { name: "Maak conceptofferte" }).click();
+  await page.waitForTimeout(200);
+  expect(pageErrors).toEqual([]);
+  expect(apiRequests.some((url) => url.includes("/api/collections/advices"))).toBe(true);
+  await expect(page.locator("#toast")).toContainText("Conceptofferte");
+  await expect.poll(() => quotePayload).toBeTruthy();
+  expect(quotePayload.templateType).toBe("combinatie");
+  expect(quotePayload.lines.map((line) => line.componentKey)).toEqual(["warmtepomp", "thuisbatterij"]);
+  expect(quotePayload.lines.find((line) => line.componentKey === "thuisbatterij").vatRefundEligible).toBe(true);
+  expect(quotePayload.benefits.map((benefit) => benefit.type)).toEqual(["btw_refund", "isde"]);
+  expect(quotePayload.documentConfig.version).toBe(3);
+  expect(quotePayload.documentConfig.components).toHaveLength(2);
+});
+
+test("quote builder v3 renders stable pages and updates the canonical preview", async ({ page }) => {
+  await page.route("**/api/auth/session", (route) => route.fulfill({ json: { authenticated: true, user: { id: "a1", username: "admin", role: "admin" }, csrfToken: "test-token", features: { hrPortalEnabled: true } } }));
+  await page.route("**/api/bootstrap", (route) => route.fulfill({ json: { data: {
+    customers: [{ id: "c1", firstName: "Test", lastName: "Klant", address: "Dreef 1", postalCode: "1234 AB", city: "Utrecht" }],
+    customerNotes: [], customerDocuments: [], products: [], quotes: [], invoices: [], installations: [], advices: [], salesOpportunities: [], salesAppointments: [], settings: { companyName: "Climature" }, counters: {}
+  } } }));
+  await page.goto("/#quote-new?customerId=c1");
+  await expect(page.locator("[data-quote-page]")).toHaveCount(7);
+  for (const name of ["Thuisbatterij", "Warmtepomp", "CV-ketel", "Airco"]) {
+    await page.getByRole("button", { name: new RegExp(name) }).click();
+    await expect(page.locator("[data-quote-preview] h1").first()).not.toBeEmpty();
+  }
+  await page.locator('input[name="documentTitle"]').fill("Exact hetzelfde voorstel");
+  await expect(page.locator("[data-quote-preview] h1").first()).toHaveText("Exact hetzelfde voorstel");
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "PDF voorbeeld" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^Climature-offerte-.*\.pdf$/);
+  expect(fs.statSync(await download.path()).size).toBeGreaterThan(100000);
+  await page.locator('[data-page-id="intro"] input[type="checkbox"]').uncheck();
+  await expect(page.locator("[data-quote-page]")).toHaveCount(6);
+  await page.locator('textarea[name="includedText"]').fill(Array.from({ length: 11 }, (_, index) => `Leveringspunt ${index + 1}`).join("\n"));
+  await expect(page.locator("[data-quote-page]")).toHaveCount(7);
+  await expect(page.locator('[data-page-id="scope-2"]')).toContainText("Leveringspunt 11");
+  await expect(page.locator("[data-preview-warning]")).toBeEmpty();
+  await page.locator('textarea[name="installationText"]').fill("x".repeat(701));
+  await expect(page.locator("[data-preview-warning]")).toContainText("installatietekst");
+});
+
+test("quote builder v3 combines product blocks, VAT refund and ISDE without changing the payable amount", async ({ page }) => {
+  await page.route("**/api/auth/session", (route) => route.fulfill({ json: { authenticated: true, user: { id: "a1", username: "admin", role: "admin" }, csrfToken: "test-token", features: { hrPortalEnabled: true } } }));
+  await page.route("**/api/bootstrap", (route) => route.fulfill({ json: { data: {
+    customers: [{ id: "c1", firstName: "Test", lastName: "Klant", address: "Dreef 1", postalCode: "1234 AB", city: "Utrecht" }],
+    customerNotes: [], customerDocuments: [], products: [], quotes: [], invoices: [], installations: [], advices: [], salesOpportunities: [], salesAppointments: [], settings: { companyName: "Climature" }, counters: {}
+  } } }));
+  await page.goto("/#quote-new?customerId=c1");
+  await page.locator('[data-template="combinatie"]').click();
+  await expect(page.locator("[data-component]")).toHaveCount(2);
+  await expect(page.locator("[data-benefit-row]")).toHaveCount(2);
+  await expect(page.locator("[data-quote-page]")).toHaveCount(9);
+
+  const battery = page.locator(".quote-line").first();
+  await battery.locator('[data-line="description"]').fill("Thuisbatterij inclusief installatie");
+  await battery.locator('[data-line="componentKey"]').selectOption("thuisbatterij");
+  await battery.locator('[data-line="priceExVat"]').fill("10000");
+  await battery.locator('[data-line="vatRefundEligible"]').check();
+
+  const heatPump = page.locator(".quote-line").nth(1);
+  await heatPump.locator('[data-line="description"]').fill("Warmtepomp inclusief installatie");
+  await heatPump.locator('[data-line="componentKey"]').selectOption("warmtepomp");
+  await heatPump.locator('[data-line="priceExVat"]').fill("8000");
+  await page.locator('[data-benefit-row]').nth(1).locator('[data-benefit="amount"]').fill("3025");
+
+  await expect(page.locator('[data-benefit-row]').first().locator('[data-benefit="amount"]')).toHaveValue("2100.00");
+  await expect(page.locator('[data-summary="quote"]')).toContainText("€ 21.780,00");
+  await expect(page.locator('[data-summary="quote"]')).toContainText("€ 5.125,00");
+  await expect(page.locator('[data-summary="quote"]')).toContainText("€ 16.655,00");
+  await expect(page.locator('[data-quote-preview] [data-page-id="investment"]')).toContainText("Mogelijke btw-teruggave");
+  await expect(page.locator('[data-quote-preview] [data-page-id="investment"]')).toContainText("Verwachte ISDE-subsidie");
+  await expect(page.locator('[data-quote-preview] [data-page-id="acceptance"]')).toContainText("€ 21.780,00");
+  await expect(page.locator('[data-quote-preview] [data-page-id="acceptance"]')).not.toContainText("€ 16.655,00");
+  await expect(page.locator("[data-preview-warning]")).toContainText("nog niet als gecontroleerd");
+});
+
 test("account form preserves the selected role and confirms the stored account", async ({ page }) => {
   const users = [{ id: "u1", username: "climature", email: "", role: "admin", active: true, employeeId: null }];
   let submitted;
@@ -585,4 +730,73 @@ test("sales role only sees and can enter the sales portal", async ({ page }) => 
   await page.goto("/#finance-portal");
   await expect(page).toHaveURL(/#sales-portal$/);
   await expect(page.getByRole("heading", { name: "Van lead naar opdracht" })).toBeVisible();
+});
+
+test("advice tool 2.0 renders below the legacy tool and completes a combined scan", async ({ page }) => {
+  let savedAdvice;
+  let savedQuote;
+  const customer = { id: "c1", firstName: "Slimme", lastName: "Klant", companyName: "", address: "Groeneweg 12", postalCode: "1234 AB", city: "Utrecht" };
+  const settings = {
+    companyName: "Climature",
+    adviceAssumptions: {
+      energy: { gasPrice: 1.45, electricityPrice: 0.30 },
+      battery: { feedInCost: 0.15, epexMargin: 0.22, imbalancePerKwh: 250 },
+      warmtepompProducts: {
+        allelectric: [{ name: "Test All-electric 8", kw: 8, priceIncl: 13000, subsidy: 3500 }, { name: "Test All-electric 12", kw: 12, priceIncl: 15000, subsidy: 4500 }],
+        hybride: [{ name: "Test Hybride 8", kw: 8, priceIncl: 11000, subsidy: 3000 }]
+      },
+      batteryProducts: { "1fase": [{ name: "Test Batterij 10", kwh: 10, priceExVat: 10000 }], "3fase": [{ name: "Test Batterij 15", kwh: 15, priceExVat: 12500 }] }
+    }
+  };
+  await page.route("**/api/auth/session", (route) => route.fulfill({ json: { authenticated: true, user: { id: "a1", username: "admin", role: "admin" }, csrfToken: "test-token", features: {} } }));
+  await page.route("**/api/bootstrap", (route) => route.fulfill({ json: { data: { customers: [customer], customerNotes: [], customerDocuments: [], products: [], quotes: [], invoices: [], installations: [], advices: [], salesOpportunities: [], salesAppointments: [], settings, counters: {} } } }));
+  await page.route("**/api/collections/advices", (route) => {
+    savedAdvice = route.request().postDataJSON();
+    return route.fulfill({ json: { item: { ...savedAdvice, id: savedAdvice.id || "a-v2", createdAt: new Date().toISOString() } } });
+  });
+  await page.route("**/api/counters/quote/next", (route) => route.fulfill({ json: { value: "CL-OFF-2026-0099" } }));
+  await page.route("**/api/collections/quotes", (route) => {
+    savedQuote = route.request().postDataJSON();
+    return route.fulfill({ json: { item: { ...savedQuote, id: "q-v2", createdAt: new Date().toISOString() } } });
+  });
+
+  await page.goto("/#advice");
+  await expect(page.locator("#advice-tool-frame")).toHaveCount(1);
+  await expect(page.locator("[data-advice-v2-root]")).toHaveCount(1);
+  await expect(page.getByRole("link", { name: /Advies Tool 2.0/ })).toBeVisible();
+
+  await page.goto("/#advice-v2:c1");
+  await expect(page.locator("#app").getByRole("heading", { name: "Advies Tool 2.0" })).toBeVisible();
+  await expect(page.locator('input[name="address"]')).toHaveValue("Groeneweg 12");
+  await page.locator('select[name="energyLabel"]').selectOption("A");
+  for (const value of ["dak", "gevel", "vloer", "glas"]) await page.locator(`input[name="insulation"][value="${value}"]`).check({ force: true });
+  await expect(page.locator('[data-advice-v2-step="1"] :invalid')).toHaveCount(0);
+  await page.locator('[data-advice-v2-step="1"] [data-action="advice-v2-next"]').dispatchEvent('click');
+  await expect(page.locator('#toast')).toHaveText('');
+  await expect(page.locator('[data-advice-v2-root]')).toHaveAttribute('data-current-step', '2');
+  await expect(page.locator('[data-advice-v2-step="2"]')).toBeVisible();
+  await page.locator('select[name="emitters"]').selectOption("vloer");
+  await page.locator('input[name="pvCount"]').fill("14");
+  await page.locator('[data-advice-v2-step="2"] [data-action="advice-v2-next"]').dispatchEvent('click');
+  await page.locator('select[name="outdoorUnit"]').selectOption("ja");
+  await page.locator('select[name="connection"]').selectOption("3fase");
+  await page.locator('select[name="contract"]').selectOption("dynamic");
+  await page.locator('select[name="ems"]').selectOption("ja");
+  await page.locator('[data-advice-v2-step="3"] [data-action="advice-v2-calculate"]').dispatchEvent('click');
+
+  await expect(page.getByRole("heading", { name: /Ons advies:/ })).toBeVisible();
+  await expect(page.getByText("All-electric warmtepomp", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Van advies naar definitieve offerte" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Opslaan bij klant" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Maak conceptofferte" })).toBeVisible();
+  await page.getByRole("button", { name: "Opslaan bij klant" }).click();
+  await expect(page.locator(".toast")).toContainText("Advies 2.0 opgeslagen");
+  expect(savedAdvice.customerId).toBe("c1");
+  expect(savedAdvice.payload.version).toBe(3);
+  expect(savedAdvice.payload.actions.length).toBeGreaterThan(0);
+
+  await page.getByRole("button", { name: "Maak conceptofferte" }).click();
+  await expect.poll(() => savedQuote && savedQuote.lines.length).toBe(2);
+  expect(savedQuote.customerId).toBe("c1");
+  expect(savedQuote.sourceAdviceId).toBe("a-v2");
 });

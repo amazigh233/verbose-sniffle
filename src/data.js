@@ -1,7 +1,11 @@
 "use strict";
 
+const crypto = require("crypto");
 const { DEFAULT_PRODUCTS, DEFAULT_SETTINGS } = require("./defaults");
 const { normalizeAssumptions, refreshAdviceAssumptions: refreshAssumptionsFromSources } = require("./advice-assumptions");
+const bootstrapCache = require("./bootstrap-cache");
+const { multiplyMoney, parseLocalizedNumber: parseNumber, percentageMoney, roundMoney, sumMoney } = require("./numbers");
+const { pageResponse, parsePagination, validationError } = require("./shared/pagination");
 
 const COLLECTIONS = ["customers", "customerNotes", "customerDocuments", "products", "quotes", "invoices", "installations", "advices", "salesOpportunities", "salesAppointments"];
 const SALES_STAGES = ["lead", "contact", "advies", "offerte_maken", "offerte_verstuurd", "gewonnen", "verloren"];
@@ -12,20 +16,26 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function parseNumber(value) {
-  const parsed = parseFloat(String(value == null ? "" : value).replace(/\./g, "").replace(",", "."));
-  return Number.isFinite(parsed) ? parsed : 0;
+function addDays(dateValue, days) {
+  const date = new Date(`${dateValue}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + Number(days || 0));
+  return date.toISOString().slice(0, 10);
 }
 
 function calculateTotals(lines) {
   const normalized = (lines || []).map((line) => {
-    const qty = parseNumber(line.qty);
-    const priceExVat = parseNumber(line.priceExVat);
+    const lineKind = line.lineKind === "discount" || parseNumber(line.priceExVat) < 0 ? "discount" : "item";
+    const qty = Math.abs(parseNumber(line.qty));
+    const rawPrice = parseNumber(line.priceExVat);
+    const priceExVat = lineKind === "discount" ? -Math.abs(rawPrice) : Math.max(0, rawPrice);
     const vatRate = parseNumber(line.vatRate);
-    const subtotal = qty * priceExVat;
-    const vat = subtotal * (vatRate / 100);
+    const subtotal = multiplyMoney(qty, priceExVat);
+    const vat = percentageMoney(subtotal, vatRate);
     return {
       productId: line.productId || "",
+      componentKey: String(line.componentKey || "general"),
+      lineKind,
+      vatRefundEligible: line.vatRefundEligible === true || line.vatRefundEligible === "true",
       description: String(line.description || "").trim(),
       qty,
       unit: String(line.unit || "stuk").trim(),
@@ -33,14 +43,14 @@ function calculateTotals(lines) {
       vatRate,
       subtotal,
       vat,
-      total: subtotal + vat
+      total: roundMoney(subtotal + vat)
     };
   }).filter((line) => line.description || line.qty || line.priceExVat);
   return {
     lines: normalized,
-    subtotal: normalized.reduce((sum, line) => sum + line.subtotal, 0),
-    vat: normalized.reduce((sum, line) => sum + line.vat, 0),
-    total: normalized.reduce((sum, line) => sum + line.total, 0)
+    subtotal: sumMoney(normalized.map((line) => line.subtotal)),
+    vat: sumMoney(normalized.map((line) => line.vat)),
+    total: sumMoney(normalized.map((line) => line.total))
   };
 }
 
@@ -81,6 +91,9 @@ function serializeQuote(quote) {
     updatedAt: iso(quote.updatedAt),
     lines: (quote.lines || []).sort((a, b) => a.position - b.position).map((line) => ({
       productId: line.productId || "",
+      componentKey: line.componentKey || "general",
+      lineKind: line.lineKind || "item",
+      vatRefundEligible: Boolean(line.vatRefundEligible),
       description: line.description,
       qty: line.qty,
       unit: line.unit,
@@ -91,6 +104,40 @@ function serializeQuote(quote) {
       total: line.total
     }))
   };
+}
+
+function legacyBenefit(item) {
+  const type = String(item.benefitType || "geen");
+  const amount = Math.max(0, parseNumber(item.benefitAmount));
+  if (type === "geen" || !amount) return [];
+  return [{
+    id: "legacy-benefit",
+    type: type === "btw" ? "btw_refund" : type === "subsidie" ? "isde" : "other",
+    label: String(item.benefitLabel || "Verwacht voordeel"),
+    amount,
+    componentKey: type === "btw" ? "thuisbatterij" : type === "subsidie" ? "warmtepomp" : "general",
+    calculationMode: "manual",
+    reviewed: false
+  }];
+}
+
+function normalizeBenefits(item, lines) {
+  const source = Array.isArray(item.benefits) ? item.benefits : legacyBenefit(item);
+  const allowed = ["btw_refund", "isde", "other"];
+  return source.map((benefit, index) => {
+    const type = allowed.includes(benefit && benefit.type) ? benefit.type : "other";
+    const calculationMode = benefit && benefit.calculationMode === "eligible_vat" ? "eligible_vat" : benefit && benefit.calculationMode === "advice" ? "advice" : "manual";
+    const automaticVat = sumMoney((lines || []).filter((line) => line.vatRefundEligible).map((line) => line.vat));
+    return {
+      id: String(benefit && benefit.id || `benefit-${index + 1}`),
+      type,
+      label: String(benefit && benefit.label || (type === "btw_refund" ? "Mogelijke btw-teruggave" : type === "isde" ? "Verwachte ISDE-subsidie" : "Ander verwacht voordeel")),
+      amount: calculationMode === "eligible_vat" ? Math.max(0, automaticVat) : Math.max(0, parseNumber(benefit && benefit.amount)),
+      componentKey: String(benefit && benefit.componentKey || (type === "btw_refund" ? "thuisbatterij" : type === "isde" ? "warmtepomp" : "general")),
+      calculationMode,
+      reviewed: Boolean(benefit && (benefit.reviewed === true || benefit.reviewed === "true"))
+    };
+  });
 }
 
 function serializeInvoice(invoice) {
@@ -124,6 +171,8 @@ function serializeSalesOpportunity(opportunity) {
   };
 }
 
+let defaultsEnsured = false;
+
 async function ensureDefaults(prisma) {
   await prisma.setting.upsert({
     where: { key: "settings" },
@@ -135,6 +184,12 @@ async function ensureDefaults(prisma) {
   if (!productCount) {
     await prisma.product.createMany({ data: DEFAULT_PRODUCTS, skipDuplicates: true });
   }
+  defaultsEnsured = true;
+}
+
+async function ensureDefaultsOnce(prisma) {
+  if (defaultsEnsured && process.env.NODE_ENV !== "test") return;
+  await ensureDefaults(prisma);
 }
 
 async function getSettings(prisma) {
@@ -155,6 +210,7 @@ async function saveSettings(prisma, data) {
     update: { value },
     create: { key: "settings", value }
   });
+  bootstrapCache.invalidate();
   return value;
 }
 
@@ -183,6 +239,7 @@ async function nextNumber(prisma, type) {
     update: { value: { increment: 1 } },
     create: { key, value: 1 }
   });
+  bootstrapCache.invalidate();
   return `${numberPrefix(type)}${year}-${String(counter.value).padStart(4, "0")}`;
 }
 
@@ -194,7 +251,7 @@ async function peekNumber(prisma, type) {
 }
 
 async function refreshOverdueInvoices(prisma) {
-  await prisma.invoice.updateMany({
+  const result = await prisma.invoice.updateMany({
     where: {
       status: "verzonden",
       dueDate: { lt: today() }
@@ -204,41 +261,127 @@ async function refreshOverdueInvoices(prisma) {
       statusUpdatedAt: new Date()
     }
   });
+  if (result.count) bootstrapCache.invalidate();
+  return result;
 }
 
-async function listCollection(prisma, collection) {
-  if (collection === "customers") return prisma.customer.findMany({ orderBy: { createdAt: "desc" } });
-  if (collection === "customerNotes") return prisma.customerNote.findMany({ orderBy: { createdAt: "desc" } });
-  if (collection === "customerDocuments") return prisma.customerDocument.findMany({ orderBy: { createdAt: "desc" } });
-  if (collection === "products") return prisma.product.findMany({ orderBy: [{ category: "asc" }, { brand: "asc" }, { name: "asc" }] });
+const OVERDUE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+let lastOverdueRefreshAt = 0;
+let lastOverdueRefreshDate = "";
+
+async function maybeRefreshOverdueInvoices(prisma) {
+  const now = Date.now();
+  const date = today();
+  const fresh = lastOverdueRefreshAt && now - lastOverdueRefreshAt < OVERDUE_REFRESH_INTERVAL_MS && lastOverdueRefreshDate === date;
+  if (fresh && process.env.NODE_ENV !== "test") return;
+  await refreshOverdueInvoices(prisma);
+  lastOverdueRefreshAt = now;
+  lastOverdueRefreshDate = date;
+}
+
+async function listCollection(prisma, collection, where) {
+  if (collection === "customers") return prisma.customer.findMany({ where, orderBy: { createdAt: "desc" } });
+  if (collection === "customerNotes") return prisma.customerNote.findMany({ where, orderBy: { createdAt: "desc" } });
+  if (collection === "customerDocuments") return prisma.customerDocument.findMany({ where, orderBy: { createdAt: "desc" } });
+  if (collection === "products") return prisma.product.findMany({ where, orderBy: [{ category: "asc" }, { brand: "asc" }, { name: "asc" }] });
   if (collection === "quotes") {
-    const rows = await prisma.quote.findMany({ include: { lines: true }, orderBy: { createdAt: "desc" } });
+    const rows = await prisma.quote.findMany({ where, include: { lines: true }, orderBy: { createdAt: "desc" } });
     return rows.map(serializeQuote);
   }
   if (collection === "invoices") {
-    const rows = await prisma.invoice.findMany({ include: { lines: true }, orderBy: { createdAt: "desc" } });
+    const rows = await prisma.invoice.findMany({ where, include: { lines: true }, orderBy: { createdAt: "desc" } });
     return rows.map(serializeInvoice);
   }
-  if (collection === "installations") return prisma.installation.findMany({ orderBy: [{ plannedDate: "asc" }, { startTime: "asc" }] });
-  if (collection === "advices") return prisma.advice.findMany({ orderBy: { createdAt: "desc" } });
+  if (collection === "installations") return prisma.installation.findMany({ where, orderBy: [{ plannedDate: "asc" }, { startTime: "asc" }] });
+  if (collection === "advices") return prisma.advice.findMany({ where, orderBy: { createdAt: "desc" } });
   if (collection === "salesOpportunities") {
-    const rows = await prisma.salesOpportunity.findMany({ orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }] });
+    const rows = await prisma.salesOpportunity.findMany({ where, orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }] });
     return rows.map(serializeSalesOpportunity);
   }
-  if (collection === "salesAppointments") return prisma.salesAppointment.findMany({ orderBy: [{ date: "asc" }, { startTime: "asc" }] });
+  if (collection === "salesAppointments") return prisma.salesAppointment.findMany({ where, orderBy: [{ date: "asc" }, { startTime: "asc" }] });
   throw Object.assign(new Error("Onbekende collectie."), { status: 404 });
 }
 
-async function bootstrap(prisma) {
-  await ensureDefaults(prisma);
-  await refreshOverdueInvoices(prisma);
-  const data = {};
-  for (const collection of COLLECTIONS) {
-    data[collection] = await listCollection(prisma, collection);
+const PAGE_CONFIG = {
+  customers: { model: "customer", search: ["firstName", "lastName", "companyName", "email", "postalCode", "city"], sorts: ["createdAt", "updatedAt", "lastName", "companyName", "city"], defaultSort: "createdAt", defaultOrder: "desc", filters: ["city", "postalCode"] },
+  customerNotes: { model: "customerNote", search: ["body", "type"], sorts: ["createdAt", "updatedAt", "date", "type"], defaultSort: "createdAt", defaultOrder: "desc", filters: ["customerId", "type"] },
+  customerDocuments: { model: "customerDocument", search: ["fileName"], sorts: ["createdAt", "updatedAt", "fileName", "size"], defaultSort: "createdAt", defaultOrder: "desc", filters: ["customerId", "mimeType", "scanStatus"], select: { id: true, customerId: true, fileName: true, mimeType: true, size: true, scanStatus: true, createdAt: true, updatedAt: true } },
+  products: { model: "product", search: ["category", "brand", "name", "specs"], sorts: ["createdAt", "updatedAt", "category", "brand", "name", "priceExVat"], defaultSort: "name", defaultOrder: "asc", filters: ["category", "brand"] },
+  quotes: { model: "quote", search: ["quoteNumber", "notes", "documentTitle"], sorts: ["createdAt", "updatedAt", "quoteDate", "validUntil", "quoteNumber", "status", "total"], defaultSort: "createdAt", defaultOrder: "desc", filters: ["customerId", "status"], include: { lines: true }, serialize: serializeQuote },
+  invoices: { model: "invoice", search: ["invoiceNumber", "quoteNumber", "notes"], sorts: ["createdAt", "updatedAt", "invoiceDate", "dueDate", "invoiceNumber", "status", "total"], defaultSort: "createdAt", defaultOrder: "desc", filters: ["customerId", "status"], include: { lines: true }, serialize: serializeInvoice },
+  installations: { model: "installation", search: ["installer", "notes", "quoteNumber"], sorts: ["createdAt", "updatedAt", "plannedDate", "startTime", "status", "installer"], defaultSort: "plannedDate", defaultOrder: "asc", filters: ["customerId", "employeeId", "status", "workType"] },
+  advices: { model: "advice", search: ["title", "summary", "productName", "kind"], sorts: ["createdAt", "updatedAt", "title", "kind", "investment"], defaultSort: "createdAt", defaultOrder: "desc", filters: ["customerId", "kind"] },
+  salesOpportunities: { model: "salesOpportunity", search: ["title", "contactName", "companyName", "email", "phone", "notes"], sorts: ["createdAt", "updatedAt", "title", "stage", "expectedValue", "followUpDate"], defaultSort: "updatedAt", defaultOrder: "desc", filters: ["customerId", "quoteId", "stage"] },
+  salesAppointments: { model: "salesAppointment", search: ["title", "contactName", "location", "notes"], sorts: ["createdAt", "updatedAt", "date", "startTime", "title", "status"], defaultSort: "date", defaultOrder: "asc", filters: ["customerId", "opportunityId", "status", "type"] }
+};
+
+function combineWhere(parts) {
+  const clauses = parts.filter((part) => part && Object.keys(part).length);
+  if (!clauses.length) return undefined;
+  return clauses.length === 1 ? clauses[0] : { AND: clauses };
+}
+
+async function listCollectionPage(prisma, collection, query = {}, scopeWhere) {
+  const config = PAGE_CONFIG[collection];
+  if (!config) throw Object.assign(new Error("Onbekende collectie."), { status: 404 });
+  const parsed = parsePagination(query, config.sorts, config.defaultSort);
+  const filterWhere = {};
+  for (const field of config.filters) {
+    if (query[field] === undefined || query[field] === "") continue;
+    const value = String(query[field]).trim();
+    if (value.length > 200) throw validationError(`${field} is ongeldig.`);
+    filterWhere[field] = value;
   }
-  data.settings = await getSettings(prisma);
-  data.counters = await getCounters(prisma);
+  const searchWhere = parsed.search ? { OR: config.search.map((field) => ({ [field]: { contains: parsed.search, mode: "insensitive" } })) } : undefined;
+  const where = combineWhere([scopeWhere, filterWhere, searchWhere]);
+  const order = query.sortOrder ? parsed.sortOrder : config.defaultOrder;
+  const model = prisma[config.model];
+  const [totalItems, rows] = await prisma.$transaction([
+    model.count({ where }),
+    model.findMany({
+      where,
+      include: config.include,
+      select: config.select,
+      orderBy: [{ [parsed.sortBy]: order }, { id: "asc" }],
+      skip: (parsed.page - 1) * parsed.pageSize,
+      take: parsed.pageSize
+    })
+  ]);
+  const items = config.serialize ? rows.map(config.serialize) : rows;
+  return pageResponse(items, parsed.page, parsed.pageSize, totalItems);
+}
+
+let pendingBootstrapLoad = null;
+
+async function loadBootstrap(prisma) {
+  const loadEpoch = bootstrapCache.beginLoad();
+  const [collections, settings, counters] = await Promise.all([
+    Promise.all(COLLECTIONS.map((collection) => listCollection(prisma, collection))),
+    getSettings(prisma),
+    getCounters(prisma)
+  ]);
+  const data = {};
+  COLLECTIONS.forEach((collection, index) => {
+    data[collection] = collections[index];
+  });
+  data.settings = settings;
+  data.counters = counters;
+  bootstrapCache.set(data, loadEpoch);
   return data;
+}
+
+async function bootstrap(prisma) {
+  await ensureDefaultsOnce(prisma);
+  await maybeRefreshOverdueInvoices(prisma);
+  const cached = bootstrapCache.get();
+  if (cached) return cached;
+  if (!pendingBootstrapLoad) {
+    pendingBootstrapLoad = loadBootstrap(prisma).finally(() => {
+      pendingBootstrapLoad = null;
+    });
+  }
+  const data = await pendingBootstrapLoad;
+  return { ...data };
 }
 
 function customerData(item) {
@@ -271,22 +414,23 @@ function customerNoteData(item) {
 function customerDocumentData(item) {
   const mimeType = String(item.mimeType || "application/pdf").trim();
   const fileName = String(item.fileName || "").trim();
-  const content = String(item.content || "").trim();
-  const size = parseInt(item.size, 10) || 0;
+  const storageKey = String(item.storageKey || "").trim();
   if (!item.customerId) throw Object.assign(new Error("Klant ontbreekt bij PDF-document."), { status: 400 });
   if (!fileName) throw Object.assign(new Error("Bestandsnaam ontbreekt."), { status: 400 });
-  if (mimeType !== "application/pdf" && !fileName.toLowerCase().endsWith(".pdf")) {
+  if (mimeType !== "application/pdf" || !fileName.toLowerCase().endsWith(".pdf")) {
     throw Object.assign(new Error("Alleen PDF-bestanden kunnen worden toegevoegd."), { status: 400 });
   }
-  if (!content) throw Object.assign(new Error("PDF-bestand is leeg."), { status: 400 });
-  if (size > 8 * 1024 * 1024) throw Object.assign(new Error("PDF is groter dan 8 MB."), { status: 400 });
+  if (!storageKey) throw Object.assign(new Error("Storage key ontbreekt bij documentmetadata."), { status: 400 });
   return stripUndefined({
     id: item.id || undefined,
     customerId: item.customerId,
     fileName,
     mimeType: "application/pdf",
-    size,
-    content,
+    size: Math.max(0, parseInt(item.size, 10) || 0),
+    storageKey,
+    sha256: String(item.sha256 || ""),
+    scanStatus: String(item.scanStatus || "clean"),
+    scanMessage: String(item.scanMessage || ""),
     createdAt: asDate(item.createdAt) || undefined
   });
 }
@@ -307,6 +451,8 @@ function productData(item) {
 
 function quoteData(item) {
   const totals = calculateTotals(item.lines || []);
+  const benefits = normalizeBenefits(item, totals.lines);
+  const firstBenefit = benefits[0];
   return {
     header: stripUndefined({
       id: item.id || undefined,
@@ -316,6 +462,17 @@ function quoteData(item) {
       validUntil: item.validUntil || today(),
       status: item.status || "concept",
       notes: String(item.notes || ""),
+      templateType: String(item.templateType || "maatwerk"),
+      designStyle: String(item.designStyle || "licht"),
+      documentTitle: String(item.documentTitle || "Uw energieoplossing op maat"),
+      introText: String(item.introText || ""),
+      includedText: String(item.includedText || ""),
+      advantagesText: String(item.advantagesText || ""),
+      benefitType: firstBenefit ? firstBenefit.type === "btw_refund" ? "btw" : firstBenefit.type === "isde" ? "subsidie" : "anders" : "geen",
+      benefitLabel: firstBenefit ? firstBenefit.label : "",
+      benefitAmount: firstBenefit ? firstBenefit.amount : 0,
+      benefits,
+      documentConfig: item.documentConfig && typeof item.documentConfig === "object" ? item.documentConfig : undefined,
       sourceAdviceId: String(item.sourceAdviceId || ""),
       subtotal: totals.subtotal,
       vat: totals.vat,
@@ -348,7 +505,7 @@ function invoiceData(item) {
       statusUpdatedAt: asDate(item.statusUpdatedAt) || undefined,
       createdAt: asDate(item.createdAt) || undefined
     }),
-    lines: totals.lines
+    lines: totals.lines.map(({ componentKey, lineKind, vatRefundEligible, ...line }) => line)
   };
 }
 
@@ -521,7 +678,68 @@ async function upsertInvoice(prisma, item) {
   return serializeInvoice(saved);
 }
 
-async function upsert(prisma, collection, item) {
+async function createInvoiceFromQuote(prisma, quoteId) {
+  const settings = await getSettings(prisma);
+  const result = await prisma.$transaction(async (tx) => {
+    // Serialiseer omzettingen per offerte, zodat dubbelklikken maar één factuur oplevert.
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`quote-invoice:${quoteId}`})) IS NULL AS locked`;
+    const quote = await tx.quote.findUnique({ where: { id: quoteId }, include: { lines: true } });
+    if (!quote) throw Object.assign(new Error("Offerte niet gevonden."), { status: 404 });
+    if (!["geaccepteerd", "geaccepteerd/aanbetaling"].includes(quote.status)) {
+      throw Object.assign(new Error("Alleen een geaccepteerde offerte kan worden gefactureerd."), { status: 409 });
+    }
+
+    const existing = await tx.invoice.findFirst({
+      where: { quoteNumber: quote.quoteNumber },
+      include: { lines: true },
+      orderBy: { createdAt: "asc" }
+    });
+    if (existing) return { item: serializeInvoice(existing), created: false };
+
+    const totals = calculateTotals(quote.lines);
+    const invoiceNumber = await nextNumber(tx, "invoice");
+    const invoiceDate = today();
+    const defaultNote = String(settings.defaultInvoiceNote || "");
+    const paymentInstructions = settings.companyIban
+      ? `Gelieve te betalen op ${settings.companyIban} onder vermelding van het factuurnummer.`
+      : defaultNote;
+    const invoice = await tx.invoice.create({
+      data: {
+        invoiceNumber,
+        quoteNumber: quote.quoteNumber,
+        customerId: quote.customerId,
+        invoiceDate,
+        dueDate: addDays(invoiceDate, Number(settings.paymentDays) || 14),
+        status: "concept",
+        paymentInstructions,
+        notes: quote.notes || defaultNote,
+        subtotal: totals.subtotal,
+        vat: totals.vat,
+        total: totals.total,
+        lines: {
+          create: totals.lines.map((line, position) => ({
+            position,
+            productId: line.productId || "",
+            description: line.description,
+            qty: line.qty,
+            unit: line.unit,
+            priceExVat: line.priceExVat,
+            vatRate: line.vatRate,
+            subtotal: line.subtotal,
+            vat: line.vat,
+            total: line.total
+          }))
+        }
+      },
+      include: { lines: true }
+    });
+    return { item: serializeInvoice(invoice), created: true };
+  });
+  bootstrapCache.invalidate();
+  return result;
+}
+
+async function upsertItem(prisma, collection, item) {
   if (collection === "customers") {
     const data = customerData(item);
     return data.id
@@ -581,7 +799,13 @@ async function upsert(prisma, collection, item) {
   throw Object.assign(new Error("Onbekende collectie."), { status: 404 });
 }
 
-async function remove(prisma, collection, id) {
+async function upsert(prisma, collection, item) {
+  const result = await upsertItem(prisma, collection, item);
+  bootstrapCache.invalidate();
+  return result;
+}
+
+async function removeItem(prisma, collection, id) {
   if (collection === "customers") return prisma.customer.delete({ where: { id } });
   if (collection === "customerNotes") return prisma.customerNote.delete({ where: { id } });
   if (collection === "customerDocuments") return prisma.customerDocument.delete({ where: { id } });
@@ -595,9 +819,17 @@ async function remove(prisma, collection, id) {
   throw Object.assign(new Error("Onbekende collectie."), { status: 404 });
 }
 
+async function remove(prisma, collection, id) {
+  const result = await removeItem(prisma, collection, id);
+  bootstrapCache.invalidate();
+  return result;
+}
+
 async function saveInstallationWorkOrder(prisma, id, item) {
   const data = workOrderData(item || {});
-  return prisma.installation.update({ where: { id }, data });
+  const result = await prisma.installation.update({ where: { id }, data });
+  bootstrapCache.invalidate();
+  return result;
 }
 
 async function clearBusinessData(tx) {
@@ -625,7 +857,17 @@ async function clearBusinessData(tx) {
   await tx.counter.deleteMany();
 }
 
+function withId(record) {
+  return record.id ? record : { ...record, id: crypto.randomUUID() };
+}
+
+async function createManyBatch(model, records) {
+  if (records.length) await model.createMany({ data: records });
+}
+
 async function replaceAll(prisma, payload) {
+  const quotes = (payload.quotes || []).map(quoteData).map((item) => ({ ...item, header: withId(item.header) }));
+  const invoices = (payload.invoices || []).map(invoiceData).map((item) => ({ ...item, header: withId(item.header) }));
   await prisma.$transaction(async (tx) => {
     await clearBusinessData(tx);
     const settings = payload.settings || payload.data && payload.data.settings || DEFAULT_SETTINGS;
@@ -635,35 +877,27 @@ async function replaceAll(prisma, payload) {
       update: { value: { ...DEFAULT_SETTINGS, ...settings } },
       create: { key: "settings", value: { ...DEFAULT_SETTINGS, ...settings } }
     });
-    for (const product of payload.products || []) await tx.product.create({ data: productData(product) });
-    for (const customer of payload.customers || []) await tx.customer.create({ data: customerData(customer) });
-    for (const note of payload.customerNotes || []) await tx.customerNote.create({ data: customerNoteData(note) });
-    for (const document of payload.customerDocuments || []) await tx.customerDocument.create({ data: customerDocumentData(document) });
-    for (const quote of payload.quotes || []) {
-      const data = quoteData(quote);
-      const created = await tx.quote.create({ data: data.header });
-      if (data.lines.length) await tx.quoteLine.createMany({ data: data.lines.map((line, index) => ({ ...line, quoteId: created.id, position: index })) });
-    }
-    for (const invoice of payload.invoices || []) {
-      const data = invoiceData(invoice);
-      const created = await tx.invoice.create({ data: data.header });
-      if (data.lines.length) await tx.invoiceLine.createMany({ data: data.lines.map((line, index) => ({ ...line, invoiceId: created.id, position: index })) });
-    }
-    for (const installation of payload.installations || []) await tx.installation.create({ data: installationData(installation) });
-    for (const advice of payload.advices || []) await tx.advice.create({ data: adviceData(advice) });
-    for (const opportunity of payload.salesOpportunities || []) await tx.salesOpportunity.create({ data: salesOpportunityData(opportunity) });
-    for (const appointment of payload.salesAppointments || []) await tx.salesAppointment.create({ data: salesAppointmentData(appointment) });
-    for (const equipment of payload.serviceEquipment || []) await tx.customerEquipment.create({ data: equipment });
-    for (const contract of payload.serviceContracts || []) await tx.serviceContract.create({ data: contract });
-    for (const serviceRequest of payload.serviceRequests || []) await tx.serviceRequest.create({ data: serviceRequest });
-    for (const visit of payload.maintenanceVisits || []) await tx.maintenanceVisit.create({ data: { ...visit, assignedEmployeeId: null, completedAt: asDate(visit.completedAt), signedAt: asDate(visit.signedAt), createdAt: asDate(visit.createdAt), updatedAt: asDate(visit.updatedAt) } });
-    for (const measurement of payload.maintenanceMeasurements || []) await tx.maintenanceMeasurement.create({ data: { ...measurement, createdAt: asDate(measurement.createdAt) } });
-    for (const document of payload.serviceDocuments || []) await tx.serviceDocument.create({ data: { ...document, content: Buffer.from(document.content || "", "base64"), createdAt: asDate(document.createdAt) } });
-    const counters = payload.counters || {};
-    for (const [key, value] of Object.entries(counters)) {
-      await tx.counter.create({ data: { key, value: parseInt(value, 10) || 0 } });
-    }
-  });
+    await createManyBatch(tx.product, (payload.products || []).map(productData).map(withId));
+    await createManyBatch(tx.customer, (payload.customers || []).map(customerData).map(withId));
+    await createManyBatch(tx.customerNote, (payload.customerNotes || []).map(customerNoteData).map(withId));
+    await createManyBatch(tx.customerDocument, (payload.customerDocuments || []).map(customerDocumentData).map(withId));
+    await createManyBatch(tx.quote, quotes.map((item) => item.header));
+    await createManyBatch(tx.quoteLine, quotes.flatMap((item) => item.lines.map((line, index) => ({ ...line, quoteId: item.header.id, position: index }))));
+    await createManyBatch(tx.invoice, invoices.map((item) => item.header));
+    await createManyBatch(tx.invoiceLine, invoices.flatMap((item) => item.lines.map((line, index) => ({ ...line, invoiceId: item.header.id, position: index }))));
+    await createManyBatch(tx.installation, (payload.installations || []).map(installationData).map(withId));
+    await createManyBatch(tx.advice, (payload.advices || []).map(adviceData).map(withId));
+    await createManyBatch(tx.salesOpportunity, (payload.salesOpportunities || []).map(salesOpportunityData).map(withId));
+    await createManyBatch(tx.salesAppointment, (payload.salesAppointments || []).map(salesAppointmentData).map(withId));
+    await createManyBatch(tx.customerEquipment, payload.serviceEquipment || []);
+    await createManyBatch(tx.serviceContract, payload.serviceContracts || []);
+    await createManyBatch(tx.serviceRequest, payload.serviceRequests || []);
+    await createManyBatch(tx.maintenanceVisit, (payload.maintenanceVisits || []).map((visit) => ({ ...visit, assignedEmployeeId: null, completedAt: asDate(visit.completedAt), signedAt: asDate(visit.signedAt), createdAt: asDate(visit.createdAt), updatedAt: asDate(visit.updatedAt) })));
+    await createManyBatch(tx.maintenanceMeasurement, (payload.maintenanceMeasurements || []).map((measurement) => ({ ...measurement, createdAt: asDate(measurement.createdAt) })));
+    await createManyBatch(tx.serviceDocument, (payload.serviceDocuments || []).map((document) => ({ ...document, createdAt: asDate(document.createdAt) })));
+    await createManyBatch(tx.counter, Object.entries(payload.counters || {}).map(([key, value]) => ({ key, value: parseInt(value, 10) || 0 })));
+  }, { timeout: 60_000 });
+  bootstrapCache.invalidate();
   await ensureDefaults(prisma);
   return bootstrap(prisma);
 }
@@ -686,7 +920,7 @@ async function exportData(prisma) {
     serviceRequests: serviceRequests.map(({ assignedEmployeeId: _assignedEmployeeId, ...item }) => ({ ...item, assignedEmployeeId: null })),
     maintenanceVisits: maintenanceVisits.map(({ assignedEmployeeId: _assignedEmployeeId, ...item }) => ({ ...item, assignedEmployeeId: null })),
     maintenanceMeasurements,
-    serviceDocuments: serviceDocuments.map((item) => ({ ...item, content: Buffer.from(item.content).toString("base64") }))
+    serviceDocuments
   });
   return {
     app: "climature-bedrijfsportaal",
@@ -708,6 +942,9 @@ async function resetData(prisma) {
     await clearBusinessData(tx);
     await tx.setting.deleteMany({});
   });
+  bootstrapCache.invalidate();
+  lastOverdueRefreshAt = 0;
+  lastOverdueRefreshDate = "";
   await ensureDefaults(prisma);
   return bootstrap(prisma);
 }
@@ -715,10 +952,14 @@ async function resetData(prisma) {
 module.exports = {
   COLLECTIONS,
   bootstrap,
+  createInvoiceFromQuote,
   exportData,
+  ensureDefaults,
+  getCounters,
   getSettings,
   importData,
   listCollection,
+  listCollectionPage,
   nextNumber,
   peekNumber,
   remove,

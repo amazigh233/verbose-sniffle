@@ -1,0 +1,10 @@
+ALTER TABLE "Quote"
+ADD COLUMN "templateType" TEXT NOT NULL DEFAULT 'maatwerk',
+ADD COLUMN "designStyle" TEXT NOT NULL DEFAULT 'licht',
+ADD COLUMN "documentTitle" TEXT NOT NULL DEFAULT 'Uw energieoplossing op maat',
+ADD COLUMN "introText" TEXT NOT NULL DEFAULT '',
+ADD COLUMN "includedText" TEXT NOT NULL DEFAULT '',
+ADD COLUMN "advantagesText" TEXT NOT NULL DEFAULT '',
+ADD COLUMN "benefitType" TEXT NOT NULL DEFAULT 'geen',
+ADD COLUMN "benefitLabel" TEXT NOT NULL DEFAULT '',
+ADD COLUMN "benefitAmount" DOUBLE PRECISION NOT NULL DEFAULT 0;

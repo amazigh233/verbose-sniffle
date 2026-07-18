@@ -13,13 +13,14 @@ const authenticator = {
 };
 
 const ALGORITHM = "aes-256-gcm";
+const FILE_ENVELOPE_MAGIC = Buffer.from("CLM1", "ascii");
 
 function publicError(message, status = 400) {
   return Object.assign(new Error(message), { status });
 }
 
-function encryptionKey(config) {
-  const value = String(config.hrEncryptionKey || "").trim();
+function decodeKey(value) {
+  value = String(value || "").trim();
   let key;
   if (/^[a-f0-9]{64}$/i.test(value)) key = Buffer.from(value, "hex");
   else {
@@ -29,22 +30,55 @@ function encryptionKey(config) {
   return key;
 }
 
-function encrypt(config, input) {
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv(ALGORITHM, encryptionKey(config), iv);
-  const value = Buffer.isBuffer(input) ? input : Buffer.from(String(input), "utf8");
-  const encrypted = Buffer.concat([cipher.update(value), cipher.final()]);
-  return { cipher: encrypted, iv, tag: cipher.getAuthTag(), keyVersion: config.hrKeyVersion || "v1" };
+function encryptionKeys(config) {
+  const configured = config.hrEncryptionKeys && typeof config.hrEncryptionKeys === "object" ? config.hrEncryptionKeys : {};
+  const values = { ...configured };
+  const activeVersion = String(config.hrKeyVersion || "v1");
+  if (!values[activeVersion] && config.hrEncryptionKey) values[activeVersion] = config.hrEncryptionKey;
+  return Object.fromEntries(Object.entries(values).map(([version, value]) => [String(version), decodeKey(value)]));
 }
 
-function decrypt(config, encrypted, iv, tag) {
+function encryptionKey(config, version = config.hrKeyVersion || "v1") {
+  const keys = encryptionKeys(config);
+  const key = keys[String(version)];
+  if (!key) throw publicError("Versleutelingssleutelversie is niet beschikbaar.", 503);
+  return key;
+}
+
+function encrypt(config, input) {
+  const keyVersion = String(config.hrKeyVersion || "v1");
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv(ALGORITHM, encryptionKey(config, keyVersion), iv);
+  const value = Buffer.isBuffer(input) ? input : Buffer.from(String(input), "utf8");
+  const encrypted = Buffer.concat([cipher.update(value), cipher.final()]);
+  return { cipher: encrypted, iv, tag: cipher.getAuthTag(), keyVersion };
+}
+
+function decrypt(config, encrypted, iv, tag, keyVersion = config.hrKeyVersion || "v1") {
   try {
-    const decipher = crypto.createDecipheriv(ALGORITHM, encryptionKey(config), Buffer.from(iv));
+    const decipher = crypto.createDecipheriv(ALGORITHM, encryptionKey(config, keyVersion), Buffer.from(iv));
     decipher.setAuthTag(Buffer.from(tag));
     return Buffer.concat([decipher.update(Buffer.from(encrypted)), decipher.final()]);
-  } catch (_error) {
+  } catch (error) {
+    if (error && error.status === 503) throw error;
     throw publicError("Versleutelde HR-data kon niet veilig worden geopend.", 500);
   }
+}
+
+function encryptFileEnvelope(config, input) {
+  const encrypted = encrypt(config, input);
+  return {
+    content: Buffer.concat([FILE_ENVELOPE_MAGIC, encrypted.iv, encrypted.tag, encrypted.cipher]),
+    keyVersion: encrypted.keyVersion
+  };
+}
+
+function decryptFileEnvelope(config, content, keyVersion) {
+  const value = Buffer.from(content || []);
+  if (value.length < FILE_ENVELOPE_MAGIC.length + 12 + 16 || !value.subarray(0, 4).equals(FILE_ENVELOPE_MAGIC)) {
+    throw publicError("Versleuteld HR-bestand heeft een ongeldig formaat.", 500);
+  }
+  return decrypt(config, value.subarray(32), value.subarray(4, 16), value.subarray(16, 32), keyVersion);
 }
 
 function encryptJson(config, value) {
@@ -57,7 +91,8 @@ function decryptJson(config, record, prefix) {
   const tag = record[`${prefix}Tag`];
   if (!cipher || !iv || !tag) return {};
   try {
-    return JSON.parse(decrypt(config, cipher, iv, tag).toString("utf8"));
+    const keyVersion = record[`${prefix}KeyVersion`] || record.keyVersion || config.hrKeyVersion || "v1";
+    return JSON.parse(decrypt(config, cipher, iv, tag, keyVersion).toString("utf8"));
   } catch (error) {
     if (error.status) throw error;
     throw publicError("Versleutelde HR-data heeft een ongeldig formaat.", 500);
@@ -66,12 +101,12 @@ function decryptJson(config, record, prefix) {
 
 function secretRecord(config, secret) {
   const value = encrypt(config, secret);
-  return { mfaSecretCipher: value.cipher, mfaSecretIv: value.iv, mfaSecretTag: value.tag };
+  return { mfaSecretCipher: value.cipher, mfaSecretIv: value.iv, mfaSecretTag: value.tag, mfaKeyVersion: value.keyVersion };
 }
 
 function decryptSecret(config, user) {
   if (!user.mfaSecretCipher || !user.mfaSecretIv || !user.mfaSecretTag) return "";
-  return decrypt(config, user.mfaSecretCipher, user.mfaSecretIv, user.mfaSecretTag).toString("utf8");
+  return decrypt(config, user.mfaSecretCipher, user.mfaSecretIv, user.mfaSecretTag, user.mfaKeyVersion || "v1").toString("utf8");
 }
 
 function recoveryHash(config, code) {
@@ -112,8 +147,8 @@ async function verifySecondFactor(prisma, config, user, tokenValue) {
     if (!updated.count) throw publicError("Deze authenticatorcode is al gebruikt.", 401);
     return "totp";
   }
-  const codeHash = recoveryHash(config, token);
-  const code = await prisma.userMfaRecoveryCode.findFirst({ where: { userId: user.id, codeHash, usedAt: null } });
+  const codeHashes = Object.keys(encryptionKeys(config)).map((version) => crypto.createHmac("sha256", encryptionKey(config, version)).update(token.replace(/\s|-/g, "").toUpperCase()).digest("hex"));
+  const code = await prisma.userMfaRecoveryCode.findFirst({ where: { userId: user.id, codeHash: { in: codeHashes }, usedAt: null } });
   if (!code) throw publicError("Verificatie mislukt.", 401);
   const used = await prisma.userMfaRecoveryCode.updateMany({ where: { id: code.id, usedAt: null }, data: { usedAt: new Date() } });
   if (!used.count) throw publicError("Verificatie mislukt.", 401);
@@ -177,8 +212,11 @@ function scanWithClamav(config, buffer) {
 module.exports = {
   publicError,
   encryptionKey,
+  encryptionKeys,
   encrypt,
   decrypt,
+  encryptFileEnvelope,
+  decryptFileEnvelope,
   encryptJson,
   decryptJson,
   secretRecord,

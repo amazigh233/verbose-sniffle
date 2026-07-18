@@ -2,6 +2,9 @@
 
 const crypto = require("crypto");
 const workforce = require("./hr-workforce");
+const bootstrapCache = require("./bootstrap-cache");
+const filePolicy = require("./infrastructure/object-storage/file-policy");
+const { multiplyMoney, parseLocalizedNumber, percentageMoney, roundMoney, sumMoney } = require("./numbers");
 
 const CONTRACT_STATUSES = ["active", "paused", "ended"];
 const BILLING_PERIODS = ["once", "monthly", "quarterly", "yearly"];
@@ -32,7 +35,7 @@ function time(value, name, fallback = "09:00") {
   return result;
 }
 function number(value, name, min, max, fallback = 0) {
-  const result = value === "" || value == null ? fallback : Number(value);
+  const result = value === "" || value == null ? fallback : parseLocalizedNumber(value, NaN);
   if (!Number.isFinite(result) || result < min || result > max) fail(`${name} is ongeldig.`);
   return result;
 }
@@ -71,6 +74,7 @@ async function nextNumber(prisma, type) {
   const prefixes = { contract: "CL-SVC", request: "CL-MEL", visit: "CL-OND" };
   const year = new Date().getFullYear();
   const counter = await prisma.counter.upsert({ where: { key: `service-${type}-${year}` }, update: { value: { increment: 1 } }, create: { key: `service-${type}-${year}`, value: 1 } });
+  bootstrapCache.invalidate();
   return `${prefixes[type]}-${year}-${String(counter.value).padStart(4, "0")}`;
 }
 async function customerExists(prisma, id) {
@@ -286,7 +290,11 @@ async function createInvoice(prisma, sessionUser, visitId) {
   const baseLines = contract && contract.price > 0 ? [{ description: contract.title, qty: 1, unit: "bezoek", priceExVat: contract.price, vatRate: 21 }] : [];
   const lines = baseLines.concat(materialRows.filter((item) => item.priceExVat > 0).map((item) => ({ description: item.description, qty: item.quantity, unit: item.unit, priceExVat: item.priceExVat, vatRate: 21 })));
   if (!lines.length) fail("Voeg een contractprijs of geprijsde materialen toe.", 409);
-  const calculated = lines.map((line) => ({ ...line, subtotal: line.qty * line.priceExVat, vat: line.qty * line.priceExVat * line.vatRate / 100, total: line.qty * line.priceExVat * (1 + line.vatRate / 100) }));
+  const calculated = lines.map((line) => {
+    const subtotal = multiplyMoney(line.qty, line.priceExVat);
+    const vat = percentageMoney(subtotal, line.vatRate);
+    return { ...line, subtotal, vat, total: roundMoney(subtotal + vat) };
+  });
   const invoiceNumber = await require("./data").nextNumber(prisma, "invoice");
   const invoiceDate = today();
   const settings = await require("./data").getSettings(prisma);
@@ -294,33 +302,48 @@ async function createInvoice(prisma, sessionUser, visitId) {
     await tx.$queryRaw`SELECT 1::int AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${visit.id}))) AS acquired`;
     const lockedVisit = await tx.maintenanceVisit.findUnique({ where: { id: visit.id }, select: { invoiceId: true } });
     if (lockedVisit && lockedVisit.invoiceId) return { invoice: await tx.invoice.findUnique({ where: { id: lockedVisit.invoiceId }, include: { lines: true } }), created: false };
-    const created = await tx.invoice.create({ data: { invoiceNumber, customerId: visit.customerId, invoiceDate, dueDate: (() => { const d = new Date(`${invoiceDate}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + Number(settings.paymentDays || 14)); return d.toISOString().slice(0, 10); })(), notes: `Onderhoudsbezoek ${visit.visitNumber}`, paymentInstructions: settings.defaultInvoiceNote || "", subtotal: calculated.reduce((sum, item) => sum + item.subtotal, 0), vat: calculated.reduce((sum, item) => sum + item.vat, 0), total: calculated.reduce((sum, item) => sum + item.total, 0), lines: { create: calculated.map((item, position) => ({ ...item, position, productId: "" })) } }, include: { lines: true } });
+    const created = await tx.invoice.create({ data: { invoiceNumber, customerId: visit.customerId, invoiceDate, dueDate: (() => { const d = new Date(`${invoiceDate}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + Number(settings.paymentDays || 14)); return d.toISOString().slice(0, 10); })(), notes: `Onderhoudsbezoek ${visit.visitNumber}`, paymentInstructions: settings.defaultInvoiceNote || "", subtotal: sumMoney(calculated.map((item) => item.subtotal)), vat: sumMoney(calculated.map((item) => item.vat)), total: sumMoney(calculated.map((item) => item.total)), lines: { create: calculated.map((item, position) => ({ ...item, position, productId: "" })) } }, include: { lines: true } });
     await tx.maintenanceVisit.update({ where: { id: visit.id }, data: { invoiceId: created.id } });
     return { invoice: created, created: true };
   });
-  if (result.created) await audit(prisma, sessionUser, "visit.invoice_created", "visit", visit.id, { invoiceId: result.invoice.id, invoiceNumber: result.invoice.invoiceNumber });
+  if (result.created) {
+    bootstrapCache.invalidate();
+    await audit(prisma, sessionUser, "visit.invoice_created", "visit", visit.id, { invoiceId: result.invoice.id, invoiceNumber: result.invoice.invoiceNumber });
+  }
   return serialize(result.invoice);
 }
 
-async function saveDocument(prisma, config, sessionUser, target, id, file) {
-  if (!file) fail("Kies een bestand.");
-  const allowed = ["application/pdf", "image/jpeg", "image/png"];
-  if (!allowed.includes(file.mimetype)) fail("Alleen PDF-, JPG- en PNG-bestanden zijn toegestaan.");
+function matchesMagicBytes(file) {
+  const head = file.buffer.subarray(0, 8);
+  if (file.mimetype === "application/pdf") return head.subarray(0, 5).toString("ascii") === "%PDF-";
+  if (file.mimetype === "image/jpeg") return head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
+  if (file.mimetype === "image/png") return head.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  return false;
+}
+
+async function saveDocument(prisma, config, objectStorage, sessionUser, target, id, file) {
+  const metadata = filePolicy.validateFile(file, ["pdf", "jpeg", "png"]);
   let data = {};
   if (target === "request") { await prisma.serviceRequest.findUniqueOrThrow({ where: { id } }).catch(() => fail("Servicemelding niet gevonden.", 404)); data.serviceRequestId = id; }
   else { await assertVisitAccess(prisma, sessionUser, id); data.visitId = id; }
-  const scan = await require("./hr-security").scanWithClamav(config, file.buffer);
-  if (!scan.clean) fail(scan.message || "Bestand is niet veilig bevonden.", scan.unavailable ? 503 : 422);
-  const item = await prisma.serviceDocument.create({ data: { ...data, fileName: text(file.originalname, "Bestandsnaam", 240, true), mimeType: file.mimetype, size: file.size, sha256: crypto.createHash("sha256").update(file.buffer).digest("hex"), scanStatus: "clean", scanMessage: scan.message, content: file.buffer } });
+  const scan = await filePolicy.scanFile(config, file.buffer);
+  const key = filePolicy.storageKey("service-documents");
+  await objectStorage.put(key, file.buffer, metadata);
+  let item;
+  try {
+    item = await prisma.serviceDocument.create({ data: { ...data, fileName: metadata.fileName, mimeType: metadata.mimeType, size: metadata.size, sha256: metadata.sha256, scanStatus: "clean", scanMessage: scan.message || "", storageKey: key } });
+  } catch (error) { await objectStorage.delete(key).catch(() => {}); throw error; }
   await audit(prisma, sessionUser, "document.uploaded", target, id, { documentId: item.id, fileName: item.fileName });
   return { id: item.id, fileName: item.fileName, mimeType: item.mimeType, size: item.size, scanStatus: item.scanStatus, createdAt: item.createdAt };
 }
-async function documentFile(prisma, sessionUser, id) {
+async function documentFile(prisma, objectStorage, sessionUser, id) {
   const item = await prisma.serviceDocument.findUnique({ where: { id } });
   if (!item || item.scanStatus !== "clean") fail("Document niet gevonden.", 404);
   if (item.visitId) await assertVisitAccess(prisma, sessionUser, item.visitId);
   if (item.serviceRequestId && (await actor(prisma, sessionUser)).role === "installer") fail("Geen toegang.", 403);
-  return item;
+  const content = await objectStorage.get(item.storageKey);
+  if (crypto.createHash("sha256").update(content).digest("hex") !== item.sha256) fail("Integriteitscontrole van document is mislukt.", 500);
+  return { ...item, content };
 }
 
 async function sendReminders(prisma, config, sessionUser) {

@@ -84,7 +84,7 @@
       '<input data-line="description" type="text" value="' + S.escapeHtml(l.description) + '" placeholder="Omschrijving">',
       '<input data-line="qty" type="number" min="0" step="0.01" value="' + S.escapeHtml(l.qty) + '">',
       '<input data-line="unit" type="text" value="' + S.escapeHtml(l.unit) + '">',
-      '<input data-line="priceExVat" type="number" min="0" step="0.01" value="' + S.escapeHtml(l.priceExVat) + '">',
+      '<input data-line="priceExVat" type="number" step="0.01" value="' + S.escapeHtml(l.priceExVat) + '">',
       '<select data-line="vatRate"><option value="21"' + (Number(l.vatRate) === 21 ? " selected" : "") + '>21%</option><option value="9"' + (Number(l.vatRate) === 9 ? " selected" : "") + '>9%</option><option value="0"' + (Number(l.vatRate) === 0 ? " selected" : "") + ">0%</option></select>",
       '<strong class="line-total">-</strong>',
       '<button class="small-button" type="button" data-action="invoice-remove-line">x</button>',
@@ -244,6 +244,22 @@
     });
   }
 
+  function saveFromQuote(quoteId, button) {
+    if (button) button.disabled = true;
+    return S.request("/api/quotes/" + encodeURIComponent(quoteId) + "/invoice", { method: "POST" })
+      .then(function (response) {
+        return S.refresh().then(function () {
+          C.app.toast(response.created ? "Conceptfactuur aangemaakt vanuit de offerte." : "De factuur voor deze offerte bestond al.");
+          C.app.navigate("invoice:" + response.item.id);
+          return response.item;
+        });
+      })
+      .catch(function (error) {
+        if (button) button.disabled = false;
+        C.app.toast(error.message || "Factuur aanmaken mislukt.");
+      });
+  }
+
   function removeInvoice(id) {
     if (!window.confirm("Factuur verwijderen?")) return;
     return S.remove("invoices", id).then(function () {
@@ -324,6 +340,7 @@
     lineRow: lineRow,
     applyQuote: applyQuote,
     createFromQuote: createFromQuote,
+    saveFromQuote: saveFromQuote,
     updateStatus: updateStatus,
     sendReminder: sendReminder,
     remove: removeInvoice
