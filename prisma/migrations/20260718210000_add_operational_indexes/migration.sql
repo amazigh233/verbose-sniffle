@@ -1,0 +1,18 @@
+CREATE INDEX "Customer_lastName_firstName_idx" ON "Customer"("lastName", "firstName");
+CREATE INDEX "Customer_city_idx" ON "Customer"("city");
+CREATE INDEX "Customer_createdAt_idx" ON "Customer"("createdAt");
+CREATE INDEX "Product_category_brand_name_idx" ON "Product"("category", "brand", "name");
+CREATE INDEX "Product_name_idx" ON "Product"("name");
+CREATE INDEX "Product_createdAt_idx" ON "Product"("createdAt");
+CREATE INDEX "Quote_status_quoteDate_idx" ON "Quote"("status", "quoteDate");
+CREATE INDEX "Quote_createdAt_idx" ON "Quote"("createdAt");
+CREATE INDEX "Quote_total_idx" ON "Quote"("total");
+CREATE INDEX "SalesOpportunity_stage_expectedCloseDate_idx" ON "SalesOpportunity"("stage", "expectedCloseDate");
+CREATE INDEX "SalesOpportunity_createdAt_idx" ON "SalesOpportunity"("createdAt");
+CREATE INDEX "SalesAppointment_status_date_idx" ON "SalesAppointment"("status", "date");
+CREATE INDEX "SalesAppointment_createdAt_idx" ON "SalesAppointment"("createdAt");
+CREATE INDEX "Invoice_status_dueDate_idx" ON "Invoice"("status", "dueDate");
+CREATE INDEX "Invoice_status_invoiceDate_idx" ON "Invoice"("status", "invoiceDate");
+CREATE INDEX "Invoice_createdAt_idx" ON "Invoice"("createdAt");
+CREATE INDEX "Invoice_total_idx" ON "Invoice"("total");
+CREATE INDEX "Installation_status_plannedDate_idx" ON "Installation"("status", "plannedDate");

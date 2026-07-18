@@ -1,0 +1,5 @@
+ALTER TABLE "User"
+  ADD COLUMN "mfaKeyVersion" TEXT NOT NULL DEFAULT 'v1';
+
+ALTER TABLE "Employee"
+  ADD COLUMN "privateDataKeyVersion" TEXT NOT NULL DEFAULT 'v1';
