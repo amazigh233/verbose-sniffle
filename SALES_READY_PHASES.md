@@ -32,8 +32,8 @@ Dit log hoort bij `IMPLEMENTATION_PLAN.md`. Bestaande productfunctionaliteit is 
 ## Fase 4 — validatie, schaalbaarheid en operability
 
 - Bestanden: `src/shared/validation.js`, `src/modules/*`, Redis-coördinatie, logger, config, indexmigratie, CI en operationele documentatie.
-- Opgelost: inconsistente invoergrenzen, proceslokale securitycounters, monolithische project/service-routes en ongestructureerde logging.
+- Opgelost: inconsistente invoergrenzen, proceslokale securitycounters, monolithische routes voor projecten, service, klanten, offertes, facturen en installaties, en ongestructureerde logging.
 - Beveiligingsimpact: Zod-fouten zijn consistente 4xx zonder internals; productie vereist Redis; logs redigeren geheimen en bevatten request-ID, user-ID, route, status, tijd en foutcategorie.
-- Tests: 51 integratie/unit-tests, 22 Playwrighttests waarvan echte login/bootstrap/paginering ongemockt; CI gebruikt echte PostgreSQL en Redis.
+- Tests: 52 integratie/unit-tests, 22 Playwrighttests waarvan echte login/bootstrap/paginering ongemockt; CI gebruikt echte PostgreSQL en Redis.
 - Gedragswijziging: productie start niet zonder Redis en ClamAV; `/api/health` controleert PostgreSQL plus Redis.
-- Restrisico: verdere opsplitsing van de oude CRM-datalaag naar afzonderlijke repositories is onderhoudswerk, maar de routegrenzen voor project en service zijn al modulair en nieuwe code hoort het modulepatroon te volgen.
+- Restrisico: verdere opsplitsing van de oude CRM-datalaag naar afzonderlijke repositories is onderhoudswerk, maar de routegrenzen voor projecten, service, klanten, offertes, facturen en installaties zijn modulair en nieuwe code hoort het modulepatroon te volgen.
