@@ -18,6 +18,8 @@ services:
         fromDatabase:
           name: climature-bedrijfsportaal-db
           property: connectionString
+      - key: REDIS_URL
+        sync: false
       - key: SESSION_SECRET
         generateValue: true
       - key: ADMIN_USERNAME
@@ -37,6 +39,18 @@ services:
           property: host
       - key: CLAMAV_PORT
         value: "3310"
+      - key: OBJECT_STORAGE_PROVIDER
+        value: s3
+      - key: OBJECT_STORAGE_BUCKET
+        sync: false
+      - key: OBJECT_STORAGE_REGION
+        value: eu-west-1
+      - key: OBJECT_STORAGE_ENDPOINT
+        sync: false
+      - key: OBJECT_STORAGE_ACCESS_KEY_ID
+        sync: false
+      - key: OBJECT_STORAGE_SECRET_ACCESS_KEY
+        sync: false
       - key: RESEND_API_KEY
         sync: false
       - key: SERVICE_MAIL_FROM
@@ -65,12 +79,21 @@ services:
         fromDatabase:
           name: climature-bedrijfsportaal-db
           property: connectionString
+      - key: REDIS_URL
+        sync: false
       - key: SESSION_SECRET
         generateValue: true
       - key: ADMIN_USERNAME
         value: climature
       - key: ADMIN_PASSWORD_HASH
         sync: false
+      - key: CLAMAV_HOST
+        fromService:
+          type: pserv
+          name: climature-clamav
+          property: host
+      - key: CLAMAV_PORT
+        value: "3310"
       - key: RESEND_API_KEY
         sync: false
       - key: SERVICE_MAIL_FROM
@@ -97,6 +120,10 @@ services:
         sync: false
       - key: HR_BACKUP_PREFIX
         value: postgres
+      - key: OBJECT_STORAGE_PROVIDER
+        value: s3
+      - key: OBJECT_STORAGE_BUCKET
+        sync: false
 
 databases:
   - name: climature-bedrijfsportaal-db

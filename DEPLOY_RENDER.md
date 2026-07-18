@@ -23,7 +23,9 @@ Het werknemersportaal blijft na de eerste deployment bewust uitgeschakeld.
 
 3. Vul de hash bij `ADMIN_PASSWORD_HASH` in. Render genereert `SESSION_SECRET` en de 256-bit `HR_ENCRYPTION_KEY` zelf.
 4. Vul voor serviceberichten `RESEND_API_KEY` en een bij Resend geverifieerd `SERVICE_MAIL_FROM`-adres in.
-5. Exporteer en bewaar de waarde van `HR_ENCRYPTION_KEY` direct in de bedrijfswachtwoordkluis. Zonder deze sleutel zijn versleutelde HR-gegevens niet herstelbaar.
+5. Vul `REDIS_URL` in met een private Redis-connection string die web- en croninstances delen.
+6. Configureer de private live objectbucket met `OBJECT_STORAGE_BUCKET`, eventueel `OBJECT_STORAGE_ENDPOINT`, en least-privilege object-storagecredentials. Laat expliciete credentials leeg wanneer workload identity wordt gebruikt.
+7. Exporteer en bewaar de waarde van `HR_ENCRYPTION_KEY` direct in de bedrijfswachtwoordkluis. Zonder deze sleutel zijn versleutelde HR-gegevens niet herstelbaar.
 
 ## 2. Eerste deployment en controle
 
