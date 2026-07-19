@@ -49,5 +49,6 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run test:e2e
+      - run: npm run test:a11y
       - run: npm audit --audit-level=high
-      - run: npx prisma validate
+      - run: npm exec -- prisma validate

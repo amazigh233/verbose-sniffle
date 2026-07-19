@@ -9,6 +9,12 @@
   var actionsEl = document.getElementById("topbar-actions");
   var loginErrorEl = document.getElementById("login-error");
   var toastTimer = null;
+  var renderSequence = 0;
+  var searchTimer = null;
+  var dirtyForm = null;
+  var dirtyRoute = "";
+  var hashGuard = false;
+  var menuReturnFocus = null;
 
   var routeMeta = {
     portals: ["Werkruimte", "Kies een portaal"],
@@ -28,6 +34,7 @@
     installations: ["Uitvoering", "Installaties"],
     service: ["Service", "Service & onderhoud"],
     invoices: ["Financiën", "Facturen"],
+    payments: ["Financiën", "Betalingen & kassa"],
     reports: ["Financiën", "Rapportage"],
     products: ["Beheer & tools", "Producten"],
     "quote-studio": ["Beheer & tools", "Offertebouwer"],
@@ -47,8 +54,69 @@
     }, 2400);
   }
 
+  function confirmDialog(options) {
+    options = typeof options === "string" ? { message: options } : (options || {});
+    var dialog = document.getElementById("app-dialog");
+    if (!dialog || typeof dialog.showModal !== "function") return Promise.resolve(window.confirm(options.message || "Weet u het zeker?"));
+    var title = document.getElementById("app-dialog-title");
+    var message = document.getElementById("app-dialog-message");
+    var inputLabel = dialog.querySelector(".dialog-input");
+    var input = document.getElementById("app-dialog-input");
+    var confirmButton = document.getElementById("app-dialog-confirm");
+    title.textContent = options.title || "Actie bevestigen";
+    message.textContent = options.message || "Weet u het zeker?";
+    confirmButton.textContent = options.confirmLabel || "Bevestigen";
+    confirmButton.className = options.danger === false ? "primary-button" : "danger-button";
+    inputLabel.hidden = !options.input;
+    input.value = options.value || "";
+    inputLabel.firstChild.textContent = options.inputLabel || "Invoer";
+    return new Promise(function (resolve) {
+      function closed() {
+        dialog.removeEventListener("close", closed);
+        resolve(dialog.returnValue === "confirm" ? (options.input ? input.value : true) : (options.input ? null : false));
+      }
+      dialog.addEventListener("close", closed);
+      dialog.showModal();
+      window.setTimeout(function () { (options.input ? input : dialog.querySelector('[value="cancel"]')).focus(); }, 0);
+    });
+  }
+
+  function setSidebar(open, restoreFocus) {
+    var button = document.querySelector('[data-action="toggle-sidebar"]');
+    var sidebar = document.getElementById("main-navigation");
+    document.body.classList.toggle("sidebar-open", Boolean(open));
+    if (button) { button.setAttribute("aria-expanded", open ? "true" : "false"); button.setAttribute("aria-label", open ? "Menu sluiten" : "Menu openen"); }
+    if (open) {
+      menuReturnFocus = document.activeElement;
+      var close = sidebar && sidebar.querySelector(".sidebar-close");
+      if (close) close.focus();
+    } else if (restoreFocus && menuReturnFocus && menuReturnFocus.focus) {
+      menuReturnFocus.focus();
+    }
+  }
+
+  function markDirty(form) {
+    if (!form || ["login", "user-update", "user-create", "account"].indexOf(form.dataset.form) >= 0) return;
+    dirtyForm = form;
+    dirtyRoute = route();
+  }
+
+  function clearDirty(form) {
+    if (!form || dirtyForm === form) { dirtyForm = null; dirtyRoute = ""; }
+  }
+
+  function requestNavigation(nextRoute) {
+    if (!dirtyForm || nextRoute === route()) { window.location.hash = "#" + nextRoute; return Promise.resolve(true); }
+    return confirmDialog({ title: "Niet-opgeslagen wijzigingen", message: "Uw wijzigingen zijn nog niet opgeslagen. Wilt u deze pagina toch verlaten?", confirmLabel: "Pagina verlaten" }).then(function (confirmed) {
+      if (!confirmed) return false;
+      clearDirty();
+      window.location.hash = "#" + nextRoute;
+      return true;
+    });
+  }
+
   function navigate(route) {
-    window.location.hash = "#" + route;
+    return requestNavigation(route);
   }
 
   function route() {
@@ -64,7 +132,7 @@
     if (baseRoute === "crm-portal" || baseRoute === "customers") return "crm";
     if (["sales-portal", "sales-funnel", "sales-agenda", "advice", "advice-v2", "quotes"].indexOf(baseRoute) >= 0) return "sales";
     if (["execution-portal", "projects", "installations"].indexOf(baseRoute) >= 0) return "execution";
-    if (["finance-portal", "invoices", "reports"].indexOf(baseRoute) >= 0) return "finance";
+    if (["finance-portal", "invoices", "payments", "reports"].indexOf(baseRoute) >= 0) return "finance";
     if (["management-portal", "quote-studio", "products", "messages", "google-business", "settings"].indexOf(baseRoute) >= 0) return "management";
     return "global";
   }
@@ -78,6 +146,7 @@
       var visible = canAccessBase(link.dataset.routeLink);
       link.hidden = !visible;
       link.classList.toggle("is-active", visible && link.dataset.routeLink === baseRoute);
+      if (visible && link.dataset.routeLink === baseRoute) link.setAttribute("aria-current", "page"); else link.removeAttribute("aria-current");
     });
     var hrLink = document.getElementById("hr-portal-link");
     if (hrLink) hrLink.hidden = !(S.isAdmin() && S.isHrPortalEnabled());
@@ -86,7 +155,7 @@
       group.hidden = !belongsToPortal || !group.querySelector("a:not([hidden])");
     });
     actionsEl.innerHTML = topActions(baseRoute) + (baseRoute === "portals" ? "" : '<button class="ghost-button" data-action="portal-switch">Portalen</button>') + '<button class="ghost-button" data-action="account">Mijn account</button><button class="ghost-button" data-action="logout">Uitloggen</button>';
-    document.body.classList.remove("sidebar-open");
+    setSidebar(false, false);
   }
 
   function canAccessBase(baseRoute) {
@@ -133,13 +202,109 @@
     document.body.classList.remove("auth-locked");
   }
 
+  function currentQuery(current) {
+    return new URLSearchParams(String(current || route()).split("?")[1] || "");
+  }
+
+  function listParams(current, extra) {
+    var params = currentQuery(current);
+    return Object.assign({
+      page: Number(params.get("page") || 1),
+      pageSize: 25,
+      search: params.get("search") || "",
+      view: "summary"
+    }, extra || {});
+  }
+
+  function loadCollection(collection, params) {
+    if (S.isLegacyMode && S.isLegacyMode()) return Promise.resolve();
+    return S.query(collection, params || { page: 1, pageSize: 25 });
+  }
+
+  function loadCustomerFor(item) {
+    if (!item || !item.customerId || S.getAll("customers").some(function (customer) { return customer.id === item.customerId; })) return Promise.resolve();
+    return S.getDetail("customers", item.customerId).then(function () {});
+  }
+
+  function prepareRoute(current) {
+    if (S.isLegacyMode && S.isLegacyMode()) return Promise.resolve();
+    var path = current.split("?")[0];
+    var params = currentQuery(current);
+    var id;
+    if (path === "crm-portal") return S.dashboard("crm");
+    if (path === "sales-portal") return S.dashboard("sales");
+    if (path === "execution-portal") return S.dashboard("execution");
+    if (path === "finance-portal") return S.dashboard("finance");
+    if (path === "management-portal") return S.dashboard("management");
+    if (path === "customers") return loadCollection("customers", listParams(current, { sortBy: "createdAt", sortOrder: "desc" }));
+    if (path === "quotes" || path === "quote-studio") return loadCollection("quotes", listParams(current, { sortBy: "createdAt", sortOrder: "desc" }));
+    if (path === "invoices") return loadCollection("invoices", listParams(current, { sortBy: "createdAt", sortOrder: "desc" }));
+    if (path === "payments") return Promise.all([loadCollection("invoices", { page: 1, pageSize: 100, view: "summary" }), C.payments.load(current)]);
+    if (path === "payment-new") return Promise.all([loadCollection("invoices", { page: 1, pageSize: 100, view: "summary" }), C.payments.load("payments")]);
+    if (path.indexOf("payment:") === 0) return C.payments.load(current);
+    if (path === "installations") return Promise.all([loadCollection("installations", listParams(current, { sortBy: "plannedDate", sortOrder: "asc" })), loadCollection("customers", { page: 1, pageSize: 100, view: "summary" })]);
+    if (path === "products") return loadCollection("products", listParams(current, { pageSize: 25, sortBy: "name", sortOrder: "asc" }));
+    if (path === "sales-funnel") return Promise.all([loadCollection("salesOpportunities", { page: 1, pageSize: 100 }), loadCollection("customers", { page: 1, pageSize: 100, view: "summary" }), loadCollection("quotes", { page: 1, pageSize: 100, view: "summary" })]);
+    if (path === "sales-agenda") return Promise.all([loadCollection("salesAppointments", { page: 1, pageSize: 100 }), loadCollection("salesOpportunities", { page: 1, pageSize: 100 }), loadCollection("customers", { page: 1, pageSize: 100, view: "summary" })]);
+    if (path === "messages") return loadCollection("customers", { page: 1, pageSize: 100, view: "summary" });
+    if (path === "advice" || path.indexOf("advice:") === 0 || path === "advice-v2" || path.indexOf("advice-v2:") === 0) return Promise.all([loadCollection("customers", { page: 1, pageSize: 100, view: "summary" }), loadCollection("products", { page: 1, pageSize: 100 })]);
+    if (path === "customer-new" || path === "customer-import") return Promise.resolve();
+    if (path.indexOf("customer:") === 0 || path.indexOf("customer-edit:") === 0) {
+      id = path.split(":")[1];
+      return S.getDetail("customers", id).then(function () {
+        if (path.indexOf("customer-edit:") === 0) return null;
+        return Promise.all([
+          loadCollection("customerNotes", { page: 1, pageSize: 100, customerId: id }),
+          loadCollection("customerDocuments", { page: 1, pageSize: 100, customerId: id }),
+          loadCollection("quotes", { page: 1, pageSize: 100, customerId: id }),
+          loadCollection("invoices", { page: 1, pageSize: 100, customerId: id }),
+          loadCollection("installations", { page: 1, pageSize: 100, customerId: id }),
+          loadCollection("advices", { page: 1, pageSize: 100, customerId: id })
+        ]);
+      });
+    }
+    if (path === "quote-new") return Promise.all([loadCollection("customers", { page: 1, pageSize: 20, search: params.get("customerSearch") || "", view: "summary" }), loadCollection("products", { page: 1, pageSize: 100 })]);
+    if (path.indexOf("quote:") === 0 || path.indexOf("quote-edit:") === 0) { id = path.split(":")[1]; return Promise.all([S.getDetail("quotes", id).then(loadCustomerFor), loadCollection("products", { page: 1, pageSize: 100 })]); }
+    if (path === "invoice-new" || path.indexOf("invoice-from-quote:") === 0) return Promise.all([loadCollection("customers", { page: 1, pageSize: 20, view: "summary" }), loadCollection("quotes", { page: 1, pageSize: 100, view: "summary" })]);
+    if (path.indexOf("invoice:") === 0 || path.indexOf("invoice-edit:") === 0) { id = path.split(":")[1]; return Promise.all([S.getDetail("invoices", id).then(loadCustomerFor), loadCollection("quotes", { page: 1, pageSize: 100, view: "summary" })]); }
+    if (path === "installation-new" || path.indexOf("installation-from-quote:") === 0) return Promise.all([loadCollection("customers", { page: 1, pageSize: 20, view: "summary" }), loadCollection("quotes", { page: 1, pageSize: 100, view: "summary" })]);
+    if (path.indexOf("installation:") === 0 || path.indexOf("installation-edit:") === 0) { id = path.split(":")[1]; return S.getDetail("installations", id).then(loadCustomerFor); }
+    if (path === "reports" && C.reports && C.reports.currentRange) { var reportRange = C.reports.currentRange(); return S.reportSummary({ from: reportRange.from, to: reportRange.to }); }
+    return Promise.resolve();
+  }
+
+  function routeBase(current) {
+    var path = current.split("?")[0], base = path.split(":")[0];
+    if (base.indexOf("customer") === 0) return "customers";
+    if (base.indexOf("quote") === 0 && base !== "quote-studio") return "quotes";
+    if (base.indexOf("invoice") === 0) return "invoices";
+    if (base.indexOf("payment") === 0) return "payments";
+    if (base.indexOf("installation") === 0) return "installations";
+    return base;
+  }
+
   function guardedRender() {
     if (!isAuthenticated()) {
       showLogin();
-      return;
+      return Promise.resolve();
     }
     showApp();
-    render();
+    var current = route();
+    var currentPath = current.split("?")[0];
+    if (!(currentPath === "quote-new" || currentPath.indexOf("quote-edit:") === 0)) delete C.app.state.quoteDraftOverride;
+    var sequence = ++renderSequence;
+    setMeta(routeBase(current));
+    appEl.setAttribute("aria-busy", "true");
+    if (!(current === "portals" || current === "dashboard")) appEl.innerHTML = '<section class="panel section loading-state" role="status"><div class="loading-spinner" aria-hidden="true"></div><p>Gegevens worden geladen…</p></section>';
+    return Promise.resolve(prepareRoute(current)).then(function () {
+      if (sequence !== renderSequence || current !== route()) return;
+      render();
+    }).catch(function (error) {
+      if (error && error.name === "AbortError") return;
+      if (sequence !== renderSequence) return;
+      appEl.setAttribute("aria-busy", "false");
+      appEl.innerHTML = '<section class="panel section error-state" role="alert"><h2>Dit onderdeel kon niet worden geladen</h2><p>' + S.escapeHtml(error.message || "Onbekende fout") + '</p>' + (error.requestId ? '<p class="muted">Referentie: ' + S.escapeHtml(error.requestId) + '</p>' : '') + '<button class="primary-button" data-action="route-retry">Opnieuw proberen</button></section>';
+    });
   }
 
   function login(form) {
@@ -169,6 +334,7 @@
     if (baseRoute === "sales-funnel" && S.canManage("sales")) return '<button class="primary-button" data-action="sales-opportunity-new">Nieuwe lead</button>';
     if (baseRoute === "sales-agenda" && S.canManage("sales")) return '<button class="primary-button" data-action="sales-appointment-new">Nieuwe afspraak</button>';
     if (baseRoute === "invoices" && S.canManage("finance")) return '<button class="primary-button" data-action="invoice-new">Nieuwe factuur</button>';
+    if (baseRoute === "payments" && S.canManage("finance")) return '<button class="primary-button" data-action="payment-new">Betaling registreren</button>';
     if (baseRoute === "installations" && S.canManage("execution")) return '<button class="primary-button" data-action="installation-new">Nieuwe installatie</button>';
     if (baseRoute === "service" && S.canManage("execution")) return '<button class="primary-button" data-action="service-visit-new">Bezoek plannen</button>';
     if (baseRoute === "products" && S.isAdmin()) return '<button class="primary-button" data-action="product-new">Nieuw product</button>';
@@ -189,6 +355,7 @@
     if (base === "sales-appointment" || base === "sales-appointment-new" || base === "sales-appointment-edit") base = "sales-agenda";
     if (base === "invoice") base = "invoices";
     if (base === "invoice-new" || base === "invoice-edit" || base === "invoice-from-quote") base = "invoices";
+    if (base === "payment" || base === "payment-new") base = "payments";
     if (base === "installation") base = "installations";
     if (base === "installation-new" || base === "installation-edit" || base === "installation-from-quote") base = "installations";
     if (base === "product-new" || base === "product-edit") base = "products";
@@ -206,16 +373,16 @@
     else if (path === "execution-portal") appEl.innerHTML = executionPortal();
     else if (path === "finance-portal") appEl.innerHTML = financePortal();
     else if (path === "management-portal") appEl.innerHTML = managementPortal();
-    else if (path === "dashboard") appEl.innerHTML = dashboard();
-    else if (path === "customers") appEl.innerHTML = C.customers.renderList("");
+    else if (path === "dashboard") appEl.innerHTML = portalSelector();
+    else if (path === "customers") appEl.innerHTML = C.customers.renderList(new URLSearchParams(current.split("?")[1] || "").get("search") || "");
     else if (path === "customer-new") appEl.innerHTML = C.customers.renderForm();
     else if (path === "customer-import") appEl.innerHTML = C.customers.renderImport();
     else if (path.indexOf("customer-edit:") === 0) appEl.innerHTML = C.customers.renderForm(findByRoute("customers", path));
     else if (path.indexOf("customer:") === 0) appEl.innerHTML = C.customers.renderDetail(path.split(":")[1]);
-    else if (path === "quotes") appEl.innerHTML = C.quotes.renderList("");
-    else if (path === "quote-studio") appEl.innerHTML = C.quotes.renderList("");
-    else if (path === "quote-new") appEl.innerHTML = C.quotes.renderForm(customerSeed());
-    else if (path.indexOf("quote-edit:") === 0) appEl.innerHTML = C.quotes.renderForm(findByRoute("quotes", path));
+    else if (path === "quotes") appEl.innerHTML = C.quotes.renderList(new URLSearchParams(current.split("?")[1] || "").get("search") || "");
+    else if (path === "quote-studio") appEl.innerHTML = C.quotes.renderList(new URLSearchParams(current.split("?")[1] || "").get("search") || "");
+    else if (path === "quote-new") appEl.innerHTML = C.quotes.renderForm(C.app.state.quoteDraftOverride || customerSeed());
+    else if (path.indexOf("quote-edit:") === 0) appEl.innerHTML = C.quotes.renderForm(C.app.state.quoteDraftOverride || findByRoute("quotes", path));
     else if (path.indexOf("quote:") === 0) appEl.innerHTML = C.quotes.renderDetail(path.split(":")[1]);
     else if (path === "sales-funnel") appEl.innerHTML = C.salesFunnel.render();
     else if (path === "sales-opportunity-new") appEl.innerHTML = C.salesFunnel.renderForm();
@@ -225,13 +392,16 @@
     else if (path === "sales-appointment-new") appEl.innerHTML = C.salesAgenda.renderForm();
     else if (path.indexOf("sales-appointment-edit:") === 0) appEl.innerHTML = C.salesAgenda.renderForm(findByRoute("salesAppointments", path));
     else if (path.indexOf("sales-appointment:") === 0) appEl.innerHTML = C.salesAgenda.renderDetail(path.split(":")[1]);
-    else if (path === "invoices") appEl.innerHTML = C.invoices.renderList("");
+    else if (path === "invoices") appEl.innerHTML = C.invoices.renderList(new URLSearchParams(current.split("?")[1] || "").get("search") || "");
     else if (path === "invoice-new") appEl.innerHTML = C.invoices.renderForm(customerSeed());
     else if (path.indexOf("invoice-from-quote:") === 0) appEl.innerHTML = C.invoices.renderForm(C.invoices.createFromQuote(path.split(":")[1]));
     else if (path.indexOf("invoice-edit:") === 0) appEl.innerHTML = C.invoices.renderForm(findByRoute("invoices", path));
     else if (path.indexOf("invoice:") === 0) appEl.innerHTML = C.invoices.renderDetail(path.split(":")[1]);
+    else if (path === "payments") appEl.innerHTML = C.payments.renderList();
+    else if (path === "payment-new") appEl.innerHTML = C.payments.renderCreate(current);
+    else if (path.indexOf("payment:") === 0) appEl.innerHTML = C.payments.renderDetail();
     else if (path === "reports") appEl.innerHTML = C.reports.render();
-    else if (path === "installations") appEl.innerHTML = C.installations.renderList("");
+    else if (path === "installations") appEl.innerHTML = C.installations.renderList(new URLSearchParams(current.split("?")[1] || "").get("search") || "");
     else if (path === "installation-new") appEl.innerHTML = C.installations.renderForm(customerSeed());
     else if (path.indexOf("installation-from-quote:") === 0) appEl.innerHTML = C.installations.renderForm(C.installations.createFromQuote(path.split(":")[1]));
     else if (path.indexOf("installation-edit:") === 0) appEl.innerHTML = C.installations.renderForm(findByRoute("installations", path));
@@ -262,7 +432,10 @@
     else appEl.innerHTML = dashboard();
 
     afterRender();
+    appEl.setAttribute("aria-busy", "false");
     appEl.focus({ preventScroll: true });
+    titleEl.setAttribute("tabindex", "-1");
+    titleEl.focus({ preventScroll: true });
   }
 
   function customerSeed() {
@@ -280,12 +453,13 @@
   }
 
   function portalSelector() {
+    var counts = S.portalCounts ? S.portalCounts() : {};
     var cards = [
-      S.hasRole("admin", "crm", "installer") ? portalCard("crm-portal", "CRM", "Klanten en relatiehistorie", "Open het klantenbestand en alle gekoppelde dossiers.", S.getAll("customers").length + " klanten") : "",
-      S.hasRole("admin", "sales") ? portalCard("sales-portal", "Sales", "Van lead naar opdracht", "Werk met de funnel, agenda, adviezen en offertes.", S.getAll("salesOpportunities").filter(function (item) { return item.stage !== "gewonnen" && item.stage !== "verloren"; }).length + " open kansen") : "",
-      S.hasRole("admin", "execution", "installer") ? portalCard("execution-portal", "Uitvoering", "Projecten en installaties", "Plan werk, bereid projecten voor en rond werkbonnen af.", S.getAll("installations").filter(function (item) { return item.status === "ingepland"; }).length + " ingepland") : "",
-      S.hasRole("admin", "finance") ? portalCard("finance-portal", "Financiën", "Facturen en rapportage", "Volg openstaande bedragen, betalingen en omzet.", S.getAll("invoices").filter(function (item) { return item.status !== "betaald"; }).length + " open facturen") : "",
-      S.isAdmin() ? portalCard("management-portal", "Beheer", "Instellingen en hulpmiddelen", "Beheer producten, accounts, communicatie en HR.", S.getAll("products").length + " producten") : ""
+      S.hasRole("admin", "crm", "installer") ? portalCard("crm-portal", "CRM", "Klanten en relatiehistorie", "Open het klantenbestand en alle gekoppelde dossiers.", Number(counts.customers != null ? counts.customers : S.getAll("customers").length) + " klanten") : "",
+      S.hasRole("admin", "sales") ? portalCard("sales-portal", "Sales", "Van lead naar opdracht", "Werk met de funnel, agenda, adviezen en offertes.", Number(counts.openOpportunities != null ? counts.openOpportunities : S.getAll("salesOpportunities").length) + " open kansen") : "",
+      S.hasRole("admin", "execution", "installer") ? portalCard("execution-portal", "Uitvoering", "Projecten en installaties", "Plan werk, bereid projecten voor en rond werkbonnen af.", Number(counts.scheduledInstallations != null ? counts.scheduledInstallations : S.getAll("installations").length) + " ingepland") : "",
+      S.hasRole("admin", "finance") ? portalCard("finance-portal", "Financiën", "Facturen en rapportage", "Volg openstaande bedragen, betalingen en omzet.", Number(counts.openInvoices != null ? counts.openInvoices : S.getAll("invoices").length) + " open facturen") : "",
+      S.isAdmin() ? portalCard("management-portal", "Beheer", "Instellingen en hulpmiddelen", "Beheer producten, accounts, communicatie en HR.", Number(counts.products != null ? counts.products : S.getAll("products").length) + " producten") : ""
     ].join("");
     return '<section class="portal-hero section"><p class="eyebrow">Climature werkruimtes</p><h2>Waar wilt u werken?</h2><p class="muted">Elk portaal bevat alleen de functies die bij dat werkproces horen.</p></section><section class="portal-grid section">' + cards + "</section>";
   }
@@ -295,6 +469,13 @@
   }
 
   function crmPortal() {
+    var dashboardState = S.dashboardState && S.dashboardState("crm");
+    if (dashboardState) {
+      var crmMetrics = dashboardState.metrics || {}, crmItems = dashboardState.items || {};
+      return portalOverview("CRM", "Relaties centraal beheren", "Van eerste contact tot compleet klantdossier.", [
+        metric("Totaal klanten", crmMetrics.totalCustomers || 0), metric("Nieuw deze maand", crmMetrics.newThisMonth || 0), metric("Contact aanvullen", crmMetrics.incompleteContact || 0)
+      ], [portalAction("customer-new", "Nieuwe klant", "Leg een nieuwe relatie vast."), portalLink("customers", "Klantenbestand", "Zoek en open een bestaand dossier.")]) + portalItemPanel("Recent toegevoegd", (crmItems.recentCustomers || []).map(function (item) { return { title: S.customerName(item), meta: item.email || item.phone || "Contactgegevens aanvullen", route: "customer:" + item.id }; }), "Nog geen klanten toegevoegd.");
+    }
     var customers = S.getAll("customers");
     var month = S.today().slice(0, 7);
     var recent = customers.filter(function (item) { return String(item.createdAt || "").slice(0, 7) === month; });
@@ -307,6 +488,13 @@
   }
 
   function salesPortal() {
+    var dashboardState = S.dashboardState && S.dashboardState("sales");
+    if (dashboardState) {
+      var salesMetrics = dashboardState.metrics || {}, salesItems = dashboardState.items || {};
+      return portalOverview("Sales", "Van lead naar opdracht", "Alle commerciële opvolging in één afgeschermde werkruimte.", [
+        metric("Open kansen", salesMetrics.openOpportunities || 0), metric("Opvolging nodig", salesMetrics.dueFollowUps || 0), metric("Komende afspraken", salesMetrics.upcomingAppointments || 0), metric("Actieve offertes", salesMetrics.activeQuotes || 0)
+      ], [portalAction("sales-opportunity-new", "Nieuwe lead", "Start een nieuwe saleskans."), portalAction("sales-appointment-new", "Plan afspraak", "Zet de volgende actie vast."), portalLink("sales-funnel", "Open funnel", "Bekijk alle fasen en waarden."), portalLink("quotes", "Open offertes", "Werk concepten en reacties bij.")]) + portalItemPanel("Eerstvolgende afspraken", (salesItems.upcomingAppointments || []).map(function (item) { return { title: item.title, meta: S.formatDate(item.date) + " · " + item.startTime, route: "sales-appointment:" + item.id }; }), "Geen komende salesafspraken.");
+    }
     var opportunities = S.getAll("salesOpportunities");
     var appointments = S.getAll("salesAppointments");
     var quotes = S.getAll("quotes");
@@ -323,6 +511,13 @@
   }
 
   function executionPortal() {
+    var dashboardState = S.dashboardState && S.dashboardState("execution");
+    if (dashboardState) {
+      var executionMetrics = dashboardState.metrics || {}, executionItems = dashboardState.items || {};
+      return portalOverview("Uitvoering", "Van voorbereiding naar oplevering", "Projecttaken, materialen, bezetting en installatieplanning bij elkaar.", [
+        metric("Vandaag", executionMetrics.todayInstallations || 0), metric("Ingepland", executionMetrics.scheduledInstallations || 0), metric("Uitgevoerd", executionMetrics.completedInstallations || 0)
+      ], [S.canManage("execution") ? portalAction("installation-new", "Nieuwe installatie", "Plan een nieuwe opdracht in.") : "", portalLink("projects", "Projecten", "Controleer voorbereiding en acties."), portalLink("installations", "Installatieplanning", "Bekijk week, maand en werkbonnen.")]) + portalItemPanel("Projectacties", (executionItems.projectActions || []).map(function (item) { return { title: item.title, meta: item.customerName + " · " + S.formatDate(item.dueDate), route: "project:" + item.projectId }; }), "Alle projecten liggen op schema.") + portalItemPanel("Eerstvolgende installaties", (executionItems.upcomingInstallations || []).map(function (item) { return { title: S.customerName(item.customer), meta: S.formatDate(item.plannedDate) + " · " + item.startTime, route: "installation:" + item.id }; }), "Geen installaties ingepland.");
+    }
     var installations = S.getAll("installations");
     var today = S.today();
     var upcoming = installations.filter(function (item) { return item.status === "ingepland" && item.plannedDate >= today; }).sort(function (a, b) { return (a.plannedDate + a.startTime).localeCompare(b.plannedDate + b.startTime); });
@@ -334,6 +529,13 @@
   }
 
   function financePortal() {
+    var dashboardState = S.dashboardState && S.dashboardState("finance");
+    if (dashboardState) {
+      var financeMetrics = dashboardState.metrics || {}, financeItems = dashboardState.items || {};
+      return portalOverview("Financiën", "Geldstromen onder controle", "Facturen, vervaldata, betalingen en rapportages gescheiden van sales en uitvoering.", [
+        metric("Openstaand", S.money(financeMetrics.outstandingAmount || 0)), metric("Verlopen", financeMetrics.overdueInvoices || 0), metric("Omzet deze maand", S.money(financeMetrics.revenueThisMonth || 0))
+      ], [portalAction("payment-new", "Betaling registreren", "Verwerk een betaling of deelbetaling."), portalLink("invoices", "Facturen", "Volg factuurstatussen."), portalLink("payments", "Betalingen & kassa", "Beheer betaalmiddelen, refunds en diensten."), portalLink("reports", "Rapportage", "Analyseer omzet en exporteer CSV.")]) + portalItemPanel("Aandacht nodig", (financeItems.urgentInvoices || []).map(function (item) { return { title: item.invoiceNumber + " · " + S.customerName(item.customer), meta: S.formatDate(item.dueDate) + " · " + S.money(item.total || 0), route: "invoice:" + item.id }; }), "Geen verlopen facturen.");
+    }
     var invoices = S.getAll("invoices");
     var today = S.today();
     var open = invoices.filter(function (item) { return item.status === "verzonden" || item.status === "verlopen"; });
@@ -342,13 +544,15 @@
     return portalOverview("Financiën", "Geldstromen onder controle", "Facturen, vervaldata, betalingen en rapportages gescheiden van sales en uitvoering.", [
       metric("Openstaand", S.money(sumTotals(open))), metric("Verlopen", S.money(sumTotals(overdue))), metric("Betaald deze maand", S.money(sumTotals(paidMonth)))
     ], [
-      portalAction("invoice-new", "Nieuwe factuur", "Maak een handmatige factuur."), portalLink("invoices", "Facturen", "Volg statussen en betalingen."), portalLink("reports", "Rapportage", "Analyseer omzet en exporteer CSV.")
+      portalAction("payment-new", "Betaling registreren", "Verwerk een betaling of deelbetaling."), portalLink("invoices", "Facturen", "Volg factuurstatussen."), portalLink("payments", "Betalingen & kassa", "Beheer betaalmiddelen, refunds en diensten."), portalLink("reports", "Rapportage", "Analyseer omzet en exporteer CSV.")
     ]) + revenueChartPanel(invoices) + portalItemPanel("Aandacht nodig", overdue.slice(0, 6).map(function (item) { return { title: item.invoiceNumber, meta: S.formatDate(item.dueDate) + " · " + S.money(item.total || 0), route: "invoice:" + item.id }; }), "Geen verlopen facturen.");
   }
 
   function managementPortal() {
+    var managementState = S.dashboardState && S.dashboardState("management");
+    var productCount = managementState && managementState.metrics ? managementState.metrics.productCount : S.getAll("products").length;
     return portalOverview("Beheer", "Applicatie en stamdata beheren", "Configuratie en hulpmiddelen staan los van de dagelijkse werkprocessen.", [
-      metric("Producten", S.getAll("products").length), metric("Betaaltermijn", Number(S.settings().paymentDays || 14) + " dagen"), metric("HR-portaal", S.isHrPortalEnabled() ? "Actief" : "Uit")
+      metric("Producten", productCount || 0), metric("Betaaltermijn", Number(S.settings().paymentDays || 14) + " dagen"), metric("HR-portaal", S.isHrPortalEnabled() ? "Actief" : "Uit")
     ], [
       portalLink("quote-studio", "Offertebouwer", "Ontwerp offertes met producttemplates en regelingen."), portalLink("products", "Producten", "Beheer catalogus en prijzen."), portalLink("messages", "Tekstgenerator", "Maak klantcommunicatie."), portalLink("google-business", "Google Bedrijfsprofiel", "Werk profielgegevens, foto's en beoordelingen bij."), portalLink("settings", "Instellingen", "Bedrijf, accounts en aannames.")
     ]) + '<section class="section portal-management-grid"><a class="panel portal-management-card" href="#google-business"><p class="eyebrow">Online vindbaarheid</p><h2>Google Bedrijfsprofiel</h2><p class="muted">Open het officiële Google-beheer en bewaar de profiel- en beoordelingslink.</p></a><a class="panel portal-management-card" href="#settings"><p class="eyebrow">Configuratie</p><h2>Instellingen en accounts</h2><p class="muted">Beheer bedrijfsgegevens, gebruikers, adviesaannames, digest en back-ups.</p></a>' + (S.isHrPortalEnabled() ? '<a class="panel portal-management-card" href="/medewerkers/"><p class="eyebrow">Beveiligd</p><h2>Werknemersportaal</h2><p class="muted">Open HR-dossiers, kwalificaties, roosters en checklists met extra verificatie.</p></a>' : "") + "</section>";
@@ -725,10 +929,9 @@
   }
 
   function removeProduct(id) {
-    if (!window.confirm("Product verwijderen? Bestaande offertes en facturen blijven ongewijzigd.")) return;
-    return S.remove("products", id).then(function () {
-      toast("Product verwijderd.");
-      render();
+    return confirmDialog({ title: "Product verwijderen", message: "Het product wordt verwijderd. Bestaande offertes en facturen blijven ongewijzigd.", confirmLabel: "Product verwijderen" }).then(function (confirmed) {
+      if (!confirmed) return;
+      return S.remove("products", id).then(function () { toast("Product verwijderd."); render(); });
     });
   }
 
@@ -1024,12 +1227,12 @@
     var reader = new FileReader();
     reader.onload = function () {
       try {
-        if (!window.confirm("Back-up importeren? Dit vervangt alle huidige lokale data.")) return;
-        S.importData(JSON.parse(reader.result)).then(function () {
-          toast("Back-up geimporteerd.");
-          guardedRender();
+        var payload = JSON.parse(reader.result);
+        confirmDialog({ title: "Back-up importeren", message: "Dit vervangt alle huidige lokale data.", confirmLabel: "Back-up importeren" }).then(function (confirmed) {
+          if (!confirmed) return;
+          return S.importData(payload).then(function () { toast("Back-up geimporteerd."); guardedRender(); });
         }).catch(function (error) {
-          toast(error.message || "Importeren mislukt.");
+          toast(error.message || "Importeren mislukt." + (error.requestId ? " Referentie: " + error.requestId : ""));
         });
       } catch (error) {
         toast(error.message || "Importeren mislukt.");
@@ -1046,12 +1249,12 @@
   }
 
   function resetBackupData() {
-    if (!window.confirm("Alle lokale Climature-data resetten? Maak eerst een back-up als u data wilt bewaren.")) return;
-    if (!window.confirm("Weet u het zeker? Klanten, offertes, facturen en installaties worden gewist.")) return;
-    return S.resetData().then(function () {
-      toast("Data gereset.");
-      navigate("dashboard");
-      guardedRender();
+    return confirmDialog({ title: "Lokale data resetten", message: "Maak eerst een back-up als u deze data wilt bewaren.", confirmLabel: "Verder" }).then(function (confirmed) {
+      if (!confirmed) return false;
+      return confirmDialog({ title: "Definitief wissen", message: "Klanten, offertes, facturen en installaties worden gewist.", confirmLabel: "Definitief wissen" });
+    }).then(function (confirmed) {
+      if (!confirmed) return;
+      return S.resetData().then(function () { toast("Data gereset."); navigate("dashboard"); guardedRender(); });
     });
   }
 
@@ -1097,7 +1300,7 @@
 
   function afterRender() {
     var quoteForm = document.querySelector('[data-form="quote"]');
-    if (quoteForm) C.quotes.recalc(quoteForm);
+    if (quoteForm) { C.quotes.recalc(quoteForm); if (C.quotes.initDraft) C.quotes.initDraft(quoteForm); }
     var invoiceForm = document.querySelector('[data-form="invoice"]');
     if (invoiceForm) C.invoices.recalc(invoiceForm);
     var messageForm = document.querySelector('[data-form="message"]');
@@ -1126,10 +1329,20 @@
     var target = event.target.closest("[data-action]");
     if (!target) return;
     var action = target.dataset.action;
-    if (action === "logout") return logout();
+    if (action === "logout") {
+      if (!dirtyForm) return logout();
+      return confirmDialog({ title: "Uitloggen met niet-opgeslagen wijzigingen", message: "Uw wijzigingen gaan verloren als u nu uitlogt.", confirmLabel: "Toch uitloggen" }).then(function (confirmed) { if (!confirmed) return; clearDirty(); return logout(); });
+    }
+    if (action === "route-retry") return guardedRender();
+    if (action === "collection-page") {
+      var pageParams = currentQuery();
+      pageParams.set("page", target.dataset.page || "1");
+      return navigate(route().split("?")[0] + "?" + pageParams.toString());
+    }
     if (action === "portal-switch") navigate("portals");
     if (action === "account") navigate("account");
-    if (action === "toggle-sidebar") document.body.classList.toggle("sidebar-open");
+    if (action === "toggle-sidebar") setSidebar(!document.body.classList.contains("sidebar-open"), true);
+    if (action === "close-sidebar") setSidebar(false, true);
     if (action === "customers") navigate("customers");
     if (action === "customer-new") navigate("customer-new");
     if (action === "customer-import") navigate("customer-import");
@@ -1168,6 +1381,10 @@
     if (action === "quote-component-image") C.quotes.chooseComponentImage(target);
     if (action === "quote-zoom") C.quotes.zoomPreview(target.closest("form"), target.dataset.delta);
     if (action === "quote-draft-pdf") return C.quotes.downloadDraft(target.closest("form"));
+    if (action === "quote-draft-restore") return C.quotes.restoreDraft(target.closest("form"));
+    if (action === "quote-draft-discard") return C.quotes.discardDraft(target.closest("form"));
+    if (action === "quote-section-toggle") return C.quotes.toggleSection(target);
+    if (action === "quote-mobile-view") return C.quotes.mobileView(target.closest("form"), target.dataset.view);
     if (action === "invoice-new") navigate(target.dataset.customerId ? "invoice-new?customerId=" + target.dataset.customerId : "invoice-new");
     if (action === "invoices") navigate("invoices");
     if (action === "invoice-detail") navigate("invoice:" + target.dataset.id);
@@ -1175,6 +1392,8 @@
     if (action === "invoice-delete") return C.invoices.remove(target.dataset.id);
     if (action === "invoice-status") return C.invoices.updateStatus(target.dataset.id, target.dataset.status);
     if (action === "invoice-reminder") C.invoices.sendReminder(target.dataset.id);
+    if (action === "payment-from-invoice") return navigate("payment-new?invoiceId=" + target.dataset.id);
+    if ((action.indexOf("payment-") === 0 || action.indexOf("cash-") === 0 || action === "payments") && C.payments) return C.payments.action(target);
     if (action === "invoice-pdf") C.pdf.downloadInvoice(find("invoices", target.dataset.id));
     if (action === "invoice-print") C.pdf.printInvoice(find("invoices", target.dataset.id));
     if (action === "invoice-add-line") addLine("invoice");
@@ -1294,6 +1513,27 @@
   function handleInput(event) {
     var form = event.target.closest("form");
     if (!form) return;
+    if (event.target.dataset.action === "form-customer-search") {
+      window.clearTimeout(searchTimer);
+      var customerSearch = event.target.value;
+      searchTimer = window.setTimeout(function () {
+        S.query("customers", { page: 1, pageSize: 20, search: customerSearch, view: "summary" }, { force: true }).then(function (page) {
+          if (!document.documentElement.contains(form)) return;
+          var select = form.elements.customerId;
+          if (!select) return;
+          var selected = select.value;
+          var selectedLabel = select.selectedOptions[0] && select.selectedOptions[0].textContent;
+          var items = page.items || [];
+          var options = ['<option value="">Kies een klant</option>'];
+          if (selected && !items.some(function (customer) { return customer.id === selected; })) options.push('<option value="' + S.escapeHtml(selected) + '" selected>' + S.escapeHtml(selectedLabel || "Geselecteerde klant") + '</option>');
+          items.forEach(function (customer) { options.push('<option value="' + S.escapeHtml(customer.id) + '"' + (customer.id === selected ? ' selected' : '') + '>' + S.escapeHtml(S.customerName(customer)) + '</option>'); });
+          select.innerHTML = options.join("");
+        }).catch(function (error) { if (error.name !== "AbortError") toast(error.message || "Klanten zoeken mislukt."); });
+      }, 300);
+      return;
+    }
+    markDirty(form);
+    if (form.dataset.form === "quote" && C.quotes && C.quotes.scheduleDraft) C.quotes.scheduleDraft(form);
     if (form.dataset.form === "quote") {
       C.quotes.syncLegacyContent(form, event.target);
       C.quotes.recalc(form);
@@ -1304,6 +1544,7 @@
 
   function handleChange(event) {
     var form = event.target.closest("form");
+    if (form) markDirty(form);
     var action = event.target.dataset.action;
     if (action === "quote-product-select") {
       C.quotes.fillProduct(event.target);
@@ -1328,6 +1569,7 @@
   function handleSubmit(event) {
     var form = event.target.closest("form");
     if (!form) return;
+    if (form.closest("#app-dialog")) return;
     event.preventDefault();
     var submitter = form.querySelector('[type="submit"]');
     if (submitter) submitter.disabled = true;
@@ -1337,6 +1579,7 @@
     if (form.dataset.form === "login") {
       return login(form).then(done, done);
     }
+    clearDirty(form);
     var work = Promise.resolve();
     if (form.dataset.form === "customer") work = C.customers.saveFromForm(form);
     if (form.dataset.form === "customer-import") work = C.customers.saveImportFromForm(form);
@@ -1346,6 +1589,7 @@
     if (form.dataset.form === "sales-opportunity") work = C.salesFunnel.saveFromForm(form);
     if (form.dataset.form === "sales-appointment") work = C.salesAgenda.saveFromForm(form);
     if (form.dataset.form === "invoice") work = C.invoices.saveFromForm(form);
+    if (form.dataset.form.indexOf("payment-") === 0 || form.dataset.form.indexOf("cash-") === 0) work = C.payments.submit(form);
     if (form.dataset.form === "installation") work = C.installations.saveFromForm(form);
     if (form.dataset.form === "workorder") work = C.installations.saveWorkOrderFromForm(form);
     if (form.dataset.form.indexOf("project-") === 0) work = C.projects.submit(form);
@@ -1368,9 +1612,32 @@
       });
     }
     if (form.dataset.form === "advice-wp" || form.dataset.form === "advice-bat") C.advice.submit(form);
-    return Promise.resolve(work).catch(function (error) {
-      toast(error.message || "Opslaan mislukt.");
+    return Promise.resolve(work).then(function (value) {
+      if (form.dataset.form === "quote" && C.quotes && C.quotes.clearDraft) C.quotes.clearDraft(form);
+      return value;
+    }).catch(function (error) {
+      markDirty(form);
+      showFormError(form, error);
     }).then(done);
+  }
+
+  function showFormError(form, error) {
+    Array.from(form.querySelectorAll(".field-error")).forEach(function (node) { node.remove(); });
+    (error.details || []).forEach(function (detail) {
+      var name = String(detail.path || "").split(".").filter(Boolean).pop();
+      var field = name && form.elements[name];
+      if (!field || !field.insertAdjacentElement) return;
+      var message = document.createElement("span");
+      message.className = "field-error";
+      message.setAttribute("role", "alert");
+      message.textContent = detail.message;
+      field.setAttribute("aria-invalid", "true");
+      field.insertAdjacentElement("afterend", message);
+    });
+    var suffix = error.requestId ? " Referentie: " + error.requestId + "." : "";
+    toast((error.message || "Opslaan mislukt.") + suffix);
+    var invalid = form.querySelector('[aria-invalid="true"]');
+    if (invalid) invalid.focus();
   }
 
   function saveOwnAccount(form) {
@@ -1398,7 +1665,7 @@
         toast("Beoordelingslink gekopieerd.");
       });
     }
-    window.prompt("Kopieer de beoordelingslink:", url);
+    return confirmDialog({ title: "Beoordelingslink kopiëren", message: "Selecteer en kopieer de onderstaande link.", input: true, inputLabel: "Beoordelingslink", value: url, confirmLabel: "Sluiten", danger: false });
   }
 
   function createUserFromForm(form) {
@@ -1469,21 +1736,69 @@
 
   function handleSearch(event) {
     var action = event.target.dataset.action;
-    if (action === "customer-search") appEl.innerHTML = C.customers.renderList(event.target.value);
-    if (action === "quote-search") appEl.innerHTML = C.quotes.renderList(event.target.value);
-    if (action === "invoice-search") appEl.innerHTML = C.invoices.renderList(event.target.value);
-    if (action === "installation-search") appEl.innerHTML = C.installations.renderList(event.target.value);
+    var routes = { "customer-search": "customers", "quote-search": route().split("?")[0] === "quote-studio" ? "quote-studio" : "quotes", "invoice-search": "invoices", "installation-search": "installations" };
+    if (!routes[action]) return;
+    var value = event.target.value;
+    window.clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(function () {
+      var params = currentQuery();
+      if (value) params.set("search", value); else params.delete("search");
+      params.set("page", "1");
+      navigate(routes[action] + (params.toString() ? "?" + params.toString() : ""));
+    }, 300);
+  }
+
+  function handleHashChange() {
+    if (hashGuard) { hashGuard = false; return; }
+    var targetRoute = route();
+    if (dirtyForm && dirtyRoute && targetRoute !== dirtyRoute) {
+      hashGuard = true;
+      window.location.hash = "#" + dirtyRoute;
+      confirmDialog({ title: "Niet-opgeslagen wijzigingen", message: "Uw wijzigingen zijn nog niet opgeslagen. Wilt u deze pagina toch verlaten?", confirmLabel: "Pagina verlaten" }).then(function (confirmed) {
+        if (!confirmed) return;
+        clearDirty();
+        window.location.hash = "#" + targetRoute;
+      });
+      return;
+    }
+    guardedRender();
+  }
+
+  function handleGlobalKeydown(event) {
+    if (event.key === "Escape" && document.body.classList.contains("sidebar-open")) { setSidebar(false, true); return; }
+    if (event.key !== "Tab" || !document.body.classList.contains("sidebar-open")) return;
+    var sidebar = document.getElementById("main-navigation");
+    var focusable = Array.from(sidebar.querySelectorAll('a:not([hidden]), button:not([disabled])')).filter(function (node) { return node.offsetParent !== null; });
+    if (!focusable.length) return;
+    var first = focusable[0], last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   }
 
   function init() {
-    C.app = { navigate: navigate, toast: toast, render: guardedRender, state: {} };
+    C.app = { navigate: navigate, toast: toast, render: guardedRender, confirm: confirmDialog, prompt: function (options) { return confirmDialog(Object.assign({}, options, { input: true })); }, markDirty: markDirty, clearDirty: clearDirty, state: {} };
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", function () {
         navigator.serviceWorker.register("service-worker.js").catch(function () {});
       });
     }
-    window.addEventListener("hashchange", guardedRender);
+    window.addEventListener("hashchange", handleHashChange);
+    window.addEventListener("beforeunload", function (event) { if (!dirtyForm) return; event.preventDefault(); event.returnValue = ""; });
+    window.addEventListener("climature:connection", function (event) {
+      var status = document.getElementById("connection-status");
+      if (!status) return;
+      status.hidden = event.detail.online;
+      status.textContent = event.detail.online ? "Verbinding hersteld." : "Geen verbinding. Bekijken blijft mogelijk; wijzigingen zijn tijdelijk geblokkeerd.";
+      if (event.detail.online) { status.hidden = false; window.setTimeout(function () { status.hidden = true; }, 2400); }
+    });
+    document.addEventListener("keydown", handleGlobalKeydown);
     document.addEventListener("click", function (event) {
+      var anchor = event.target.closest('a[href^="#"]');
+      if (anchor && dirtyForm) {
+        event.preventDefault();
+        requestNavigation(anchor.getAttribute("href").slice(1));
+        return;
+      }
       Promise.resolve(handleClick(event)).catch(function (error) {
         toast(error.message || "Actie mislukt.");
       });
@@ -1501,8 +1816,6 @@
       });
     });
     S.init().then(function () {
-      return S.listEmployeeDirectory().catch(function () { return []; });
-    }).then(function () {
       guardedRender();
     }).catch(function (error) {
       showLogin();

@@ -3,6 +3,8 @@
 
   var C = window.Climature = window.Climature || {};
   var S = C.storage;
+  var draftTimer = null;
+  var DRAFT_TTL = 24 * 60 * 60 * 1000;
 
   var TEMPLATES = {
     combinatie: {
@@ -88,11 +90,11 @@
     var customers = S.getAll("customers");
     var q = (query || "").toLowerCase();
     var quotes = S.getAll("quotes").filter(function (quote) {
-      var customer = customers.find(function (item) { return item.id === quote.customerId; });
+      var customer = quote.customer || customers.find(function (item) { return item.id === quote.customerId; });
       return !q || [quote.quoteNumber, S.customerName(customer), quote.status].join(" ").toLowerCase().indexOf(q) >= 0;
     });
     var rows = quotes.map(function (quote) {
-      var customer = customers.find(function (item) { return item.id === quote.customerId; });
+      var customer = quote.customer || customers.find(function (item) { return item.id === quote.customerId; });
       return [
         "<tr>",
         "<td><strong>" + S.escapeHtml(quote.quoteNumber) + "</strong><br><span class=\"muted\">" + S.formatDate(quote.quoteDate) + "</span></td>",
@@ -105,9 +107,11 @@
     }).join("");
     return [
       '<section class="section panel">',
-      '<div class="panel-head"><div><p class="eyebrow">Offertes</p><h2>Offertes beheren</h2></div><button class="primary-button" data-action="quote-new">Nieuwe offerte</button></div>',
+      '<div class="panel-head"><div><p class="eyebrow">Offertes</p><h2>Offertes beheren</h2></div></div>',
       '<input class="search-input" type="search" placeholder="Zoeken op klantnaam, status of offertenummer" value="' + S.escapeHtml(query || "") + '" data-action="quote-search">',
-      quotes.length ? '<div class="table-wrap" style="margin-top:14px;"><table class="data-table"><thead><tr><th>Offerte</th><th>Klant</th><th>Status</th><th>Totaal</th><th>Acties</th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '<div class="empty-state" style="margin-top:14px;">Geen offertes gevonden.</div>',
+      query ? '<div class="active-filters"><span>Zoekfilter: <strong>' + S.escapeHtml(query) + '</strong></span><a href="#quotes">Filter wissen</a></div>' : "",
+      quotes.length ? '<div class="table-wrap" style="margin-top:14px;"><table class="data-table"><caption class="visually-hidden">Offertes</caption><thead><tr><th>Offerte</th><th>Klant</th><th>Status</th><th>Totaal</th><th>Acties</th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '<div class="empty-state" style="margin-top:14px;">Geen offertes gevonden.</div>',
+      S.paginationControls("quotes"),
       "</section>"
     ].join("");
   }
@@ -151,17 +155,17 @@
     var l = Object.assign({ description: "", qty: 1, unit: "stuk", priceExVat: 0, vatRate: 21, productId: "", componentKey: "general", lineKind: "item", vatRefundEligible: false }, line || {});
     return [
       '<div class="line-row quote-line">',
-      '<select data-line="productId" data-action="quote-product-select">' + productOptions(l.productId) + "</select>",
-      '<select data-line="componentKey">' + componentOptions(l.componentKey) + '</select>',
-      '<select data-line="lineKind"><option value="item">Product/dienst</option><option value="discount"' + (l.lineKind === "discount" ? " selected" : "") + '>Korting</option></select>',
-      '<input data-line="qty" type="number" min="0" step="0.01" value="' + S.escapeHtml(l.qty) + '">',
-      '<input data-line="unit" type="text" value="' + S.escapeHtml(l.unit) + '">',
-      '<input data-line="priceExVat" type="number" min="0" step="0.01" value="' + S.escapeHtml(Math.abs(Number(l.priceExVat || 0))) + '">',
-      '<select data-line="vatRate"><option value="21"' + (Number(l.vatRate) === 21 ? " selected" : "") + '>21%</option><option value="9"' + (Number(l.vatRate) === 9 ? " selected" : "") + '>9%</option><option value="0"' + (Number(l.vatRate) === 0 ? " selected" : "") + ">0%</option></select>",
+      '<select aria-label="Product kiezen" data-line="productId" data-action="quote-product-select">' + productOptions(l.productId) + "</select>",
+      '<select aria-label="Productblok kiezen" data-line="componentKey">' + componentOptions(l.componentKey) + '</select>',
+      '<select aria-label="Regelsoort kiezen" data-line="lineKind"><option value="item">Product/dienst</option><option value="discount"' + (l.lineKind === "discount" ? " selected" : "") + '>Korting</option></select>',
+      '<input aria-label="Aantal" data-line="qty" type="number" min="0" step="0.01" value="' + S.escapeHtml(l.qty) + '">',
+      '<input aria-label="Eenheid" data-line="unit" type="text" value="' + S.escapeHtml(l.unit) + '">',
+      '<input aria-label="Prijs exclusief btw" data-line="priceExVat" type="number" min="0" step="0.01" value="' + S.escapeHtml(Math.abs(Number(l.priceExVat || 0))) + '">',
+      '<select aria-label="Btw-tarief" data-line="vatRate"><option value="21"' + (Number(l.vatRate) === 21 ? " selected" : "") + '>21%</option><option value="9"' + (Number(l.vatRate) === 9 ? " selected" : "") + '>9%</option><option value="0"' + (Number(l.vatRate) === 0 ? " selected" : "") + ">0%</option></select>",
       '<label class="line-check"><input data-line="vatRefundEligible" type="checkbox" value="true"' + (l.vatRefundEligible ? " checked" : "") + '><span>BTW-teruggave</span></label>',
       '<strong class="line-total">-</strong>',
-      '<button class="small-button" type="button" data-action="quote-remove-line">x</button>',
-      '<input data-line="description" class="full-line-description" type="text" value="' + S.escapeHtml(l.description) + '" placeholder="Omschrijving" style="grid-column:1 / -1;">',
+      '<button class="small-button" type="button" data-action="quote-remove-line" aria-label="Offertregel verwijderen">×</button>',
+      '<input aria-label="Omschrijving" data-line="description" class="full-line-description" type="text" value="' + S.escapeHtml(l.description) + '" placeholder="Omschrijving" style="grid-column:1 / -1;">',
       "</div>"
     ].join("");
   }
@@ -206,11 +210,12 @@
     var customer = S.getAll("customers").find(function (item) { return item.id === q.customerId; }) || {};
     return [
       '<form class="quote-builder" data-form="quote" data-id="' + S.escapeHtml(q.id || "") + '" data-sales-opportunity-id="' + S.escapeHtml(q.salesOpportunityId || "") + '" data-source-advice-id="' + S.escapeHtml(q.sourceAdviceId || "") + '">',
-      '<div class="quote-builder-toolbar"><div><p class="eyebrow">Offertebouwer v3</p><h2>' + (q.id ? "Offerte vormgeven" : "Nieuwe offerte op maat") + '</h2><p class="muted">Productblokken, regelingen en het te betalen bedrag blijven duidelijk van elkaar gescheiden.</p></div><div class="button-row"><button class="ghost-button" type="button" data-action="quotes">Annuleren</button><button class="ghost-button" type="button" data-action="quote-draft-pdf">PDF voorbeeld</button><button class="primary-button" type="submit">Offerte opslaan</button></div></div>',
+      '<div class="quote-builder-toolbar"><div><p class="eyebrow">Offertebouwer v3</p><h2>' + (q.id ? "Offerte vormgeven" : "Nieuwe offerte op maat") + '</h2><p class="muted">Productblokken, regelingen en het te betalen bedrag blijven duidelijk van elkaar gescheiden.</p><small class="quote-draft-status" data-quote-draft-status>Conceptbeveiliging is actief.</small></div><div class="button-row"><button class="ghost-button quote-mobile-toggle" type="button" data-action="quote-mobile-view" data-view="controls">Invoer</button><button class="ghost-button quote-mobile-toggle" type="button" data-action="quote-mobile-view" data-view="preview">Voorbeeld</button><button class="ghost-button" type="button" data-action="quotes">Annuleren</button><button class="ghost-button" type="button" data-action="quote-draft-pdf">PDF voorbeeld</button><button class="primary-button" type="submit">Offerte opslaan</button></div></div>',
       '<section class="quote-template-picker" aria-label="Offertetemplate">' + templateCards(q.templateType) + '</section>',
       '<div class="quote-builder-layout"><div class="quote-builder-controls">',
       '<section class="panel compact-panel"><div class="panel-head"><div><p class="eyebrow">1. Basisgegevens</p><h2>Klant en document</h2></div></div>',
       '<div class="field-grid">',
+      '<label class="field">Klant zoeken<input type="search" data-action="form-customer-search" autocomplete="off" placeholder="Naam, bedrijf of plaats"></label>',
       '<label class="field">Klant<select name="customerId" required>' + customerOptions(q.customerId) + '</select></label>',
       '<label class="field">Offertenummer<input name="quoteNumber" required value="' + S.escapeHtml(q.quoteNumber) + '"></label>',
       '<label class="field">Offertedatum<input name="quoteDate" type="date" required value="' + S.escapeHtml(q.quoteDate) + '"></label>',
@@ -240,7 +245,7 @@
       '</div></section>',
       '<section class="panel compact-panel"><div class="panel-head"><div><p class="eyebrow">6. Pagina’s</p><h2>Volgorde en zichtbaarheid</h2></div></div><div class="quote-page-manager" data-page-manager>' + pageManagerHtml(config) + '</div></section>',
       '<section class="panel compact-panel"><label class="field full">Voorwaarden<textarea name="notes" data-action="quote-preview-change" rows="6">' + S.escapeHtml(q.notes || "") + '</textarea></label></section>',
-      '</div><aside class="quote-preview-wrap"><div class="quote-preview-label"><span>Live A4-voorbeeld</span><small>Exacte PDF-weergave</small></div><div class="quote-preview-tools"><div class="button-row"><button class="small-button" type="button" data-action="quote-zoom" data-delta="-0.08">−</button><button class="small-button" type="button" data-action="quote-zoom" data-delta="0.08">+</button></div><select data-action="quote-page-jump">' + config.pages.filter(function (page) { return page.enabled; }).map(function (page) { var def = C.quoteDocument.PAGE_DEFS.find(function (item) { return item.id === page.id; }); return '<option value="' + page.id + '">' + S.escapeHtml(def.label) + '</option>'; }).join("") + '</select></div><div class="quote-preview-stage" data-quote-preview-stage><div data-quote-preview>' + C.quoteDocument.render(q, customer, S.settings(), config) + '</div></div><div data-preview-warning></div></aside></div>',
+      '</div><aside class="quote-preview-wrap"><div class="quote-preview-label"><span>Live A4-voorbeeld</span><small>Exacte PDF-weergave</small></div><div class="quote-preview-tools"><div class="button-row"><button class="small-button" type="button" data-action="quote-zoom" data-delta="-0.08" aria-label="Voorbeeld verkleinen">−</button><button class="small-button" type="button" data-action="quote-zoom" data-delta="0.08" aria-label="Voorbeeld vergroten">+</button></div><select aria-label="Voorbeeldpagina kiezen" data-action="quote-page-jump">' + config.pages.filter(function (page) { return page.enabled; }).map(function (page) { var def = C.quoteDocument.PAGE_DEFS.find(function (item) { return item.id === page.id; }); return '<option value="' + page.id + '">' + S.escapeHtml(def.label) + '</option>'; }).join("") + '</select></div><div class="quote-preview-stage" data-quote-preview-stage role="region" aria-label="Scrollbaar offertevoorbeeld" tabindex="0"><div data-quote-preview>' + C.quoteDocument.render(q, customer, S.settings(), config) + '</div></div><div data-preview-warning></div></aside></div>',
       "</form>"
     ].join("");
   }
@@ -261,7 +266,7 @@
   function templateCards(selected) {
     return Object.keys(TEMPLATES).map(function (key) {
       var item = TEMPLATES[key];
-      return '<button type="button" class="quote-template-card' + (selected === key ? " is-active" : "") + '" data-action="quote-template" data-template="' + key + '"><span>' + item.icon + '</span><strong>' + item.label + '</strong><small>Volledig aanpasbaar</small></button>';
+      return '<button type="button" aria-pressed="' + (selected === key ? "true" : "false") + '" class="quote-template-card' + (selected === key ? " is-active" : "") + '" data-action="quote-template" data-template="' + key + '"><span aria-hidden="true">' + item.icon + '</span><strong>' + item.label + '</strong><small>Volledig aanpasbaar</small></button>';
     }).join("") + '<input type="hidden" name="templateType" value="' + S.escapeHtml(selected || "maatwerk") + '">';
   }
 
@@ -354,11 +359,106 @@
 
   function formDraft(form) {
     var draft = Object.fromEntries(new FormData(form).entries());
+    Object.keys(draft).forEach(function (key) { if (typeof File !== "undefined" && draft[key] instanceof File) delete draft[key]; });
     draft.lines = collectLines(form);
     draft.benefits = collectBenefits(form, S.calculateTotals(draft.lines));
     draft.id = form.dataset.id || "";
     draft.documentConfig = collectConfig(form, draft);
     return draft;
+  }
+
+  function draftKey(form) {
+    if (form && form.dataset.draftStorageKey) return form.dataset.draftStorageKey;
+    var user = S.user && S.user();
+    var key = "climature-quote-draft:v1:" + (user && user.id || "anonymous") + ":" + (form.dataset.id || "new");
+    if (form) form.dataset.draftStorageKey = key;
+    return key;
+  }
+
+  function isDraftValid(stored, now) {
+    if (!stored || stored.version !== 1 || !stored.updatedAt) return false;
+    var updated = new Date(stored.updatedAt).getTime();
+    return Number.isFinite(updated) && (now == null ? Date.now() : now) - updated <= DRAFT_TTL;
+  }
+
+  function readDraft(form) {
+    try {
+      var stored = JSON.parse(sessionStorage.getItem(draftKey(form)) || "null");
+      if (!isDraftValid(stored)) { sessionStorage.removeItem(draftKey(form)); return null; }
+      return stored;
+    } catch (_error) { return null; }
+  }
+
+  function saveDraft(form) {
+    if (!form || !document.documentElement.contains(form)) return;
+    try {
+      var payload = { version: 1, userId: S.user() && S.user().id, route: window.location.hash, updatedAt: new Date().toISOString(), quote: formDraft(form) };
+      sessionStorage.setItem(draftKey(form), JSON.stringify(payload));
+      var status = form.querySelector("[data-quote-draft-status]");
+      if (status) status.textContent = "Concept tijdelijk bewaard om " + new Date().toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" }) + ".";
+    } catch (_error) {
+      var failed = form.querySelector("[data-quote-draft-status]");
+      if (failed) failed.textContent = "Concept kon niet tijdelijk worden bewaard.";
+    }
+  }
+
+  function scheduleDraft(form) {
+    window.clearTimeout(draftTimer);
+    draftTimer = window.setTimeout(function () { saveDraft(form); }, 350);
+  }
+
+  function clearDraft(form) {
+    try { sessionStorage.removeItem(draftKey(form)); } catch (_error) {}
+    if (C.app && C.app.state) delete C.app.state.quoteDraftOverride;
+  }
+
+  function enhanceSections(form) {
+    Array.from(form.querySelectorAll(".quote-builder-controls > .panel")).forEach(function (panel, index) {
+      var head = panel.querySelector(":scope > .panel-head");
+      if (!head || head.querySelector('[data-action="quote-section-toggle"]')) return;
+      var button = document.createElement("button");
+      button.type = "button"; button.className = "small-button quote-section-toggle"; button.dataset.action = "quote-section-toggle"; button.setAttribute("aria-expanded", "true"); button.textContent = "Inklappen"; button.setAttribute("aria-label", "Sectie " + (index + 1) + " inklappen");
+      head.appendChild(button);
+    });
+  }
+
+  function initDraft(form) {
+    if (!form) return;
+    if (window.innerWidth <= 1080 && !form.classList.contains("quote-show-preview") && !form.classList.contains("quote-show-controls")) form.classList.add("quote-show-controls");
+    enhanceSections(form);
+    var saved = readDraft(form);
+    if (!saved || C.app.state.quoteDraftOverride || form.querySelector(".quote-restore-banner")) return;
+    var banner = document.createElement("div");
+    banner.className = "notice warn quote-restore-banner";
+    banner.innerHTML = '<span>Er staat een tijdelijk concept van ' + S.escapeHtml(new Date(saved.updatedAt).toLocaleString("nl-NL")) + ' klaar.</span><div class="button-row"><button class="small-button" type="button" data-action="quote-draft-restore">Herstellen</button><button class="small-button" type="button" data-action="quote-draft-discard">Verwijderen</button></div>';
+    form.querySelector(".quote-builder-toolbar").insertAdjacentElement("afterend", banner);
+  }
+
+  function restoreDraft(form) {
+    var saved = readDraft(form);
+    if (!saved) return C.app.toast("Het tijdelijke concept is niet meer beschikbaar.");
+    C.app.state.quoteDraftOverride = saved.quote;
+    C.app.render();
+    C.app.toast("Tijdelijk concept hersteld.");
+  }
+
+  function discardDraft(form) {
+    clearDraft(form);
+    var banner = form.querySelector(".quote-restore-banner");
+    if (banner) banner.remove();
+    C.app.toast("Tijdelijk concept verwijderd.");
+  }
+
+  function toggleSection(button) {
+    var panel = button.closest(".panel");
+    var collapsed = panel.classList.toggle("is-collapsed");
+    button.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    button.textContent = collapsed ? "Uitklappen" : "Inklappen";
+  }
+
+  function mobileView(form, view) {
+    form.classList.toggle("quote-show-preview", view === "preview");
+    form.classList.toggle("quote-show-controls", view !== "preview");
   }
 
   function updatePreview(form, totals) {
@@ -660,8 +760,8 @@
   }
 
   function removeQuote(id) {
-    if (!window.confirm("Offerte verwijderen?")) return;
-    return S.remove("quotes", id).then(function () {
+    return C.app.confirm({ title: "Offerte verwijderen", message: "De offerte wordt definitief verwijderd. Gekoppelde facturen blijven bestaan.", confirmLabel: "Offerte verwijderen" }).then(function (confirmed) { if (!confirmed) return; return S.remove("quotes", id); }).then(function (removed) {
+      if (removed === undefined && S.getAll("quotes").some(function (quote) { return quote.id === id; })) return;
       C.app.toast("Offerte verwijderd.");
       C.app.navigate("quotes");
     });
@@ -677,10 +777,8 @@
     });
     if (isAcceptedStatus(status) && !update.acceptedAt) update.acceptedAt = update.statusUpdatedAt;
     return S.upsert("quotes", update).then(function () {
-      return S.refresh();
-    }).then(function () {
       C.app.toast(isAcceptedStatus(status) ? "Offerte geaccepteerd. Maak een factuur of plan de installatie." : "Offertestatus bijgewerkt.");
-      C.app.render();
+      return C.app.render();
     });
   }
 
@@ -728,6 +826,14 @@
     zoomPreview: zoomPreview,
     jumpPage: jumpPage,
     downloadDraft: downloadDraft,
+    scheduleDraft: scheduleDraft,
+    clearDraft: clearDraft,
+    isDraftValid: isDraftValid,
+    initDraft: initDraft,
+    restoreDraft: restoreDraft,
+    discardDraft: discardDraft,
+    toggleSection: toggleSection,
+    mobileView: mobileView,
     remove: removeQuote,
     updateStatus: updateStatus,
     createFromAdvice: createFromAdvice

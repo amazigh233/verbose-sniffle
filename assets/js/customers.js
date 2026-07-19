@@ -48,14 +48,16 @@
       ].join("");
     }).join("");
     var headActions = S.canManage("crm")
-      ? '<div class="button-row"><button class="ghost-button" data-action="customer-import">Importeer aanvraag</button><button class="primary-button" data-action="customer-new">Nieuwe klant</button></div>'
+      ? '<div class="button-row"><button class="ghost-button" data-action="customer-import">Importeer aanvraag</button></div>'
       : "";
 
     return [
       '<section class="section panel">',
       '<div class="panel-head"><div><p class="eyebrow">Klantenbestand</p><h2>Klanten beheren</h2></div>' + headActions + "</div>",
       '<input class="search-input" type="search" placeholder="Zoeken op naam, bedrijf, e-mail, telefoon of postcode" value="' + S.escapeHtml(query || "") + '" data-action="customer-search">',
-      customers.length ? '<div class="table-wrap" style="margin-top:14px;"><table class="data-table"><thead><tr><th>Klant</th><th>Contact</th><th>Adres</th><th>Aangemaakt</th><th>Acties</th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '<div class="empty-state" style="margin-top:14px;">Geen klanten gevonden.</div>',
+      query ? '<div class="active-filters"><span>Zoekfilter: <strong>' + S.escapeHtml(query) + '</strong></span><a href="#customers">Filter wissen</a></div>' : "",
+      customers.length ? '<div class="table-wrap" style="margin-top:14px;"><table class="data-table"><caption class="visually-hidden">Klantenbestand</caption><thead><tr><th>Klant</th><th>Contact</th><th>Adres</th><th>Aangemaakt</th><th>Acties</th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '<div class="empty-state" style="margin-top:14px;">Geen klanten gevonden.</div>',
+      S.paginationControls("customers"),
       "</section>"
     ].join("");
   }
@@ -442,11 +444,12 @@
       C.app.toast("Deze klant heeft gekoppelde documenten of installaties en kan niet veilig worden verwijderd.");
       return;
     }
-    var message = "Klant verwijderen?";
-    if (!window.confirm(message)) return;
-    return S.remove("customers", id).then(function () {
-      C.app.toast("Klant verwijderd.");
-      C.app.navigate("customers");
+    return C.app.confirm({ title: "Klant verwijderen", message: "Deze klant wordt definitief verwijderd.", confirmLabel: "Klant verwijderen" }).then(function (confirmed) {
+      if (!confirmed) return;
+      return S.remove("customers", id).then(function () {
+        C.app.toast("Klant verwijderd.");
+        C.app.navigate("customers");
+      });
     });
   }
 
@@ -511,26 +514,23 @@
   }
 
   function removeDocument(id) {
-    if (!window.confirm("PDF uit klantdossier verwijderen?")) return;
-    return S.remove("customerDocuments", id).then(function () {
-      C.app.toast("PDF verwijderd.");
-      C.app.render();
+    return C.app.confirm({ title: "PDF verwijderen", message: "De PDF wordt uit het klantdossier verwijderd.", confirmLabel: "PDF verwijderen" }).then(function (confirmed) {
+      if (!confirmed) return;
+      return S.remove("customerDocuments", id).then(function () { C.app.toast("PDF verwijderd."); C.app.render(); });
     });
   }
 
   function removeNote(id) {
-    if (!window.confirm("Contactnotitie verwijderen?")) return;
-    return S.remove("customerNotes", id).then(function () {
-      C.app.toast("Contactnotitie verwijderd.");
-      C.app.render();
+    return C.app.confirm({ title: "Contactnotitie verwijderen", message: "Deze notitie wordt definitief verwijderd.", confirmLabel: "Notitie verwijderen" }).then(function (confirmed) {
+      if (!confirmed) return;
+      return S.remove("customerNotes", id).then(function () { C.app.toast("Contactnotitie verwijderd."); C.app.render(); });
     });
   }
 
   function removeAdvice(id) {
-    if (!window.confirm("Advies verwijderen?")) return;
-    return S.remove("advices", id).then(function () {
-      C.app.toast("Advies verwijderd.");
-      C.app.render();
+    return C.app.confirm({ title: "Advies verwijderen", message: "Dit advies wordt definitief verwijderd.", confirmLabel: "Advies verwijderen" }).then(function (confirmed) {
+      if (!confirmed) return;
+      return S.remove("advices", id).then(function () { C.app.toast("Advies verwijderd."); C.app.render(); });
     });
   }
 

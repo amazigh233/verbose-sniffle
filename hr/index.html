@@ -12,7 +12,7 @@
   <div class="hr-shell" hidden>
     <aside class="hr-sidebar">
       <a class="hr-brand" href="#dashboard"><span>C</span><div><strong>CLIMATURE</strong><small>Werknemersportaal</small></div></a>
-      <nav>
+      <nav aria-label="Werknemersportaal">
         <a href="#dashboard" data-nav="dashboard">Dashboard</a>
         <a href="#employees" data-nav="employees">Werknemers</a>
         <a href="#qualifications" data-nav="qualifications">Certificatenmatrix</a>
@@ -23,12 +23,20 @@
         <a href="/">Terug naar CRM</a>
       </div>
     </aside>
-    <main>
+    <main id="hr-main" tabindex="-1">
       <header class="hr-topbar"><div><p>Beveiligde HR-omgeving</p><h1 id="page-title">Dashboard</h1></div><div id="top-actions"></div></header>
       <div id="hr-app" class="hr-workspace"></div>
     </main>
   </div>
   <main id="security-gate" class="security-gate"><div class="gate-card"><p>Beveiligde omgeving wordt geladen…</p></div></main>
+  <dialog id="hr-dialog" aria-labelledby="hr-dialog-title" aria-describedby="hr-dialog-message">
+    <div class="dialog-card">
+      <h2 id="hr-dialog-title">Actie bevestigen</h2>
+      <p id="hr-dialog-message"></p>
+      <label class="field dialog-input" hidden>Invoer<textarea id="hr-dialog-input" rows="4"></textarea></label>
+      <div class="button-row"><button type="button" data-hr-dialog="cancel">Annuleren</button><button class="danger" type="button" data-hr-dialog="confirm">Bevestigen</button></div>
+    </div>
+  </dialog>
   <div id="hr-toast" class="hr-toast" role="status" aria-live="polite"></div>
   <script src="/medewerkers/hr.js"></script>
 </body>

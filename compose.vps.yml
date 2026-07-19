@@ -1,0 +1,106 @@
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: climature
+      POSTGRES_USER: climature
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U climature -d climature"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - backend
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - backend
+
+  clamav:
+    image: clamav/clamav:1.4_base
+    restart: unless-stopped
+    volumes:
+      - clamav_data:/var/lib/clamav
+    networks:
+      - backend
+      - updates
+
+  app:
+    image: climature-app:2.1.0
+    build:
+      context: .
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://climature:${POSTGRES_PASSWORD}@db:5432/climature
+      SESSION_SECRET: ${SESSION_SECRET}
+      ADMIN_USERNAME: ${ADMIN_USERNAME}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH}
+      APP_BASE_URL: https://climaturetool.nl
+      HR_PORTAL_ENABLED: ${HR_PORTAL_ENABLED:-false}
+      HR_ENCRYPTION_KEY: ${HR_ENCRYPTION_KEY}
+      HR_KEY_VERSION: ${HR_KEY_VERSION:-v1}
+      PROJECT_ENCRYPTION_KEY: ${PROJECT_ENCRYPTION_KEY}
+      PROJECT_KEY_VERSION: ${PROJECT_KEY_VERSION:-v1}
+      REDIS_URL: redis://redis:6379
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: 3310
+      OBJECT_STORAGE_PROVIDER: local
+      OBJECT_STORAGE_ROOT: /data/objects
+    volumes:
+      - object_data:/data/objects
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clamav:
+        condition: service_started
+    networks:
+      - backend
+      - web
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    networks:
+      - web
+
+networks:
+  backend:
+    internal: true
+  web:
+  updates:
+
+volumes:
+  postgres_data:
+  redis_data:
+  clamav_data:
+  object_data:
+  caddy_data:
+  caddy_config:

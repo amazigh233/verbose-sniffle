@@ -432,6 +432,53 @@ describe("business data", () => {
     expect((await client.get("/api/products?pageSize=25").expect(200)).body.items.length).toBeGreaterThan(0);
   });
 
+  it("serves scoped summaries, details, dashboards and server-side reports", async () => {
+    const client = agent();
+    await login(client);
+    const customer = await createCustomer(client);
+    const quoteNumber = (await client.post("/api/counters/quote/next").expect(200)).body.value;
+    const quote = (await client.post("/api/collections/quotes").send({
+      quoteNumber,
+      customerId: customer.id,
+      quoteDate: "2026-07-01",
+      validUntil: "2026-08-01",
+      status: "verstuurd",
+      notes: "Dit zware detail hoort niet in de lijstprojectie.",
+      lines: [{ description: "Warmtepomp", qty: 1, unit: "stuk", priceExVat: 1000, vatRate: 21 }]
+    }).expect(200)).body.item;
+    const invoiceNumber = (await client.post("/api/counters/invoice/next").expect(200)).body.value;
+    const invoice = (await client.post("/api/collections/invoices").send({
+      invoiceNumber,
+      customerId: customer.id,
+      invoiceDate: "2026-07-02",
+      dueDate: "2026-07-16",
+      status: "verzonden",
+      lines: quote.lines
+    }).expect(200)).body.item;
+
+    const list = await client.get("/api/quotes?view=summary&page=1&pageSize=25").expect(200);
+    expect(list.body).toMatchObject({ page: 1, pageSize: 25, totalItems: 1, totalPages: 1 });
+    expect(list.body.items[0]).toMatchObject({ id: quote.id, quoteNumber, customer: { companyName: customer.companyName } });
+    expect(list.body.items[0].lines).toBeUndefined();
+    expect(list.body.items[0].notes).toBeUndefined();
+    expect((await client.get(`/api/customers/${customer.id}`).expect(200)).body.item.id).toBe(customer.id);
+    expect((await client.get(`/api/quotes/${quote.id}`).expect(200)).body.item.lines).toHaveLength(1);
+    expect((await client.get(`/api/invoices/${invoice.id}`).expect(200)).body.item.lines).toHaveLength(1);
+    await client.get("/api/quotes/not-a-real-id").expect(404);
+
+    const dashboard = await client.get("/api/dashboard/finance").expect(200);
+    expect(dashboard.body.metrics).toMatchObject({ openInvoices: 1, outstandingAmount: 1210 });
+    expect(dashboard.body.items.urgentInvoices).toHaveLength(1);
+    const report = await client.get("/api/reports/summary?from=2026-07-01&to=2026-07-31").expect(200);
+    expect(report.body).toMatchObject({ totals: { count: 1, subtotal: 1000, vat: 210, total: 1210, outstanding: 1210 } });
+    expect(report.body.revenueSeries).toEqual([{ period: "2026-07", count: 1, amount: 1210 }]);
+    expect(report.body.statuses).toEqual([{ status: "verzonden", count: 1, amount: 1210 }]);
+    expect(report.body.topCustomers[0]).toMatchObject({ customerId: customer.id, count: 1, amount: 1210 });
+    const csv = await client.get("/api/reports/export?dataset=invoices&from=2026-07-01&to=2026-07-31").expect("Content-Type", /text\/csv/).expect(200);
+    expect(csv.text).toContain(invoiceNumber);
+    expect(csv.text).toContain("1210,00");
+  });
+
   it("creates one concept invoice directly from an accepted quote", async () => {
     const client = agent();
     await login(client);
@@ -1013,6 +1060,151 @@ describe("secure HR portal", () => {
     const config = { hrEncryptionKey: Buffer.alloc(32, 7).toString("base64"), hrKeyVersion: "v1" };
     const encrypted = encrypt(config, "gevoelig");
     expect(() => decrypt({ ...config, hrEncryptionKey: Buffer.alloc(32, 8).toString("base64") }, encrypted.cipher, encrypted.iv, encrypted.tag)).toThrow(/veilig worden geopend/);
+  });
+});
+
+describe("payments and cash settlement", () => {
+  async function createInvoice(client, total = 100) {
+    const customer = await createCustomer(client);
+    const invoiceNumber = (await client.post("/api/counters/invoice/next").expect(200)).body.value;
+    const item = (await client.post("/api/collections/invoices").send({
+      invoiceNumber,
+      customerId: customer.id,
+      invoiceDate: "2026-07-19",
+      dueDate: "2026-08-02",
+      status: "verzonden",
+      lines: [{ description: "Betalingstest", qty: 1, unit: "stuk", priceExVat: total, vatRate: 0 }]
+    }).expect(200)).body.item;
+    return { customer, invoice: item };
+  }
+
+  async function openDrawer(client, openingBalance = 100) {
+    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const drawer = (await client.post("/api/cash-drawers").send({ name: `Testlade ${suffix}` }).expect(201)).body.item;
+    const shift = (await client.post(`/api/cash-drawers/${drawer.id}/shifts`).send({ openingBalance }).expect(201)).body.item;
+    return { drawer, shift };
+  }
+
+  it("supports partial, split and multiple tenders with discount, tip and immutable receipt snapshots", async () => {
+    const client = agent();
+    await login(client);
+    const { invoice } = await createInvoice(client, 121);
+    const { shift } = await openDrawer(client);
+    const createKey = `mixed-create-${Date.now()}`;
+    const partial = (await client.post("/api/payments").set("Idempotency-Key", createKey).send({
+      invoiceId: invoice.id,
+      discountAmount: 11,
+      discountReason: "Loyaliteitskorting",
+      tipAmount: 5,
+      tenders: [
+        { type: "cash", amount: 40, amountReceived: 50, shiftId: shift.id },
+        { type: "pin", amount: 25, provider: "adyen", externalReference: `pin-${Date.now()}` }
+      ]
+    }).expect(201)).body.item;
+    expect(partial).toMatchObject({ status: "partially_paid", subtotal: 121, discountAmount: 11, tipAmount: 5, totalAmount: 115, paidAmount: 65 });
+    expect(partial.tenders.find((item) => item.type === "cash")).toMatchObject({ amount: 40, amountReceived: 50, changeAmount: 10 });
+    expect(partial.receipts).toHaveLength(1);
+
+    const addKey = `mixed-complete-${Date.now()}`;
+    const completionBody = { tenders: [
+      { type: "credit_card", amount: 10, provider: "stripe", externalReference: `card-${Date.now()}`, cardBrand: "visa", cardLast4: "4242" },
+      { type: "apple_pay", amount: 20, provider: "stripe", externalReference: `apple-${Date.now()}` },
+      { type: "google_pay", amount: 20, provider: "stripe", externalReference: `google-${Date.now()}` }
+    ] };
+    const completed = (await client.post(`/api/payments/${partial.id}/tenders`).set("Idempotency-Key", addKey).send(completionBody).expect(200)).body.item;
+    expect(completed).toMatchObject({ status: "paid", paidAmount: 115, refundedAmount: 0 });
+    expect(completed.tenders.map((item) => item.type)).toEqual(["cash", "pin", "credit_card", "apple_pay", "google_pay"]);
+    expect(completed.receipts).toHaveLength(2);
+    expect(new Set(completed.receipts.map((item) => item.number)).size).toBe(2);
+    expect((await prisma.invoice.findUnique({ where: { id: invoice.id } })).status).toBe("betaald");
+
+    const replayed = (await client.post(`/api/payments/${partial.id}/tenders`).set("Idempotency-Key", addKey).send(completionBody).expect(200)).body.item;
+    expect(replayed.tenders).toHaveLength(5);
+    expect(replayed.receipts).toHaveLength(2);
+    const history = (await client.get(`/api/payments/${partial.id}/history`).expect(200)).body;
+    expect(history.verification).toMatchObject({ valid: true, entries: 6 });
+    expect(history.ledger.map((item) => item.eventType)).toEqual(["payment.created", "tender.captured", "tender.captured", "tender.captured", "tender.captured", "tender.captured"]);
+    const receipt = (await client.get(`/api/payments/receipts/${completed.receipts[0].number}`).expect(200)).body.item;
+    expect(receipt.snapshot.payment).toMatchObject({ id: partial.id, discountAmount: "11.00", tipAmount: "5.00", totalAmount: "115.00" });
+    expect(receipt.snapshot.tenders[0]).toMatchObject({ type: "cash", amountReceived: "50.00", changeAmount: "10.00" });
+
+    await client.post("/api/payments").set("Idempotency-Key", `invalid-card-${Date.now()}`).send({
+      amount: 10,
+      tenders: [{ type: "credit_card", amount: 10, provider: "stripe", externalReference: `invalid-${Date.now()}`, cardNumber: "4242424242424242" }]
+    }).expect(400);
+  });
+
+  it("records refunds and cancellations and settles the cash drawer atomically", async () => {
+    const client = agent();
+    await login(client);
+    const { invoice } = await createInvoice(client, 100);
+    const { shift } = await openDrawer(client, 100);
+    const paid = (await client.post("/api/payments").set("Idempotency-Key", `refund-source-${Date.now()}`).send({
+      invoiceId: invoice.id,
+      tenders: [
+        { type: "cash", amount: 60, amountReceived: 70, shiftId: shift.id },
+        { type: "credit_card", amount: 40, provider: "stripe", externalReference: `refund-card-${Date.now()}`, cardBrand: "mastercard", cardLast4: "4444" }
+      ]
+    }).expect(201)).body.item;
+    const cashTender = paid.tenders.find((item) => item.type === "cash");
+    const cardTender = paid.tenders.find((item) => item.type === "credit_card");
+    const refunded = (await client.post(`/api/payments/${paid.id}/refunds`).set("Idempotency-Key", `refund-op-${Date.now()}`).send({
+      amount: 30,
+      reason: "Gedeeltelijke retour",
+      cashShiftId: shift.id,
+      allocations: [
+        { tenderId: cashTender.id, amount: 10 },
+        { tenderId: cardTender.id, amount: 20, externalReference: `card-refund-${Date.now()}` }
+      ]
+    }).expect(201)).body.item;
+    expect(refunded).toMatchObject({ status: "partially_refunded", paidAmount: 100, refundedAmount: 30 });
+    expect((await prisma.invoice.findUnique({ where: { id: invoice.id } })).status).toBe("verzonden");
+
+    const repaid = (await client.post(`/api/payments/${paid.id}/tenders`).set("Idempotency-Key", `refund-repay-${Date.now()}`).send({
+      tenders: [{ type: "google_pay", amount: 30, provider: "stripe", externalReference: `repay-${Date.now()}` }]
+    }).expect(200)).body.item;
+    expect(repaid).toMatchObject({ status: "paid", paidAmount: 130, refundedAmount: 30 });
+    await client.post(`/api/payments/${paid.id}/cancel`).set("Idempotency-Key", `bad-cancel-${Date.now()}`).send({ reason: "Niet toegestaan na retour" }).expect(409);
+
+    const cancellable = (await client.post("/api/payments").set("Idempotency-Key", `cancel-create-${Date.now()}`).send({
+      amount: 20,
+      tenders: [{ type: "cash", amount: 20, shiftId: shift.id }]
+    }).expect(201)).body.item;
+    const cancelled = (await client.post(`/api/payments/${cancellable.id}/cancel`).set("Idempotency-Key", `cancel-op-${Date.now()}`).send({ reason: "Klant ziet af van aankoop" }).expect(200)).body.item;
+    expect(cancelled).toMatchObject({ status: "cancelled", paidAmount: 0, cancellationReason: "Klant ziet af van aankoop" });
+
+    const firstLedger = await prisma.paymentLedgerEntry.findFirst({ where: { paymentId: paid.id }, orderBy: { sequence: "asc" } });
+    await expect(prisma.paymentLedgerEntry.update({ where: { id: firstLedger.id }, data: { eventType: "tampered" } })).rejects.toThrow(/immutable payment record/i);
+    const firstReceipt = await prisma.paymentReceipt.findFirst({ where: { paymentId: paid.id } });
+    await expect(prisma.paymentReceipt.update({ where: { id: firstReceipt.id }, data: { kind: "cancellation" } })).rejects.toThrow(/immutable payment record/i);
+
+    const closed = (await client.post(`/api/cash-drawer-shifts/${shift.id}/close`).send({ closingBalance: 148, notes: "Twee euro kasverschil" }).expect(200)).body.item;
+    expect(closed.settlement).toMatchObject({ openingBalance: "100.00", cashPayments: "60.00", cashRefunds: "10.00", expectedClosingBalance: "150.00", closingBalance: "148.00", variance: "-2.00" });
+    const shiftDetail = (await client.get(`/api/cash-drawer-shifts/${shift.id}`).expect(200)).body.item;
+    expect(shiftDetail.ledgerVerification).toMatchObject({ valid: true, entries: 6 });
+    await client.post("/api/payments").set("Idempotency-Key", `closed-cash-${Date.now()}`).send({
+      amount: 5,
+      tenders: [{ type: "cash", amount: 5, shiftId: shift.id }]
+    }).expect(409);
+  });
+
+  it("serializes concurrent retries and never double-captures a tender", async () => {
+    const client = agent();
+    await login(client);
+    const payment = (await client.post("/api/payments").set("Idempotency-Key", `concurrent-create-${Date.now()}`).send({ amount: 50 }).expect(201)).body.item;
+    const key = `concurrent-tender-${Date.now()}`;
+    const body = { tenders: [{ type: "pin", amount: 50, provider: "adyen", externalReference: `concurrent-pin-${Date.now()}` }] };
+    const responses = await Promise.all([
+      client.post(`/api/payments/${payment.id}/tenders`).set("Idempotency-Key", key).send(body),
+      client.post(`/api/payments/${payment.id}/tenders`).set("Idempotency-Key", key).send(body)
+    ]);
+    expect(responses.map((response) => response.status)).toEqual([200, 200]);
+    const stored = (await client.get(`/api/payments/${payment.id}`).expect(200)).body.item;
+    expect(stored).toMatchObject({ status: "paid", paidAmount: 50, remainingAmount: 0 });
+    expect(stored.tenders).toHaveLength(1);
+    expect(stored.receipts).toHaveLength(1);
+    expect(await prisma.paymentOperation.count({ where: { paymentId: payment.id, type: "payment.tenders" } })).toBe(1);
+    expect((await client.get(`/api/payments/${payment.id}/history`).expect(200)).body.verification.valid).toBe(true);
   });
 });
 

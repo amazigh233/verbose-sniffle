@@ -204,8 +204,10 @@
   }
 
   function remove(id) {
-    if (!window.confirm("Afspraak verwijderen?")) return;
-    return S.remove("salesAppointments", id).then(function () { C.app.toast("Afspraak verwijderd."); C.app.navigate("sales-agenda"); });
+    return C.app.confirm({ title: "Afspraak verwijderen", message: "Deze afspraak wordt definitief verwijderd.", confirmLabel: "Afspraak verwijderen" }).then(function (confirmed) {
+      if (!confirmed) return;
+      return S.remove("salesAppointments", id).then(function () { C.app.toast("Afspraak verwijderd."); C.app.navigate("sales-agenda"); });
+    });
   }
 
   C.salesAgenda = { render: render, renderForm: renderForm, renderDetail: renderDetail, saveFromForm: saveFromForm, complete: complete, remove: remove };

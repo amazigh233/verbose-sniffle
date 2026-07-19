@@ -120,7 +120,7 @@
     if (action === "service-request-edit") return C.app.navigate("service-request-edit:" + id);
     if (action === "service-visit-open") return C.app.navigate("service-visit:" + id);
     if (action === "service-signature-clear") { var canvas = document.querySelector("[data-signature]"); if (canvas) { canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height); canvas.dataset.dirty = "true"; } return; }
-    if (action === "service-invoice") return S.request("/api/service/visits/" + encodeURIComponent(id) + "/invoice", { method: "POST", body: "{}" }).then(function (payload) { C.app.toast("Conceptfactuur aangemaakt."); return Promise.all([refresh(), S.refresh()]).then(function () { C.app.navigate("invoice:" + payload.item.id); }); });
+    if (action === "service-invoice") return S.request("/api/service/visits/" + encodeURIComponent(id) + "/invoice", { method: "POST", body: "{}" }).then(function (payload) { S.invalidate("invoices", payload.item.id); C.app.toast("Conceptfactuur aangemaakt."); C.app.navigate("invoice:" + payload.item.id); });
     if (action === "service-confirmation") return S.request("/api/service/visits/" + encodeURIComponent(id) + "/confirmation", { method: "POST", body: "{}" }).then(function (payload) { C.app.toast(payload.status === "duplicate" ? "Afspraakbevestiging was al verstuurd." : "Afspraakbevestiging verstuurd."); });
     if (action === "service-reminders") return S.request("/api/service/reminders/run", { method: "POST", body: "{}" }).then(function (payload) { var sent = (payload.items || []).filter(function (x) { return x.status === "sent"; }).length; C.app.toast(sent + " onderhoudsherinneringen verstuurd."); });
   }

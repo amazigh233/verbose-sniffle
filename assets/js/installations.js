@@ -30,13 +30,12 @@
     var customers = S.getAll("customers");
     var q = (query || "").toLowerCase();
     var installations = sortedInstallations(S.getAll("installations").filter(function (installation) {
-      var customer = customers.find(function (item) { return item.id === installation.customerId; });
+      var customer = installation.customer || customers.find(function (item) { return item.id === installation.customerId; });
       return !q || [installation.quoteNumber, installation.status, installation.installer, S.customerName(customer)].join(" ").toLowerCase().indexOf(q) >= 0;
     }));
-    var headAction = S.canManage("execution") ? '<button class="primary-button" data-action="installation-new">Nieuwe installatie</button>' : "";
     return [
       '<section class="section panel">',
-      '<div class="panel-head"><div><p class="eyebrow">Planning</p><h2>Installaties beheren</h2></div>' + headAction + "</div>",
+      '<div class="panel-head"><div><p class="eyebrow">Planning</p><h2>Installaties beheren</h2></div></div>',
       agendaControls(state),
       state.view === "list" ? listView(installations, customers, query) : "",
       state.view === "week" ? weekView(installations, customers, state) : "",
@@ -127,12 +126,12 @@
   }
 
   function viewButton(view, label, state) {
-    return '<button class="small-button' + (state.view === view ? " is-active" : "") + '" data-action="installation-view" data-view="' + view + '" data-date="' + state.date + '">' + label + "</button>";
+    return '<button aria-pressed="' + (state.view === view ? "true" : "false") + '" class="small-button' + (state.view === view ? " is-active" : "") + '" data-action="installation-view" data-view="' + view + '" data-date="' + state.date + '">' + label + "</button>";
   }
 
   function listView(installations, customers, query) {
     var rows = installations.map(function (installation) {
-      var customer = customers.find(function (item) { return item.id === installation.customerId; });
+      var customer = installation.customer || customers.find(function (item) { return item.id === installation.customerId; });
       var editButton = S.canManage("execution") ? '<button class="small-button" data-action="installation-edit" data-id="' + S.escapeHtml(installation.id) + '">Bewerk</button>' : "";
       return [
         "<tr>",
@@ -140,13 +139,15 @@
         "<td>" + S.escapeHtml(S.customerName(customer)) + (installation.quoteNumber ? '<br><span class="muted">' + S.escapeHtml(installation.quoteNumber) + "</span>" : "") + "</td>",
         '<td><span class="status-pill ' + statusClass(installation.status) + '">' + S.escapeHtml(installation.status || "ingepland") + "</span></td>",
         "<td>" + S.escapeHtml(installation.installer || "-") + "</td>",
-        '<td><div class="button-row"><button class="small-button" data-action="installation-detail" data-id="' + S.escapeHtml(installation.id) + '">Open</button><button class="small-button" data-action="installation-detail" data-id="' + S.escapeHtml(installation.id) + '">Werkbon invullen</button><a class="small-button" target="_blank" rel="noopener" href="' + S.escapeHtml(googleCalendarUrl(installation, customer)) + '">Google Agenda</a>' + editButton + "</div></td>",
+        '<td><div class="button-row"><button class="small-button" data-action="installation-detail" data-id="' + S.escapeHtml(installation.id) + '">Open werkbon</button><a class="small-button" target="_blank" rel="noopener" href="' + S.escapeHtml(googleCalendarUrl(installation, customer)) + '">Google Agenda</a>' + editButton + "</div></td>",
         "</tr>"
       ].join("");
     }).join("");
     return [
       '<input class="search-input" type="search" placeholder="Zoeken op klant, offerte, status of monteur" value="' + S.escapeHtml(query || "") + '" data-action="installation-search">',
-      installations.length ? '<div class="table-wrap" style="margin-top:14px;"><table class="data-table"><thead><tr><th>Datum</th><th>Klant / offerte</th><th>Status</th><th>Monteur</th><th>Acties</th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '<div class="empty-state" style="margin-top:14px;">Geen installaties gepland.</div>'
+      query ? '<div class="active-filters"><span>Zoekfilter: <strong>' + S.escapeHtml(query) + '</strong></span><a href="#installations">Filter wissen</a></div>' : "",
+      installations.length ? '<div class="table-wrap" style="margin-top:14px;"><table class="data-table"><caption class="visually-hidden">Installatieplanning</caption><thead><tr><th>Datum</th><th>Klant / offerte</th><th>Status</th><th>Monteur</th><th>Acties</th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '<div class="empty-state" style="margin-top:14px;">Geen installaties gepland.</div>',
+      S.paginationControls("installations")
     ].join("");
   }
 
@@ -264,6 +265,7 @@
       '<form class="panel" data-form="installation" data-id="' + S.escapeHtml(data.id || "") + '">',
       '<div class="panel-head"><div><p class="eyebrow">Installatie</p><h2>' + (data.id ? "Installatie bewerken" : "Installatie plannen") + '</h2></div><div class="button-row"><button class="ghost-button" type="button" data-action="installations">Annuleren</button><button class="primary-button" type="submit">Opslaan</button></div></div>',
       '<div class="field-grid">',
+      '<label class="field">Klant zoeken<input type="search" data-action="form-customer-search" autocomplete="off" placeholder="Naam, bedrijf of plaats"></label>',
       '<label class="field">Klant<select name="customerId" required>' + customerOptions(data.customerId) + '</select></label>',
       '<label class="field">Offertenummer<input name="quoteNumber" value="' + S.escapeHtml(data.quoteNumber || "") + '"></label>',
       '<label class="field">Datum<input name="plannedDate" type="date" required value="' + S.escapeHtml(data.plannedDate || S.today()) + '"></label>',
@@ -392,7 +394,9 @@
       var selected = employees.find(function (employee) { return employee.id === data.employeeId; });
       if (selected && selected.qualified === false) {
         var labels = (selected.warnings || []).map(function (warning) { return warning.label; }).join(", ");
-        if (!window.confirm("Let op: deze monteur voldoet niet aan alle eisen voor " + workTypeLabel(data.workType) + ".\n\n" + labels + "\n\nToch inplannen?")) return null;
+        return C.app.confirm({ title: "Kwalificatiewaarschuwing", message: "Deze monteur voldoet niet aan alle eisen voor " + workTypeLabel(data.workType) + ". " + labels, confirmLabel: "Toch inplannen" }).then(function (confirmed) {
+          return confirmed ? S.upsert("installations", data) : null;
+        });
       }
       return S.upsert("installations", data);
     }).then(function (saved) {
@@ -459,10 +463,9 @@
   }
 
   function removeInstallation(id) {
-    if (!window.confirm("Installatie verwijderen?")) return;
-    return S.remove("installations", id).then(function () {
-      C.app.toast("Installatie verwijderd.");
-      C.app.navigate("installations");
+    return C.app.confirm({ title: "Installatie verwijderen", message: "Deze installatie wordt definitief verwijderd.", confirmLabel: "Installatie verwijderen" }).then(function (confirmed) {
+      if (!confirmed) return;
+      return S.remove("installations", id).then(function () { C.app.toast("Installatie verwijderd."); C.app.navigate("installations"); });
     });
   }
 

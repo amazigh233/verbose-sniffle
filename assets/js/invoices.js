@@ -30,11 +30,11 @@
     var customers = S.getAll("customers");
     var q = (query || "").toLowerCase();
     var invoices = S.getAll("invoices").filter(function (invoice) {
-      var customer = customers.find(function (item) { return item.id === invoice.customerId; });
+      var customer = invoice.customer || customers.find(function (item) { return item.id === invoice.customerId; });
       return !q || [invoice.invoiceNumber, invoice.quoteNumber, S.customerName(customer), invoice.status].join(" ").toLowerCase().indexOf(q) >= 0;
     });
     var rows = invoices.map(function (invoice) {
-      var customer = customers.find(function (item) { return item.id === invoice.customerId; });
+      var customer = invoice.customer || customers.find(function (item) { return item.id === invoice.customerId; });
       return [
         "<tr>",
         "<td><strong>" + S.escapeHtml(invoice.invoiceNumber) + "</strong><br><span class=\"muted\">" + S.formatDate(invoice.invoiceDate) + "</span></td>",
@@ -47,9 +47,11 @@
     }).join("");
     return [
       '<section class="section panel">',
-      '<div class="panel-head"><div><p class="eyebrow">Facturen</p><h2>Facturen beheren</h2></div><button class="primary-button" data-action="invoice-new">Nieuwe factuur</button></div>',
+      '<div class="panel-head"><div><p class="eyebrow">Facturen</p><h2>Facturen beheren</h2></div></div>',
       '<input class="search-input" type="search" placeholder="Zoeken op klantnaam, factuurnummer, offertenummer of status" value="' + S.escapeHtml(query || "") + '" data-action="invoice-search">',
-      invoices.length ? '<div class="table-wrap" style="margin-top:14px;"><table class="data-table"><thead><tr><th>Factuur</th><th>Klant / offerte</th><th>Status</th><th>Totaal</th><th>Acties</th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '<div class="empty-state" style="margin-top:14px;">Geen facturen gevonden.</div>',
+      query ? '<div class="active-filters"><span>Zoekfilter: <strong>' + S.escapeHtml(query) + '</strong></span><a href="#invoices">Filter wissen</a></div>' : "",
+      invoices.length ? '<div class="table-wrap" style="margin-top:14px;"><table class="data-table"><caption class="visually-hidden">Facturen</caption><thead><tr><th>Factuur</th><th>Klant / offerte</th><th>Status</th><th>Totaal</th><th>Acties</th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '<div class="empty-state" style="margin-top:14px;">Geen facturen gevonden.</div>',
+      S.paginationControls("invoices"),
       "</section>"
     ].join("");
   }
@@ -60,7 +62,7 @@
       '<button class="small-button" data-action="invoice-detail" data-id="' + S.escapeHtml(invoice.id) + '">Open</button>',
       '<button class="small-button" data-action="invoice-edit" data-id="' + S.escapeHtml(invoice.id) + '">Bewerk</button>',
       invoice.status === "concept" ? '<button class="small-button" data-action="invoice-status" data-status="verzonden" data-id="' + S.escapeHtml(invoice.id) + '">Markeer verzonden</button>' : "",
-      (invoice.status === "verzonden" || invoice.status === "verlopen") ? '<button class="small-button" data-action="invoice-status" data-status="betaald" data-id="' + S.escapeHtml(invoice.id) + '">Markeer betaald</button>' : "",
+      (invoice.status === "verzonden" || invoice.status === "verlopen") ? '<button class="small-button" data-action="payment-from-invoice" data-id="' + S.escapeHtml(invoice.id) + '">Registreer betaling</button>' : "",
       "</div>"
     ].join("");
   }
@@ -100,6 +102,7 @@
       '<div class="panel-head"><div><p class="eyebrow">Factuur</p><h2>' + (inv.id ? "Factuur bewerken" : "Nieuwe factuur") + '</h2></div><div class="button-row"><button class="ghost-button" type="button" data-action="invoices">Annuleren</button><button class="primary-button" type="submit">Opslaan</button></div></div>',
       '<div class="field-grid">',
       '<label class="field">Offerte<select name="quoteNumber" data-action="invoice-load-quote">' + quoteOptions(inv.quoteNumber) + '</select></label>',
+      '<label class="field">Klant zoeken<input type="search" data-action="form-customer-search" autocomplete="off" placeholder="Naam, bedrijf of plaats"></label>',
       '<label class="field">Klant<select name="customerId" required>' + customerOptions(inv.customerId) + '</select></label>',
       '<label class="field">Factuurnummer<input name="invoiceNumber" required value="' + S.escapeHtml(inv.invoiceNumber) + '"></label>',
       '<label class="field">Factuurdatum<input name="invoiceDate" type="date" required value="' + S.escapeHtml(inv.invoiceDate) + '"></label>',
@@ -248,11 +251,11 @@
     if (button) button.disabled = true;
     return S.request("/api/quotes/" + encodeURIComponent(quoteId) + "/invoice", { method: "POST" })
       .then(function (response) {
-        return S.refresh().then(function () {
-          C.app.toast(response.created ? "Conceptfactuur aangemaakt vanuit de offerte." : "De factuur voor deze offerte bestond al.");
-          C.app.navigate("invoice:" + response.item.id);
-          return response.item;
-        });
+        S.invalidate("invoices", response.item.id);
+        S.invalidate("quotes", quoteId);
+        C.app.toast(response.created ? "Conceptfactuur aangemaakt vanuit de offerte." : "De factuur voor deze offerte bestond al.");
+        C.app.navigate("invoice:" + response.item.id);
+        return response.item;
       })
       .catch(function (error) {
         if (button) button.disabled = false;
@@ -261,10 +264,9 @@
   }
 
   function removeInvoice(id) {
-    if (!window.confirm("Factuur verwijderen?")) return;
-    return S.remove("invoices", id).then(function () {
-      C.app.toast("Factuur verwijderd.");
-      C.app.navigate("invoices");
+    return C.app.confirm({ title: "Factuur verwijderen", message: "Deze factuur wordt definitief verwijderd.", confirmLabel: "Factuur verwijderen" }).then(function (confirmed) {
+      if (!confirmed) return;
+      return S.remove("invoices", id).then(function () { C.app.toast("Factuur verwijderd."); C.app.navigate("invoices"); });
     });
   }
 
@@ -274,7 +276,7 @@
       buttons.push('<button class="primary-button" data-action="invoice-status" data-status="verzonden" data-id="' + S.escapeHtml(invoice.id) + '">Markeer verzonden</button>');
     }
     if (invoice.status === "verzonden" || invoice.status === "verlopen") {
-      buttons.push('<button class="primary-button" data-action="invoice-status" data-status="betaald" data-id="' + S.escapeHtml(invoice.id) + '">Markeer betaald</button>');
+      buttons.push('<button class="primary-button" data-action="payment-from-invoice" data-id="' + S.escapeHtml(invoice.id) + '">Registreer betaling</button>');
       buttons.push('<button class="ghost-button" data-action="invoice-reminder" data-id="' + S.escapeHtml(invoice.id) + '">Stuur herinnering</button>');
     }
     return buttons.join("");

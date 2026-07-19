@@ -1096,6 +1096,31 @@ function opslaanInPortaal(advies){
   } catch(e){ alert('Opslaan in portaal is niet gelukt.'); }
 }
 
+function accessiblePrompt(title, value){
+  let dialog = document.getElementById('advies-dialog');
+  if (!dialog) {
+    dialog = document.createElement('dialog');
+    dialog.id = 'advies-dialog';
+    dialog.setAttribute('aria-labelledby', 'advies-dialog-title');
+    dialog.innerHTML = '<div style="padding:24px;width:min(440px,calc(100vw - 48px))"><h2 id="advies-dialog-title"></h2><label style="display:grid;gap:7px;margin:18px 0">Percentage<input id="advies-dialog-input" inputmode="decimal" style="min-height:44px;padding:10px;border:1px solid #bdcabf;border-radius:8px"></label><div style="display:flex;justify-content:flex-end;gap:10px"><button type="button" data-dialog-cancel>Annuleren</button><button type="button" class="btn-primary" data-dialog-confirm>Toepassen</button></div></div>';
+    document.body.appendChild(dialog);
+  }
+  dialog.querySelector('#advies-dialog-title').textContent = title;
+  const input = dialog.querySelector('#advies-dialog-input');
+  input.value = value || '';
+  return new Promise(resolve => {
+    const cancel = event => { if (event) event.preventDefault(); finish(null); };
+    const confirm = () => finish(input.value);
+    const finish = result => { dialog.querySelector('[data-dialog-cancel]').removeEventListener('click', cancel); dialog.querySelector('[data-dialog-confirm]').removeEventListener('click', confirm); dialog.removeEventListener('cancel', cancel); dialog.close(); resolve(result); };
+    dialog.querySelector('[data-dialog-cancel]').addEventListener('click', cancel);
+    dialog.querySelector('[data-dialog-confirm]').addEventListener('click', confirm);
+    dialog.addEventListener('cancel', cancel);
+    dialog.showModal();
+    input.focus();
+    input.select();
+  });
+}
+
 var DEFAULT_ADVIES_AANNAMES = {
   energy: {
     gasPrice: 1.45,
@@ -1389,8 +1414,8 @@ function showTool(name){
       : 'Geen aanpassing toegepast';
   }
 
-  function setKorting(){
-    const value = window.prompt('Aanpassing in procenten (maximaal 15%)', kortingPercent || '');
+  async function setKorting(){
+    const value = await accessiblePrompt('Aanpassing in procenten (maximaal 15%)', kortingPercent || '');
     if (value === null) return;
     const parsed = parseKorting(value);
     if (parsed === null || parsed < 0){
@@ -2140,8 +2165,8 @@ function showTool(name){
       : 'Geen aanpassing toegepast';
   }
 
-  function setKorting(){
-    const value = window.prompt('Aanpassing in procenten (maximaal 15%)', kortingPercent || '');
+  async function setKorting(){
+    const value = await accessiblePrompt('Aanpassing in procenten (maximaal 15%)', kortingPercent || '');
     if (value === null) return;
     const parsed = parseKorting(value);
     if (parsed === null || parsed < 0){

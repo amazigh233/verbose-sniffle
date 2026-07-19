@@ -35,6 +35,12 @@ model User {
   ownedProjects           CustomerProject[]       @relation("ProjectOwner")
   projectAuditEvents      ProjectAuditEvent[]     @relation("ProjectAuditActor")
   serviceAuditEvents      ServiceAuditEvent[]     @relation("ServiceAuditActor")
+  createdPayments         Payment[]               @relation("PaymentCreatedBy")
+  cancelledPayments       Payment[]               @relation("PaymentCancelledBy")
+  createdPaymentTenders   PaymentTender[]         @relation("PaymentTenderCreatedBy")
+  createdPaymentRefunds   PaymentRefund[]         @relation("PaymentRefundCreatedBy")
+  openedCashDrawerShifts  CashDrawerShift[]       @relation("CashDrawerShiftOpenedBy")
+  closedCashDrawerShifts  CashDrawerShift[]       @relation("CashDrawerShiftClosedBy")
 
   @@index([role])
   @@index([active])
@@ -319,6 +325,7 @@ model Customer {
   serviceEquipment   CustomerEquipment[]
   serviceRequests    ServiceRequest[]
   maintenanceVisits  MaintenanceVisit[]
+  payments           Payment[]
 
   @@index([email])
   @@index([postalCode])
@@ -552,6 +559,7 @@ model Invoice {
   customer            Customer          @relation(fields: [customerId], references: [id], onDelete: Restrict)
   lines               InvoiceLine[]
   maintenanceVisit    MaintenanceVisit?
+  payment             Payment?
 
   @@index([customerId])
   @@index([quoteNumber])
@@ -1015,6 +1023,195 @@ model ServiceReminderRun {
 
   @@unique([contractId, reminderDate])
   @@index([status, reminderDate])
+}
+
+model CashDrawer {
+  id        String            @id @default(cuid())
+  name      String            @unique
+  active    Boolean           @default(true)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  shifts    CashDrawerShift[]
+
+  @@index([active, name])
+}
+
+model CashDrawerShift {
+  id                     String                    @id @default(cuid())
+  drawerId               String
+  status                 String                    @default("open")
+  openingBalance         Decimal                   @db.Decimal(14, 2)
+  expectedClosingBalance Decimal?                  @db.Decimal(14, 2)
+  closingBalance         Decimal?                  @db.Decimal(14, 2)
+  variance               Decimal?                  @db.Decimal(14, 2)
+  settlement             Json?
+  notes                  String                    @default("")
+  openedById             String?
+  closedById             String?
+  openedAt               DateTime                  @default(now())
+  closedAt               DateTime?
+  drawer                 CashDrawer                @relation(fields: [drawerId], references: [id], onDelete: Restrict)
+  openedBy               User?                     @relation("CashDrawerShiftOpenedBy", fields: [openedById], references: [id], onDelete: SetNull)
+  closedBy               User?                     @relation("CashDrawerShiftClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
+  tenders                PaymentTender[]
+  refundAllocations      PaymentRefundAllocation[]
+  ledgerEntries          PaymentLedgerEntry[]
+
+  @@index([drawerId, openedAt])
+  @@index([status, openedAt])
+}
+
+model Payment {
+  id                 String               @id @default(cuid())
+  invoiceId          String?              @unique
+  customerId         String?
+  createdById        String?
+  cancelledById      String?
+  status             String               @default("pending")
+  currency           String               @default("EUR")
+  subtotal           Decimal              @db.Decimal(14, 2)
+  discountAmount     Decimal              @default(0) @db.Decimal(14, 2)
+  discountReason     String               @default("")
+  tipAmount          Decimal              @default(0) @db.Decimal(14, 2)
+  totalAmount        Decimal              @db.Decimal(14, 2)
+  paidAmount         Decimal              @default(0) @db.Decimal(14, 2)
+  refundedAmount     Decimal              @default(0) @db.Decimal(14, 2)
+  cancellationReason String               @default("")
+  completedAt        DateTime?
+  cancelledAt        DateTime?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  invoice            Invoice?             @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  customer           Customer?            @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  createdBy          User?                @relation("PaymentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  cancelledBy        User?                @relation("PaymentCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  tenders            PaymentTender[]
+  refunds            PaymentRefund[]
+  receipts           PaymentReceipt[]
+  operations         PaymentOperation[]
+  ledgerEntries      PaymentLedgerEntry[]
+
+  @@index([customerId, createdAt])
+  @@index([status, createdAt])
+  @@index([createdAt])
+}
+
+model PaymentTender {
+  id                String                    @id @default(cuid())
+  paymentId         String
+  shiftId           String?
+  createdById       String?
+  type              String
+  status            String                    @default("captured")
+  amount            Decimal                   @db.Decimal(14, 2)
+  amountReceived    Decimal                   @db.Decimal(14, 2)
+  changeAmount      Decimal                   @default(0) @db.Decimal(14, 2)
+  provider          String                    @default("")
+  externalReference String                    @default("")
+  cardBrand         String                    @default("")
+  cardLast4         String                    @default("")
+  createdAt         DateTime                  @default(now())
+  cancelledAt       DateTime?
+  payment           Payment                   @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  shift             CashDrawerShift?          @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+  createdBy         User?                     @relation("PaymentTenderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  refundAllocations PaymentRefundAllocation[]
+
+  @@index([paymentId, createdAt])
+  @@index([shiftId, type, createdAt])
+  @@index([externalReference])
+}
+
+model PaymentRefund {
+  id          String                    @id @default(cuid())
+  paymentId   String
+  createdById String?
+  amount      Decimal                   @db.Decimal(14, 2)
+  reason      String
+  createdAt   DateTime                  @default(now())
+  payment     Payment                   @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  createdBy   User?                     @relation("PaymentRefundCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  allocations PaymentRefundAllocation[]
+  receipt     PaymentReceipt?
+
+  @@index([paymentId, createdAt])
+}
+
+model PaymentRefundAllocation {
+  id                String           @id @default(cuid())
+  refundId          String
+  tenderId          String
+  shiftId           String?
+  amount            Decimal          @db.Decimal(14, 2)
+  externalReference String           @default("")
+  createdAt         DateTime         @default(now())
+  refund            PaymentRefund    @relation(fields: [refundId], references: [id], onDelete: Restrict)
+  tender            PaymentTender    @relation(fields: [tenderId], references: [id], onDelete: Restrict)
+  shift             CashDrawerShift? @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+
+  @@index([refundId])
+  @@index([tenderId, createdAt])
+  @@index([shiftId, createdAt])
+}
+
+model PaymentReceipt {
+  id        String         @id @default(cuid())
+  number    String         @unique
+  paymentId String
+  refundId  String?        @unique
+  kind      String
+  snapshot  Json
+  createdAt DateTime       @default(now())
+  payment   Payment        @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  refund    PaymentRefund? @relation(fields: [refundId], references: [id], onDelete: Restrict)
+
+  @@index([paymentId, createdAt])
+  @@index([createdAt])
+}
+
+model PaymentReceiptSequence {
+  year      Int      @id
+  value     Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+model PaymentOperation {
+  id             String   @id @default(cuid())
+  idempotencyKey String   @unique
+  paymentId      String
+  actorId        String
+  type           String
+  requestHash    String
+  createdAt      DateTime @default(now())
+  payment        Payment  @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@index([paymentId, createdAt])
+}
+
+model PaymentLedgerEntry {
+  id            String           @id @default(cuid())
+  paymentId     String?
+  shiftId       String?
+  aggregateType String
+  aggregateId   String
+  sequence      Int
+  transactionId String
+  actorId       String
+  eventType     String
+  tenderType    String           @default("")
+  amount        Decimal          @default(0) @db.Decimal(14, 2)
+  currency      String           @default("EUR")
+  payload       Json
+  previousHash  String           @default("")
+  hash          String           @unique
+  createdAt     DateTime         @default(now())
+  payment       Payment?         @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  shift         CashDrawerShift? @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+
+  @@unique([aggregateType, aggregateId, sequence])
+  @@index([paymentId, sequence])
+  @@index([shiftId, sequence])
+  @@index([createdAt])
 }
 
 model Setting {

@@ -2,6 +2,7 @@
 
 module.exports = {
   testDir: "./tests/e2e",
+  snapshotPathTemplate: "{testDir}/{testFilePath}-snapshots/{arg}{ext}",
   timeout: 30000,
   webServer: {
     command: "npm run test:e2e:server",

@@ -140,17 +140,26 @@
     if (form.dataset.form === "project-create") request = S.request("/api/projects", { method: "POST", body: JSON.stringify(data) }).then(function (payload) { C.app.navigate("project:" + payload.item.id); });
     if (form.dataset.form === "project-update") {
       if (state.project.readiness.level === "red") {
-        if (!window.confirm("Dit project heeft kritieke waarschuwingen. Wijziging toch opslaan?")) return Promise.resolve();
-        data.warningOverrideReason = window.prompt("Leg kort vast waarom u ondanks de waarschuwing doorgaat:", "Planning bewust bevestigd") || "";
-        if (!data.warningOverrideReason.trim()) return Promise.reject(new Error("Een auditreden is verplicht bij kritieke waarschuwingen."));
-      }
-      request = S.request("/api/projects/" + id, { method: "PUT", body: JSON.stringify(data) });
+        request = C.app.confirm({ title: "Kritieke projectwaarschuwing", message: "Dit project heeft kritieke waarschuwingen. Wilt u de wijziging toch opslaan?", confirmLabel: "Toch opslaan" }).then(function (confirmed) {
+          if (!confirmed) return null;
+          return C.app.prompt({ title: "Auditreden vastleggen", message: "Leg kort vast waarom u ondanks de waarschuwing doorgaat.", inputLabel: "Reden", value: "Planning bewust bevestigd", confirmLabel: "Opslaan", danger: false });
+        }).then(function (reason) {
+          if (reason === null) return null;
+          data.warningOverrideReason = String(reason || "").trim();
+          if (!data.warningOverrideReason) throw new Error("Een auditreden is verplicht bij kritieke waarschuwingen.");
+          return S.request("/api/projects/" + id, { method: "PUT", body: JSON.stringify(data) });
+        });
+      } else request = S.request("/api/projects/" + id, { method: "PUT", body: JSON.stringify(data) });
     }
     if (form.dataset.form === "project-material") request = S.request("/api/projects/" + projectId + "/materials" + (id ? "/" + id : ""), { method: id ? "PUT" : "POST", body: JSON.stringify(data) });
     if (form.dataset.form === "project-task") request = S.request("/api/projects/" + projectId + "/tasks" + (id ? "/" + id : ""), { method: id ? "PUT" : "POST", body: JSON.stringify(data) });
     if (form.dataset.form === "project-member") request = S.request("/api/projects/" + projectId + "/team", { method: "POST", body: JSON.stringify(data) });
     if (form.dataset.form === "project-equipment") request = S.request("/api/projects/" + projectId + "/equipment", { method: "POST", body: JSON.stringify(data) });
-    return Promise.resolve(request).then(function () { if (projectId && form.dataset.form !== "project-create") return loadDetail(projectId); }).then(function () { C.app.toast("Project bijgewerkt."); });
+    return Promise.resolve(request).then(function (result) {
+      if (result === null) return null;
+      if (projectId && form.dataset.form !== "project-create") return loadDetail(projectId);
+      return result || true;
+    }).then(function (result) { if (result !== null) C.app.toast("Project bijgewerkt."); });
   }
 
   function handleAction(target) {
@@ -158,8 +167,8 @@
     if (action === "project-open") return C.app.navigate("project:" + target.dataset.id);
     if (action === "project-actions-filter") { var query = {}; document.querySelectorAll("[data-project-action-filter]").forEach(function (input) { query[input.dataset.projectActionFilter] = input.value; }); return S.request("/api/projects/actions?" + new URLSearchParams(query)).then(function (payload) { document.querySelector("[data-project-actions]").innerHTML = actionRows(payload.items || [], true); }); }
     if (action === "project-material-edit") { var material = state.project.materials.find(function (item) { return item.id === target.dataset.id; }); document.querySelector("[data-material-editor]").innerHTML = materialForm(state.project, material); return; }
-    if (action === "project-material-delete") { if (!window.confirm("Onderdeel verwijderen?")) return; return S.request("/api/projects/" + state.project.id + "/materials/" + target.dataset.id, { method: "DELETE" }).then(function () { return loadDetail(state.project.id); }); }
-    if (action === "project-member-delete") { if (!window.confirm("Projectlid verwijderen?")) return; return S.request("/api/projects/" + state.project.id + "/team/" + target.dataset.id, { method: "DELETE" }).then(function () { return loadDetail(state.project.id); }); }
+    if (action === "project-material-delete") return C.app.confirm({ title: "Onderdeel verwijderen", message: "Dit onderdeel wordt uit het project verwijderd.", confirmLabel: "Onderdeel verwijderen" }).then(function (confirmed) { if (confirmed) return S.request("/api/projects/" + state.project.id + "/materials/" + target.dataset.id, { method: "DELETE" }).then(function () { return loadDetail(state.project.id); }); });
+    if (action === "project-member-delete") return C.app.confirm({ title: "Projectlid verwijderen", message: "Dit projectlid wordt uit het project verwijderd.", confirmLabel: "Projectlid verwijderen" }).then(function (confirmed) { if (confirmed) return S.request("/api/projects/" + state.project.id + "/team/" + target.dataset.id, { method: "DELETE" }).then(function () { return loadDetail(state.project.id); }); });
   }
 
   function showError(error) { if (app()) app().innerHTML = '<section class="section panel"><div class="notice danger"><strong>Project kon niet worden geladen.</strong><br>' + e(error.message) + '</div></section>'; }

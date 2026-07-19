@@ -87,7 +87,7 @@
   }
 
   function periodButton(period, label, active) {
-    return '<button class="small-button' + (active === period ? " is-active" : "") + '" data-action="report-period" data-period="' + period + '">' + label + "</button>";
+    return '<button aria-pressed="' + (active === period ? "true" : "false") + '" class="small-button' + (active === period ? " is-active" : "") + '" data-action="report-period" data-period="' + period + '">' + label + "</button>";
   }
 
   function controls(range) {
@@ -118,10 +118,16 @@
     }).join("");
   }
 
+  function reportRows(items, firstLabel, firstValue) {
+    if (!items || !items.length) return '<tr><td colspan="3"><span class="muted">Geen gegevens in deze periode.</span></td></tr>';
+    return items.map(function (item) { return '<tr><td>' + S.escapeHtml(firstValue(item)) + '</td><td>' + S.escapeHtml(item.count) + '</td><td>' + S.money(item.amount) + '</td></tr>'; }).join("");
+  }
+
   function render() {
     var range = currentRange();
-    var invoices = invoicesInRange(range);
-    var data = aggregate(invoices);
+    var serverData = S.reportState && S.reportState({ from: range.from, to: range.to });
+    var invoices = serverData ? [] : invoicesInRange(range);
+    var data = serverData || aggregate(invoices);
     var t = data.totals;
     return [
       '<section class="section panel">',
@@ -144,7 +150,8 @@
       vatRows(data.rates),
       '<tr><td><strong>Totaal</strong></td><td><strong>' + S.money(t.subtotal) + '</strong></td><td><strong>' + S.money(t.vat) + "</strong></td></tr>",
       "</tbody></table></div>",
-      "</section>"
+      "</section>",
+      serverData ? '<section class="grid two section"><div class="panel"><div class="panel-head"><div><p class="eyebrow">Omzetreeks</p><h2>Omzet per maand</h2></div></div><div class="table-wrap"><table class="data-table"><caption class="visually-hidden">Omzet per maand</caption><thead><tr><th>Maand</th><th>Facturen</th><th>Omzet</th></tr></thead><tbody>' + reportRows(data.revenueSeries, "Maand", function (item) { return item.period; }) + '</tbody></table></div></div><div class="panel"><div class="panel-head"><div><p class="eyebrow">Verdeling</p><h2>Factuurstatussen</h2></div></div><div class="table-wrap"><table class="data-table"><caption class="visually-hidden">Factuurstatussen</caption><thead><tr><th>Status</th><th>Facturen</th><th>Bedrag</th></tr></thead><tbody>' + reportRows(data.statuses, "Status", function (item) { return item.status; }) + '</tbody></table></div></div></section><section class="panel section"><div class="panel-head"><div><p class="eyebrow">Relaties</p><h2>Topklanten</h2></div></div><div class="table-wrap"><table class="data-table"><caption class="visually-hidden">Topklanten</caption><thead><tr><th>Klant</th><th>Facturen</th><th>Omzet</th></tr></thead><tbody>' + reportRows(data.topCustomers || [], "Klant", function (item) { return item.name; }) + '</tbody></table></div></section>' : ""
     ].join("");
   }
 
@@ -199,6 +206,16 @@
 
   function exportCsv(type) {
     var range = currentRange();
+    if (!(S.isLegacyMode && S.isLegacyMode())) {
+      var link = document.createElement("a");
+      link.href = "/api/reports/export?" + new URLSearchParams({ dataset: type, from: range.from, to: range.to }).toString();
+      link.download = "";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      C.app.toast("CSV-export wordt voorbereid.");
+      return;
+    }
     var csv = buildCsv(type, range);
     // BOM zodat Excel de UTF-8 tekens (bijv. €) correct toont.
     var blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
@@ -215,6 +232,7 @@
 
   C.reports = {
     render: render,
+    currentRange: currentRange,
     applyRange: applyRange,
     exportCsv: exportCsv
   };

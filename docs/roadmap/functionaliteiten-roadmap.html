@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Climature — Functionaliteitenroadmap</title>
+  <style>
+    :root{--g950:#07351f;--g900:#0b4228;--g800:#155d37;--g700:#1d7544;--lime:#b6d72a;--lime2:#eff7c9;--paper:#f7f9f4;--white:#fff;--ink:#10261a;--muted:#5e7065;--line:#dce6dc;--orange:#dd7b33;--blue:#3f7595;--purple:#745a91;--red:#ad493b}
+    *{box-sizing:border-box}html,body{margin:0;padding:0;background:#dfe5df;color:var(--ink);font-family:Inter,"Aptos","Segoe UI",Arial,sans-serif;font-size:10.2pt;line-height:1.43;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    @page{size:A4;margin:0}.page{counter-increment:p;position:relative;width:210mm;height:297mm;margin:8mm auto;background:var(--paper);overflow:hidden;padding:15mm 16mm 15mm;page-break-after:always;box-shadow:0 10px 35px rgba(7,53,31,.16)}.page:last-child{page-break-after:auto}@media print{html,body{background:#fff}.page{margin:0;box-shadow:none}}
+    h1,h2,h3,h4,p,ul,ol{margin-top:0}h1{font-size:29pt;line-height:1.04;letter-spacing:-1px;margin-bottom:5mm}h2{font-size:20pt;line-height:1.08;letter-spacing:-.5px;color:var(--g950);margin-bottom:4mm}h3{font-size:12.3pt;line-height:1.2;color:var(--g900);margin-bottom:2mm}h4{font-size:8.2pt;line-height:1.2;letter-spacing:.8px;text-transform:uppercase;color:var(--g700);margin:0 0 1.5mm}p{margin-bottom:3mm}.lead{font-size:13pt;line-height:1.48;color:#385144}.muted{color:var(--muted)}.small{font-size:8.3pt}.eyebrow{margin:0 0 2mm;font-size:8.3pt;line-height:1;text-transform:uppercase;letter-spacing:1.5px;font-weight:800;color:var(--g700)}
+    .head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:7mm}.chapter{display:flex;align-items:center;gap:2.8mm;font-weight:800;color:var(--g800);font-size:8.5pt;text-transform:uppercase;letter-spacing:.9px}.chapter b{display:grid;place-items:center;width:8mm;height:8mm;border-radius:50%;background:var(--lime);color:var(--g950)}.logo{display:flex;flex:none;width:34mm;white-space:nowrap;overflow:visible;justify-content:flex-end;align-items:center;gap:2mm;font-size:8pt;font-weight:800;letter-spacing:.8px}.logo img{width:7mm;height:7mm}
+    .footer{position:absolute;left:16mm;right:16mm;bottom:6mm;display:flex;justify-content:space-between;border-top:.35mm solid var(--line);padding-top:2mm;color:var(--muted);font-size:7.4pt}.pn:after{content:counter(p)}
+    .cover{background:var(--g950);color:#fff;padding:0}.cover:before{content:"";position:absolute;width:120mm;height:120mm;border-radius:50%;background:var(--lime);right:-48mm;top:-48mm}.cover:after{content:"";position:absolute;width:98mm;height:98mm;border-radius:50%;border:10mm solid rgba(182,215,42,.12);left:-38mm;bottom:-44mm}.cover-in{position:relative;z-index:2;height:100%;padding:19mm 18mm 16mm;display:flex;flex-direction:column}.cover-brand{display:flex;align-items:center;gap:4mm;font-size:13pt;font-weight:800;letter-spacing:1.5px}.cover-brand img{width:18mm;height:18mm}.cover-main{margin-top:28mm;max-width:158mm}.cover .eyebrow{color:var(--lime)}.cover h1{font-size:40pt;color:#fff;max-width:148mm}.cover .lead{color:#dcecdf;max-width:138mm}.cover-box{margin-top:auto;background:#fff;color:var(--ink);border-radius:5mm;padding:6mm 7mm;display:grid;grid-template-columns:1.35fr .65fr;gap:8mm}.cover-box strong{display:block;color:var(--g950);font-size:11pt}.cover-meta{border-left:.4mm solid var(--line);padding-left:6mm;color:var(--muted);font-size:8.5pt}
+    .band{margin:0 -16mm 7mm;padding:8mm 16mm;background:var(--g950);color:#fff}.band h2{color:#fff;margin-bottom:2mm}.band p{margin:0;color:#dcecdf}.band .eyebrow{color:var(--lime)}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:5mm}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:4mm}.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:3.5mm}.card{background:#fff;border:.35mm solid var(--line);border-radius:4mm;padding:4.7mm;box-shadow:0 2mm 6mm rgba(12,65,39,.045)}.card.soft{background:#eef5eb}.card.lime{background:var(--lime2);border-color:#d9e99c}.card.dark{background:var(--g950);border-color:var(--g950);color:#fff}.card.dark h3,.card.dark h4{color:var(--lime)}.compact .card{padding:3.6mm}.no-break{break-inside:avoid}
+    .kpi{background:#fff;border:.35mm solid var(--line);border-radius:3mm;padding:3.5mm}.kpi span{display:block;color:var(--muted);font-size:7.8pt}.kpi strong{display:block;color:var(--g950);font-size:14pt;margin-top:1mm}
+    ul.check{list-style:none;padding:0;margin:0}ul.check li{position:relative;padding-left:7mm;margin:0 0 2mm}ul.check li:before{content:"✓";position:absolute;left:0;top:-.2mm;width:5mm;height:5mm;border-radius:50%;display:grid;place-items:center;background:var(--lime);font-size:7pt;font-weight:900}ul.clean{padding-left:5mm;margin:0}ul.clean li{margin-bottom:1.4mm}
+    .steps{list-style:none;padding:0;margin:0;counter-reset:s}.steps li{counter-increment:s;display:grid;grid-template-columns:9mm 1fr;gap:3mm;margin-bottom:3mm}.steps li:before{content:counter(s);display:grid;place-items:center;width:8mm;height:8mm;border-radius:50%;background:var(--g900);color:#fff;font-weight:800}.steps strong{display:block}.steps p{margin:0;color:var(--muted);font-size:9pt}
+    .pill{display:inline-flex;align-items:center;padding:1.1mm 2.3mm;border-radius:999px;background:#edf3ed;border:.3mm solid #d6e2d6;font-size:7.8pt;font-weight:800}.pill.now{background:var(--lime2);color:var(--g950)}.pill.next{background:#e4f0f5;color:#265b76}.pill.later{background:#efe8f5;color:#5e4475}.pill.dep{background:#fff0e5;color:#884719}.pill.effort{background:#f2f4f1;color:#44574c}
+    .tagrow{display:flex;flex-wrap:wrap;gap:1.7mm;margin:2mm 0}.tip,.warn{border-left:1.4mm solid var(--lime);background:var(--lime2);border-radius:1mm 3mm 3mm 1mm;padding:3.5mm 4mm;margin:4mm 0}.warn{border-left-color:var(--orange);background:#fff0e5}.tip>strong,.warn>strong{display:block;color:var(--g950)}
+    table{width:100%;border-collapse:collapse;background:#fff;border-radius:3mm;overflow:hidden}th,td{padding:2.6mm 3mm;text-align:left;border-bottom:.3mm solid var(--line);vertical-align:top}th{background:var(--g900);color:#fff;font-size:7.6pt;text-transform:uppercase;letter-spacing:.55px}tr:last-child td{border-bottom:0}.score{display:inline-grid;place-items:center;width:7mm;height:7mm;border-radius:2mm;background:var(--lime2);font-weight:900}.score.high{background:var(--lime);color:var(--g950)}
+    .timeline{display:grid;grid-template-columns:26mm repeat(4,1fr);border:.35mm solid var(--line);border-radius:4mm;overflow:hidden;background:#fff}.timeline>*{min-height:20mm;padding:3mm;border-right:.3mm solid var(--line);border-bottom:.3mm solid var(--line)}.timeline>*:nth-child(5n){border-right:0}.timeline .label{background:#edf4eb;font-weight:800;color:var(--g900)}.timeline .quarter{background:var(--g900);color:#fff;font-size:8pt;font-weight:800;text-transform:uppercase}.timeline .bar{margin:1mm 0;border-radius:2mm;padding:2mm;font-size:7.5pt;font-weight:700;min-height:auto}.b1{background:var(--lime2)}.b2{background:#e4f0f5}.b3{background:#efe8f5}.b4{background:#fff0e5}
+    .feature{background:#fff;border:.35mm solid var(--line);border-radius:4mm;padding:4.3mm;margin-bottom:3.5mm}.feature-head{display:flex;justify-content:space-between;gap:3mm;align-items:flex-start}.feature h3{margin:0}.feature p{color:var(--muted);margin:2mm 0}.feature .criteria{display:grid;grid-template-columns:1fr 1fr;gap:3mm;border-top:.3mm solid var(--line);padding-top:2.5mm;font-size:8.2pt}.feature .criteria strong{display:block;color:var(--g900)}
+    .flow{display:flex;gap:2mm;align-items:stretch;margin:5mm 0}.flow .node{position:relative;flex:1;background:#fff;border:.35mm solid var(--line);border-radius:3mm;padding:4mm 3mm;min-height:30mm}.flow .node:not(:last-child):after{content:"→";position:absolute;z-index:2;right:-5mm;top:10mm;width:8mm;height:8mm;border-radius:50%;display:grid;place-items:center;background:var(--lime);font-weight:900}.flow span{font-size:7.2pt;text-transform:uppercase;letter-spacing:.7px;color:var(--g700);font-weight:800}.flow strong{display:block;margin:1mm 0}.flow small{color:var(--muted)}
+    .matrix{display:grid;grid-template-columns:30mm repeat(3,1fr);grid-template-rows:14mm repeat(3,32mm);gap:2mm}.matrix>div{background:#fff;border:.35mm solid var(--line);border-radius:3mm;padding:3mm}.matrix .axis{border:0;background:transparent;font-size:8pt;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);font-weight:800}.matrix .mhigh{background:var(--lime2);border-color:#d7e690}.matrix .mmed{background:#e8f1f5}.matrix .mlow{background:#f3f4f2}.matrix strong{display:block;margin-bottom:1mm}.matrix small{color:var(--muted)}
+    .gates{display:grid;grid-template-columns:repeat(4,1fr);gap:3mm}.gate{position:relative;background:#fff;border:.35mm solid var(--line);border-radius:3mm;padding:4mm 3mm}.gate:not(:last-child):after{content:"";position:absolute;width:4mm;height:.7mm;background:var(--lime);right:-4mm;top:11mm}.gate b{display:grid;place-items:center;width:8mm;height:8mm;border-radius:50%;background:var(--g900);color:#fff;margin-bottom:2mm}.gate strong,.gate small{display:block}.gate small{color:var(--muted);margin-top:1mm}
+    .call{display:grid;grid-template-columns:18mm 1fr;gap:4mm;background:var(--g900);color:#fff;border-radius:4mm;padding:5mm}.call b{display:grid;place-items:center;width:15mm;height:15mm;border-radius:50%;background:var(--lime);color:var(--g950);font-size:16pt}.call h3{color:#fff;margin:0 0 1mm}.call p{margin:0;color:#dcecdf}
+  </style>
+</head>
+<body>
+  <section class="page cover">
+    <div class="cover-in">
+      <div class="cover-brand"><img src="../../assets/icons/icon.svg" alt="Climature-logo"> CLIMATURE</div>
+      <div class="cover-main"><p class="eyebrow">Productstrategie · indicatieve roadmap</p><h1>Functionaliteiten die de volgende groeifase mogelijk maken</h1><p class="lead">Van sterke interne bedrijfsvoering naar klantzelfservice, snellere conversie, datagedreven buitendienst en schaalbare integraties.</p></div>
+      <div class="cover-box"><div><strong>Eerst rendement en adoptie, daarna complexiteit.</strong><span>Een gefaseerde roadmap met prioriteiten, afhankelijkheden, acceptatiecriteria en meetpunten.</span></div><div class="cover-meta">Versie 1.0<br>20 juli 2026<br>Horizon: 18–24 maanden</div></div>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="head"><div class="chapter"><b>0</b> Beslisdocument</div><div class="logo"><img src="../../assets/icons/icon.svg" alt=""> CLIMATURE</div></div>
+    <h1>Wat deze roadmap wel en niet is</h1>
+    <p class="lead">Dit document ordent kansrijke uitbreidingen. De fasen zijn indicatief: iedere investering gaat pas door na validatie van klantwaarde, procesimpact, capaciteit en risico.</p>
+    <div class="grid3">
+      <div class="card"><h4>Wel</h4><h3>Een beslisvolgorde</h3><p class="muted">Welke problemen eerst, welke afhankelijkheden gelden en hoe succes meetbaar wordt.</p></div>
+      <div class="card"><h4>Wel</h4><h3>Een productrichting</h3><p class="muted">Samenhang tussen sales, operatie, service, klantbeleving en platform.</p></div>
+      <div class="card"><h4>Niet</h4><h3>Een vaste belofte</h3><p class="muted">Geen contractuele planning, leverancierskeuze of definitieve begroting.</p></div>
+    </div>
+    <h3 style="margin-top:7mm">Leeswijzer</h3>
+    <table><thead><tr><th>Onderdeel</th><th>Vraag die het beantwoordt</th><th>Pagina</th></tr></thead><tbody>
+      <tr><td>Startpositie</td><td>Wat is al aanwezig en hoeft niet opnieuw gebouwd?</td><td>3</td></tr>
+      <tr><td>Prioritering</td><td>Welke criteria bepalen volgorde en stop/go?</td><td>4</td></tr>
+      <tr><td>Tijdlijn</td><td>Welke waardestromen volgen elkaar logisch op?</td><td>5</td></tr>
+      <tr><td>Roadmapfasen</td><td>Welke functionaliteiten worden per horizon onderzocht?</td><td>6–11</td></tr>
+      <tr><td>Platform & afhankelijkheden</td><td>Welke randvoorwaarden voorkomen technische schuld?</td><td>12–13</td></tr>
+      <tr><td>Besturing & KPI’s</td><td>Hoe wordt besloten, gemeten en bijgestuurd?</td><td>14–15</td></tr>
+    </tbody></table>
+    <div class="tip"><strong>Capaciteitsaannname</strong>De volgorde past bij één compact productteam dat maximaal twee grote waardestromen tegelijk uitvoert. Bij minder capaciteit schuiven fasen door; de prioriteitsvolgorde blijft bruikbaar.</div>
+    <div class="card soft" style="margin-top:6mm"><h3>Horizonlabels</h3><div class="tagrow"><span class="pill now">Nu · 0–3 maanden</span><span class="pill next">Daarna · 3–9 maanden</span><span class="pill later">Later · 9–24 maanden</span><span class="pill dep">Alleen na validatie</span></div></div>
+    <div class="footer"><span>Climature · Functionaliteitenroadmap</span><span class="pn"></span></div>
+  </section>
+
+  <section class="page">
+    <div class="head"><div class="chapter"><b>1</b> Startpositie</div><div class="logo"><img src="../../assets/icons/icon.svg" alt=""> CLIMATURE</div></div>
+    <div class="band"><p class="eyebrow">Basis per juli 2026</p><h2>Het bedrijfsportaal ondersteunt de volledige interne keten</h2><p>Nieuwe ontwikkeling kan voortbouwen op bestaande klanten, transacties, projecten, werkbonnen en autorisatie.</p></div>
+    <div class="grid3 compact">
+      <div class="card"><h4>CRM</h4><h3>Klantdossiers</h3><p>Relaties, documenten, historie en gekoppeld vervolgwerk.</p></div>
+      <div class="card"><h4>Sales</h4><h3>Lead tot offerte</h3><p>Funnel, agenda, advies, offertebouwer en PDF.</p></div>
+      <div class="card"><h4>Uitvoering</h4><h3>Project tot oplevering</h3><p>Taken, materiaal, team, planning en werkbon.</p></div>
+      <div class="card"><h4>Service</h4><h3>Nazorg</h3><p>Meldingen, bezoeken, apparatuur en contracten.</p></div>
+      <div class="card"><h4>Financiën</h4><h3>Factuur tot betaling</h3><p>Facturen, betalingen, kassa, refunds en rapportage.</p></div>
+      <div class="card"><h4>HR</h4><h3>Inzetbaarheid</h3><p>Dossiers, contracten, kwalificaties en checklists.</p></div>
+    </div>
+    <h3 style="margin-top:6mm">Technische basis die al beschikbaar is</h3>
+    <div class="grid2"><div class="card dark"><ul class="check"><li>Rolgebaseerde autorisatie en installateurscope.</li><li>Servervalidatie en exacte geldberekeningen.</li><li>Objectopslag, bestandsscans en encryptiesleutelrotatie.</li><li>PostgreSQL, Redis, logging, health checks en CI.</li></ul></div><div class="card"><ul class="check"><li>Paginering, zoeken en domeinmodules.</li><li>Audit voor gevoelige HR-, project- en serviceacties.</li><li>PDF-generatie en CSV-export.</li><li>Responsieve webapp met offline shell.</li></ul></div></div>
+    <div class="warn"><strong>Belangrijk onderscheid</strong>De applicatie heeft nog geen volwaardig klantportaal, digitale offerteacceptatie, betaalproviderkoppeling, publieke integratie-API, offline transactiewachtrij of actieve leveranciersadapters voor telemetrie. Juist daar liggen de volgende productkansen.</div>
+    <div class="footer"><span>Climature · Startpositie</span><span class="pn"></span></div>
+  </section>
+
+  <section class="page">
+    <div class="head"><div class="chapter"><b>2</b> Prioritering</div><div class="logo"><img src="../../assets/icons/icon.svg" alt=""> CLIMATURE</div></div>
+    <h1>Waarde vóór volume</h1>
+    <p class="lead">Een nieuwe functie krijgt pas prioriteit wanneer zij een aantoonbaar bedrijfsprobleem oplost én beheersbaar kan worden ingevoerd.</p>
+    <div class="grid4">
+      <div class="kpi"><span>40%</span><strong>Klantwaarde</strong><small class="muted">Conversie, snelheid, gemak</small></div>
+      <div class="kpi"><span>25%</span><strong>Bedrijfswaarde</strong><small class="muted">Marge, capaciteit, cashflow</small></div>
+      <div class="kpi"><span>20%</span><strong>Risicoreductie</strong><small class="muted">Fouten, compliance, continuïteit</small></div>
+      <div class="kpi"><span>15%</span><strong>Haalbaarheid</strong><small class="muted">Data, integraties, beheerlast</small></div>
+    </div>
+    <div class="matrix" style="margin-top:8mm">
+      <div class="axis"></div><div class="axis">Lage inspanning</div><div class="axis">Middel</div><div class="axis">Hoge inspanning</div>
+      <div class="axis">Hoge impact</div><div class="mhigh"><strong>Communicatie & reminders</strong><small>Snelle winst, weinig procesverstoring</small></div><div class="mhigh"><strong>Digitale acceptatie & betaallink</strong><small>Direct effect op conversie en cashflow</small></div><div class="mhigh"><strong>Klantportaal</strong><small>Strategisch, maar vraagt identiteit en rechten</small></div>
+      <div class="axis">Middel impact</div><div class="mmed"><strong>Dashboards & signalen</strong><small>Betere dagelijkse sturing</small></div><div class="mmed"><strong>Tijdregistratie</strong><small>Marge en nacalculatie</small></div><div class="mmed"><strong>Voorraad & inkoop</strong><small>Veel ketenafhankelijkheden</small></div>
+      <div class="axis">Onzekere impact</div><div class="mlow"><strong>Kleine UX-wensen</strong><small>Bundelen per release</small></div><div class="mlow"><strong>AI-teksthulp</strong><small>Alleen met kwaliteitscontrole</small></div><div class="mlow"><strong>Predictive maintenance</strong><small>Eerst voldoende telemetriedata</small></div>
+    </div>
+    <div class="grid2" style="margin-top:7mm"><div class="card"><h3>Startcriteria</h3><ul class="check"><li>Probleemeigenaar en doelgroep benoemd.</li><li>Huidige doorlooptijd/foutkans gemeten.</li><li>Minimaal procesprototype getest.</li><li>Databron en autorisatie duidelijk.</li></ul></div><div class="card soft"><h3>Stopcriteria</h3><ul class="check"><li>Gebruikerswaarde niet aantoonbaar.</li><li>Structurele handmatige beheerlast te hoog.</li><li>Privacy- of beveiligingsrisico niet oplosbaar.</li><li>Afhankelijk platformonderdeel ontbreekt.</li></ul></div></div>
+    <div class="footer"><span>Climature · Prioriteringsmodel</span><span class="pn"></span></div>
+  </section>
+
+  <section class="page">
+    <div class="head"><div class="chapter"><b>3</b> Tijdlijn</div><div class="logo"><img src="../../assets/icons/icon.svg" alt=""> CLIMATURE</div></div>
+    <h1>Indicatieve roadmap 2026–2028</h1>
+    <p class="lead">De horizonten zijn op uitkomst ingericht. Een fase wordt pas opgeschaald wanneer de vorige fase zichtbaar wordt gebruikt en meetbaar rendeert.</p>
+    <div class="timeline">
+      <div class="quarter">Waardestroom</div><div class="quarter">Q3 2026</div><div class="quarter">Q4 2026</div><div class="quarter">H1 2027</div><div class="quarter">H2 2027–H1 2028</div>
+      <div class="label">Platform & adoptie</div><div><div class="bar b1">Productanalytics, notificatiebasis</div></div><div><div class="bar b1">Feature flags, databeleid</div></div><div><div class="bar b2">Integratiegateway</div></div><div><div class="bar b3">Schaal- en datafundament</div></div>
+      <div class="label">Sales & cashflow</div><div><div class="bar b1">Berichten en follow-up</div></div><div><div class="bar b1">Acceptatie, e-sign, betaallink</div></div><div><div class="bar b2">Klantportaal MVP</div></div><div><div class="bar b3">Selfservice uitbreiden</div></div>
+      <div class="label">Uitvoering</div><div><div class="bar b1">Mobiele UX-pilot</div></div><div><div class="bar b2">Tijdregistratie</div></div><div><div class="bar b2">Offline werkbon, routeplanning</div></div><div><div class="bar b3">Voorraad en inkoop</div></div>
+      <div class="label">Service & data</div><div></div><div><div class="bar b2">Contractfacturatie</div></div><div><div class="bar b2">Service selfservice</div></div><div><div class="bar b3">Telemetrie en predictive pilot</div></div>
+      <div class="label">Intelligentie</div><div></div><div></div><div><div class="bar b4">Forecasting pilot</div></div><div><div class="bar b4">Assistent en beslissignalen</div></div>
+    </div>
+    <div class="grid4" style="margin-top:8mm">
+      <div class="card"><span class="pill now">Fase A</span><h3 style="margin-top:2mm">Zichtbaar & bereikbaar</h3><p class="muted">Communicatie, signalen en adoptie.</p></div>
+      <div class="card"><span class="pill now">Fase B</span><h3 style="margin-top:2mm">Sneller akkoord & betaald</h3><p class="muted">Conversie en cashflow.</p></div>
+      <div class="card"><span class="pill next">Fase C</span><h3 style="margin-top:2mm">Buitendienst zonder dubbel werk</h3><p class="muted">Mobiel, tijd en logistiek.</p></div>
+      <div class="card"><span class="pill later">Fase D</span><h3 style="margin-top:2mm">Data als product</h3><p class="muted">Integraties, telemetrie en AI.</p></div>
+    </div>
+    <div class="warn"><strong>Geen parallelle megaprojecten</strong>Klantportaal, voorraadbeheer en telemetrie vragen elk brede ontwerp- en integratiekeuzes. Start maximaal één van deze trajecten tegelijk naast een kleinere waardestroom.</div>
+    <div class="footer"><span>Climature · Roadmapoverzicht</span><span class="pn"></span></div>
+  </section>
+
+  <section class="page">
+    <div class="head"><div class="chapter"><b>4</b> Fase A · 0–3 maanden</div><div class="logo"><img src="../../assets/icons/icon.svg" alt=""> CLIMATURE</div></div>
+    <div class="band"><p class="eyebrow">Doel</p><h2>Maak opvolging voorspelbaar en meet productgebruik</h2><p>Eerst weten waar werk stokt; daarna gerichte automatisering toevoegen.</p></div>
+    <div class="feature"><div class="feature-head"><h3>1. Centrale notificatie- en berichtenhistorie</h3><div class="tagrow"><span class="pill now">P1</span><span class="pill effort">M</span></div></div><p>Verzend offerte-, afspraak-, betalings- en servicemeldingen vanuit het portaal en sla afleverstatus, sjabloon, ontvanger en tijdstip op.</p><div class="criteria"><div><strong>Acceptatie</strong>Verzonden, afgeleverd en mislukt zijn herleidbaar per klantrecord.</div><div><strong>KPI</strong>≥90% van standaardcommunicatie vanuit het portaal.</div></div></div>
+    <div class="feature"><div class="feature-head"><h3>2. Slimme taken en escalaties</h3><div class="tagrow"><span class="pill now">P1</span><span class="pill effort">M</span></div></div><p>Maak taken voor verlopen opvolging, niet-geaccepteerde offertes, openstaande betalingen, naderend onderhoud en kwalificaties die verlopen.</p><div class="criteria"><div><strong>Acceptatie</strong>Elke waarschuwing heeft eigenaar, deadline, status en bronrecord.</div><div><strong>KPI</strong>30% minder achterstallige acties binnen 8 weken.</div></div></div>
+    <div class="feature"><div class="feature-head"><h3>3. Productanalytics en funnelmetingen</h3><div class="tagrow"><span class="pill now">P0</span><span class="pill effort">S</span></div></div><p>Meet gebruik op gebeurtenisniveau zonder vrije persoonsgegevens: gemaakte leads, doorlooptijden, statusovergangen, PDF-uitvoer en uitvalpunten.</p><div class="criteria"><div><strong>Acceptatie</strong>Dashboard toont adoptie en doorlooptijd per processtap.</div><div><strong>KPI</strong>Wekelijkse productreview met betrouwbare basislijn.</div></div></div>
+    <div class="grid2" style="margin-top:5mm"><div class="card dark"><h3>Randvoorwaarden</h3><ul class="check"><li>Communicatievoorkeur en opt-out.</li><li>Geen gevoelige inhoud in analytics.</li><li>Herhaalbare sjablonen met versie.</li><li>Idempotente verzending.</li></ul></div><div class="card"><h3>Niet in deze fase</h3><ul class="clean"><li>Volwaardig klantportaal</li><li>AI-gegenereerde autonome berichten</li><li>Omnichannel marketingcampagnes</li><li>Complexe workflowdesigner</li></ul></div></div>
+    <div class="footer"><span>Climature · Fase A</span><span class="pn"></span></div>
+  </section>
+
+  <section class="page">
+    <div class="head"><div class="chapter"><b>5</b> Fase B · 2–6 maanden</div><div class="logo"><img src="../../assets/icons/icon.svg" alt=""> CLIMATURE</div></div>
+    <div class="band"><p class="eyebrow">Doel</p><h2>Verkort de route van offerte naar geld</h2><p>Haal frictie uit akkoord, aanbetaling en factuurinning.</p></div>
+    <div class="feature"><div class="feature-head"><h3>1. Veilige offerteacceptatie en elektronische ondertekening</h3><div class="tagrow"><span class="pill now">P1</span><span class="pill effort">L</span></div></div><p>Een unieke, beperkte link laat de klant de definitieve offerte bekijken, akkoord verklaren en ondertekenen. Leg documentversie, tijdstip, identiteitssignalen en auditbewijs vast.</p><div class="criteria"><div><strong>Acceptatie</strong>Wijziging na verzending maakt een nieuwe versie en ongeldig verklaarde akkoordlink.</div><div><strong>KPI</strong>20% kortere mediane tijd van verstuurd naar geaccepteerd.</div></div></div>
+    <div class="feature"><div class="feature-head"><h3>2. Betaallinks en aanbetalingen</h3><div class="tagrow"><span class="pill now">P1</span><span class="pill effort">L</span></div></div><p>Maak vanuit offerte of factuur een betaalverzoek. Verwerk providerstatus via ondertekende webhook, voorkom dubbeltellingen en koppel automatisch aan betaling en factuur.</p><div class="criteria"><div><strong>Acceptatie</strong>Betaald, mislukt, verlopen en terugbetaald zijn idempotent verwerkt.</div><div><strong>KPI</strong>25% snellere ontvangst van aanbetalingen.</div></div></div>
+    <div class="feature"><div class="feature-head"><h3>3. Automatische factuur- en betalingsopvolging</h3><div class="tagrow"><span class="pill now">P1</span><span class="pill effort">M</span></div></div><p>Configureer vriendelijke herinneringsmomenten, pauzeer bij betwisting en voorkom berichten na volledige betaling of geannuleerde factuur.</p><div class="criteria"><div><strong>Acceptatie</strong>Elke herinnering is zichtbaar in klant- en factuurhistorie.</div><div><strong>KPI</strong>15% lager openstaand bedrag ouder dan 30 dagen.</div></div></div>
+    <div class="call" style="margin-top:6mm"><b>€</b><div><h3>Financiële waarheid blijft intern</h3><p>De betaalprovider meldt transacties; het portaal bepaalt factuurstatus, toerekening, korting, refund en kassaldo. Webhooks mogen nooit rechtstreeks ongetoetst boekingsdata overschrijven.</p></div></div>
+    <div class="footer"><span>Climature · Fase B</span><span class="pn"></span></div>
+  </section>
+
+  <section class="page">
+    <div class="head"><div class="chapter"><b>6</b> Fase B+ · 4–9 maanden</div><div class="logo"><img src="../../assets/icons/icon.svg" alt=""> CLIMATURE</div></div>
+    <h1>Klantportaal als gecontroleerde selfservice</h1>
+    <p class="lead">Start klein: alleen taken die klanten vaak vragen en die intern al een betrouwbare bron hebben.</p>
+    <div class="flow"><div class="node"><span>Identiteit</span><strong>Veilige toegang</strong><small>Eenmalige link of klantaccount</small></div><div class="node"><span>Informatie</span><strong>Documenten</strong><small>Offerte, factuur, werkbon</small></div><div class="node"><span>Actie</span><strong>Akkoord & betaling</strong><small>Gecontroleerde mutaties</small></div><div class="node"><span>Nazorg</span><strong>Service</strong><small>Melding en afspraak</small></div></div>
+    <div class="grid2">
+      <div class="card"><h3>MVP-functionaliteit</h3><ul class="check"><li>Contactgegevens en voorkeurskanaal controleren.</li><li>Offertes en facturen veilig bekijken/downloaden.</li><li>Offerte accepteren en betaling starten.</li><li>Installatie- en serviceafspraken bekijken.</li><li>Servicemelding indienen met foto’s.</li><li>Status van melding volgen.</li></ul></div>
+      <div class="card soft"><h3>Bewuste grenzen</h3><ul class="clean"><li>Geen toegang tot interne notities of marges.</li><li>Geen vrije wijziging van contractuele documenten.</li><li>Geen zicht op andere bewoners/locaties zonder expliciete koppeling.</li><li>Geen directe planning zonder capaciteitscontrole.</li><li>Geen opslag van betaalkaartgegevens.</li></ul></div>
+    </div>
+    <h3 style="margin-top:7mm">Uitrol in drie stappen</h3>
+    <div class="gates"><div class="gate"><b>1</b><strong>Leesportaal</strong><small>Documenten en afspraken voor 20 pilotklanten.</small></div><div class="gate"><b>2</b><strong>Transacties</strong><small>Akkoord en betaalstart met audit.</small></div><div class="gate"><b>3</b><strong>Service</strong><small>Melding, bijlagen en status.</small></div><div class="gate"><b>4</b><strong>Opschalen</strong><small>Alleen na support- en adoptiecontrole.</small></div></div>
+    <div class="grid3" style="margin-top:7mm"><div class="kpi"><span>Adoptie</span><strong>≥60%</strong><small class="muted">uitgenodigde klanten actief</small></div><div class="kpi"><span>Selfservice</span><strong>≥35%</strong><small class="muted">documentvragen voorkomen</small></div><div class="kpi"><span>Support</span><strong>&lt;5%</strong><small class="muted">toegangsproblemen</small></div></div>
+    <div class="footer"><span>Climature · Klantportaal</span><span class="pn"></span></div>
+  </section>
+
+  <section class="page">
+    <div class="head"><div class="chapter"><b>7</b> Fase C · 4–12 maanden</div><div class="logo"><img src="../../assets/icons/icon.svg" alt=""> CLIMATURE</div></div>
+    <div class="band"><p class="eyebrow">Doel</p><h2>Een buitendienst die onderweg volledig kan werken</h2><p>Minder dubbele invoer, betere nacalculatie en sneller bewijs van oplevering.</p></div>
+    <div class="feature"><div class="feature-head"><h3>1. Mobiele dagstart en persoonlijke werkvoorraad</h3><div class="tagrow"><span class="pill next">P1</span><span class="pill effort">M</span></div></div><p>Toon per monteur route, contact, werksoort, kwalificatiewaarschuwing, materialen, documenten en open taken in één compacte weergave.</p><div class="criteria"><div><strong>Acceptatie</strong>Alleen toegewezen operationele gegevens zijn beschikbaar.</div><div><strong>KPI</strong>80% van werkdagen gestart vanuit de mobiele daglijst.</div></div></div>
+    <div class="feature"><div class="feature-head"><h3>2. Tijdregistratie en nacalculatie</h3><div class="tagrow"><span class="pill next">P1</span><span class="pill effort">M</span></div></div><p>Registreer reis-, werk-, wacht- en meerwerktijd per project of servicebezoek. Laat correcties goedkeuren en vergelijk planning met realisatie.</p><div class="criteria"><div><strong>Acceptatie</strong>Uren zijn herleidbaar naar medewerker, record en correctie.</div><div><strong>KPI</strong>≥95% van uitvoeringsuren binnen 24 uur geboekt.</div></div></div>
+    <div class="feature"><div class="feature-head"><h3>3. Offline werkbon en synchronisatiewachtrij</h3><div class="tagrow"><span class="pill next">P1</span><span class="pill effort">XL</span></div></div><p>Sta gecontroleerde offline invoer toe voor status, werk, materiaal, metingen, foto’s en handtekening. Synchroniseer met conflictregels, retry en zichtbare status.</p><div class="criteria"><div><strong>Acceptatie</strong>Geen stille dataverlies; conflicten vragen expliciete keuze.</div><div><strong>KPI</strong>&lt;1% syncfouten en 100% herleidbare retries.</div></div></div>
+    <div class="feature"><div class="feature-head"><h3>4. Route- en capaciteitsplanning</h3><div class="tagrow"><span class="pill next">P2</span><span class="pill effort">L</span></div></div><p>Adviseer planning op regio, reistijd, duur, kwalificatie en beschikbaarheid. De planner blijft beslisser.</p><div class="criteria"><div><strong>Acceptatie</strong>Voorstel toont reden, conflicten en handmatige override.</div><div><strong>KPI</strong>10% minder reistijd per afgeronde opdracht.</div></div></div>
+    <div class="footer"><span>Climature · Buitendienst</span><span class="pn"></span></div>
+  </section>
+
+  <section class="page">
+    <div class="head"><div class="chapter"><b>8</b> Fase C+ · 8–15 maanden</div><div class="logo"><img src="../../assets/icons/icon.svg" alt=""> CLIMATURE</div></div>
+    <h1>Voorraad, inkoop en terugkerende service</h1>
+    <div class="grid2">
+      <div class="card dark"><h4>Waarde</h4><h3>Materiaal op tijd, marge in beeld</h3><p>De projectcockpit bevat al materiaalbehoefte en besteldatums. De volgende stap is voorraad- en besteladministratie, niet opnieuw een losse materialenlijst.</p></div>
+      <div class="card"><h4>Waarde</h4><h3>Contractomzet zonder handwerk</h3><p>Servicecontracten bevatten prijs, periode en onderhoudsdatum. Automatiseer pas facturatie nadat contractstatus en uitzonderingen strak zijn.</p></div>
+    </div>
+    <div class="feature" style="margin-top:5mm"><div class="feature-head"><h3>1. Artikelvoorraad en reserveringen</h3><div class="tagrow"><span class="pill next">P2</span><span class="pill effort">L</span></div></div><p>Voorraad per locatie/bus, minimumvoorraad, reservering voor project, uitgifte, retour en telling. Sluit aan op bestaande producten en projectmaterialen.</p><div class="criteria"><div><strong>Acceptatie</strong>Elke voorraadmutatie heeft bron, gebruiker en tijdstip.</div><div><strong>KPI</strong>20% minder spoedinkopen en ontbrekend materiaal.</div></div></div>
+    <div class="feature"><div class="feature-head"><h3>2. Inkooporders en ontvangst</h3><div class="tagrow"><span class="pill next">P2</span><span class="pill effort">L</span></div></div><p>Bundel materiaalbehoefte per leverancier, keur orders goed, registreer bevestigde leverdatum, deelontvangst en afwijking.</p><div class="criteria"><div><strong>Acceptatie</strong>Projectgereedheid reageert op order- en ontvangststatus.</div><div><strong>KPI</strong>≥90% van kritieke materialen vóór benodigde datum binnen.</div></div></div>
+    <div class="feature"><div class="feature-head"><h3>3. Periodieke servicefacturatie</h3><div class="tagrow"><span class="pill next">P1</span><span class="pill effort">M</span></div></div><p>Genereer conceptfacturen op contractperiode, met pro-rata regels, pauzering, opzegging en controlelijst vóór definitief maken.</p><div class="criteria"><div><strong>Acceptatie</strong>Nooit meer dan één factuur per contractperiode.</div><div><strong>KPI</strong>80% minder handmatige contractfacturatie.</div></div></div>
+    <div class="tip"><strong>Gefaseerde scope</strong>Begin met één magazijn, één standaard inkoopproces en maand/jaarcontracten. Multi-magazijn, barcodehardware en boekhoudkoppeling volgen alleen bij bewezen noodzaak.</div>
+    <div class="footer"><span>Climature · Voorraad, inkoop & service</span><span class="pn"></span></div>
+  </section>
+
+  <section class="page">
+    <div class="head"><div class="chapter"><b>9</b> Fase D · 9–24 maanden</div><div class="logo"><img src="../../assets/icons/icon.svg" alt=""> CLIMATURE</div></div>
+    <div class="band"><p class="eyebrow">Doel</p><h2>Open voor integraties, beheerst met data</h2><p>Externe systemen koppelen via expliciete contracten; nooit via directe database-afhankelijkheid.</p></div>
+    <div class="grid2">
+      <div class="card"><h3>Integratie-API en webhooks</h3><ul class="check"><li>Versiegestuurde domeinendpoints.</li><li>API-clients met eigen scopes.</li><li>Idempotency keys voor mutaties.</li><li>Ondertekende uitgaande webhooks.</li><li>Rate limiting en rotatie van secrets.</li><li>Sandbox en integratiedocumentatie.</li></ul></div>
+      <div class="card soft"><h3>Prioritaire integratiecategorieën</h3><ul class="clean"><li>Boekhouding: verkoopboekingen en betaalstatus.</li><li>E-mail/SMS: levering en status.</li><li>Agenda/kaarten: afspraken en routes.</li><li>Energie- en subsidiedata: actuele aannames.</li><li>Leveranciers: orderbevestiging en levertijd.</li><li>Apparatuur: telemetrie via adapters.</li></ul></div>
+    </div>
+    <div class="feature" style="margin-top:6mm"><div class="feature-head"><h3>Apparaattelemetrie en remote service</h3><div class="tagrow"><span class="pill later">P2</span><span class="pill effort">XL</span></div></div><p>Activeer leveranciersadapters per expliciete hostallowlist. Normaliseer status, storingscode, productie/verbruik en laatste contacttijd naar een intern telemetriemodel.</p><div class="criteria"><div><strong>Acceptatie</strong>Brondata blijft traceerbaar; ontbrekende data is zichtbaar en geen nulwaarde.</div><div><strong>KPI</strong>15% van storingen op afstand opgelost in pilotgroep.</div></div></div>
+    <div class="feature"><div class="feature-head"><h3>Dataplatform en managementforecast</h3><div class="tagrow"><span class="pill later">P2</span><span class="pill effort">L</span></div></div><p>Bouw geaggregeerde datasets voor pipeline, capaciteit, marge, cashflow, servicebelasting en productprestatie. Scheid operationele database van zware analyse.</p><div class="criteria"><div><strong>Acceptatie</strong>Definities van omzet, marge, capaciteit en conversie zijn beheerd.</div><div><strong>KPI</strong>Maandforecast binnen afgesproken foutmarge na 3 cycli.</div></div></div>
+    <div class="warn"><strong>Integratievolgorde</strong>Kies per koppeling één bedrijfseigenaar, één technische eigenaar, een gegevenscontract, een fallbackproces en een exitstrategie vóór bouw of leverancierscontract.</div>
+    <div class="footer"><span>Climature · Integraties & data</span><span class="pn"></span></div>
+  </section>
+
+  <section class="page">
+    <div class="head"><div class="chapter"><b>10</b> AI & automatisering</div><div class="logo"><img src="../../assets/icons/icon.svg" alt=""> CLIMATURE</div></div>
+    <h1>AI ondersteunt; medewerkers beslissen</h1>
+    <p class="lead">AI wordt pas toegevoegd wanneer brondata betrouwbaar is, de uitkomst controleerbaar blijft en een menselijke eigenaar eindverantwoordelijk is.</p>
+    <div class="grid3 compact">
+      <div class="card"><span class="pill now">Laag risico</span><h3 style="margin-top:2mm">Samenvatten</h3><p>Maak concept-samenvattingen van klant- en projecthistorie met bronlinks.</p></div>
+      <div class="card"><span class="pill now">Laag risico</span><h3 style="margin-top:2mm">Tekstvoorstel</h3><p>Genereer conceptberichten uit goedgekeurde sjablonen en feiten.</p></div>
+      <div class="card"><span class="pill next">Middel</span><h3 style="margin-top:2mm">Documentextractie</h3><p>Herken velden uit aanvragen, facturen of productdocumenten met bevestiging.</p></div>
+      <div class="card"><span class="pill next">Middel</span><h3 style="margin-top:2mm">Volgende actie</h3><p>Adviseer opvolging op basis van status, deadline en historie.</p></div>
+      <div class="card"><span class="pill later">Hoog</span><h3 style="margin-top:2mm">Forecast</h3><p>Voorspel conversie, doorlooptijd en capaciteitsrisico met uitleg.</p></div>
+      <div class="card"><span class="pill later">Hoog</span><h3 style="margin-top:2mm">Predictive service</h3><p>Combineer telemetrie en servicehistorie voor onderhoudssignalen.</p></div>
+    </div>
+    <h3 style="margin-top:7mm">Verplichte beheersmaatregelen</h3>
+    <table><thead><tr><th>Controle</th><th>Vereiste</th><th>Waarom</th></tr></thead><tbody>
+      <tr><td>Bronvermelding</td><td>Antwoord toont gebruikte records en tijdstip</td><td>Controleerbaarheid</td></tr>
+      <tr><td>Menselijke bevestiging</td><td>Geen autonome verzending, prijs of statuswijziging</td><td>Financieel en klantbelang</td></tr>
+      <tr><td>Dataminimalisatie</td><td>Alleen noodzakelijke velden naar model</td><td>Privacy en contractuele controle</td></tr>
+      <tr><td>Evaluatieset</td><td>Vaste cases voor juistheid, toon en weglating</td><td>Kwaliteit over releases</td></tr>
+      <tr><td>Fallback</td><td>Proces blijft bruikbaar zonder AI</td><td>Continuïteit</td></tr>
+    </tbody></table>
+    <div class="call" style="margin-top:4mm"><b>✓</b><div><h3>Eerste AI-pilot</h3><p>Begin met een niet-autonome project- of klantdossiersamenvatting voor interne gebruikers. Dit gebruikt bestaande data, is eenvoudig te beoordelen en verandert geen bedrijfsrecord.</p></div></div>
+    <div class="footer"><span>Climature · AI & automatisering</span><span class="pn"></span></div>
+  </section>
+
+  <section class="page">
+    <div class="head"><div class="chapter"><b>11</b> Platformfundament</div><div class="logo"><img src="../../assets/icons/icon.svg" alt=""> CLIMATURE</div></div>
+    <h1>Randvoorwaarden vóór nieuwe schaal</h1>
+    <p class="lead">Nieuwe klantkanalen en integraties vergroten het aanvalsoppervlak. Platformwerk loopt daarom mee met elke productfase.</p>
+    <div class="grid2">
+      <div class="card"><h3>Identiteit & toegang</h3><ul class="check"><li>MFA-optie voor alle medewerkers.</li><li>Klantidentiteit gescheiden van medewerkeraccounts.</li><li>API-clients en webhooks met minimale scopes.</li><li>Sessie- en tokenintrekking.</li><li>Periodieke rechtenreview.</li></ul></div>
+      <div class="card soft"><h3>Privacy & data</h3><ul class="check"><li>Bewaartermijnen per record- en documenttype.</li><li>Export en verwijderproces voor betrokkenen.</li><li>Versleuteling passend bij gevoeligheid.</li><li>Dataclassificatie voor analytics en AI.</li><li>Volledige hersteltest inclusief objecten.</li></ul></div>
+      <div class="card"><h3>Operability</h3><ul class="check"><li>ClamAV en externe providerchecks in monitoring.</li><li>Metrics voor wachtrijen, webhooks en retries.</li><li>Feature flags en gefaseerde uitrol.</li><li>Runbooks voor provideruitval.</li><li>Capaciteits- en kostenalarm.</li></ul></div>
+      <div class="card soft"><h3>Architectuur</h3><ul class="check"><li>Oude compatibiliteitsroutes gecontroleerd uitfaseren.</li><li>Publieke API los van browsercontract.</li><li>Streaming voor grote export en uploads.</li><li>Analysetaken buiten requestpad.</li><li>Contracttests per integratie.</li></ul></div>
+    </div>
+    <h3 style="margin-top:7mm">Niet-functionele producteisen</h3>
+    <div class="grid4"><div class="kpi"><span>Beschikbaarheid</span><strong>Meetbaar</strong><small class="muted">SLO per klantkanaal</small></div><div class="kpi"><span>Herstel</span><strong>Getest</strong><small class="muted">RPO/RTO vastgelegd</small></div><div class="kpi"><span>Audit</span><strong>Volledig</strong><small class="muted">kritieke mutaties</small></div><div class="kpi"><span>Performance</span><strong>Budget</strong><small class="muted">p95 per hoofdflow</small></div></div>
+    <div class="warn"><strong>Technisch aandachtspunt</strong>De Service Worker biedt nu alleen een offline shell. Een offline werkbon vereist een expliciet synchronisatieontwerp met versies, encryptie, retries en conflictafhandeling; dit is geen kleine PWA-aanpassing.</div>
+    <div class="footer"><span>Climature · Platformfundament</span><span class="pn"></span></div>
+  </section>
+
+  <section class="page">
+    <div class="head"><div class="chapter"><b>12</b> Afhankelijkheden</div><div class="logo"><img src="../../assets/icons/icon.svg" alt=""> CLIMATURE</div></div>
+    <h1>Bouw in een veilige volgorde</h1>
+    <div class="flow"><div class="node"><span>Basis</span><strong>Analytics & events</strong><small>Meten en herleidbaarheid</small></div><div class="node"><span>Communicatie</span><strong>Berichtenhistorie</strong><small>Delivery en voorkeur</small></div><div class="node"><span>Transactie</span><strong>Akkoord & betaling</strong><small>Versie en audit</small></div><div class="node"><span>Kanaal</span><strong>Klantportaal</strong><small>Selfservice</small></div></div>
+    <div class="flow"><div class="node"><span>Operatie</span><strong>Tijdregistratie</strong><small>Realisatiebasis</small></div><div class="node"><span>Logistiek</span><strong>Voorraad & inkoop</strong><small>Materiaalstroom</small></div><div class="node"><span>Integratie</span><strong>API & adapters</strong><small>Externe data</small></div><div class="node"><span>Intelligentie</span><strong>Forecast & AI</strong><small>Betrouwbare modellen</small></div></div>
+    <h3 style="margin-top:7mm">Kritieke afhankelijkheden per initiatief</h3>
+    <table><thead><tr><th>Initiatief</th><th>Moet eerst gereed zijn</th><th>Blokkerende keuze</th></tr></thead><tbody>
+      <tr><td>Digitale acceptatie</td><td>Documentversie, beperkte link, audit</td><td>Identiteitsbewijs en juridische tekst</td></tr>
+      <tr><td>Betaallink</td><td>Idempotente betalingen en webhooks</td><td>Providercontract en refundproces</td></tr>
+      <tr><td>Klantportaal</td><td>Klantidentiteit, documentrechten, berichten</td><td>Account of eenmalige toegang</td></tr>
+      <tr><td>Offline werkbon</td><td>Mobiele UX en recordversies</td><td>Conflict- en encryptiebeleid</td></tr>
+      <tr><td>Voorraad</td><td>Artikelstam en materiaaldiscipline</td><td>Locaties, telling en waardering</td></tr>
+      <tr><td>Telemetrie</td><td>Apparatenregister en adaptercontract</td><td>Leverancierstoegang en datamodel</td></tr>
+      <tr><td>AI/forecast</td><td>Analyticsdefinities en evaluatieset</td><td>Model, gegevensgrenzen en toezicht</td></tr>
+    </tbody></table>
+    <div class="tip"><strong>Architectuurregel</strong>Externe koppelingen publiceren of consumeren versiegestuurde gebeurtenissen en API-contracten. Zij krijgen nooit directe toegang tot de operationele database.</div>
+    <div class="footer"><span>Climature · Afhankelijkheden</span><span class="pn"></span></div>
+  </section>
+
+  <section class="page">
+    <div class="head"><div class="chapter"><b>13</b> Portfolio</div><div class="logo"><img src="../../assets/icons/icon.svg" alt=""> CLIMATURE</div></div>
+    <h1>Samengevatte prioriteitenlijst</h1>
+    <table><thead><tr><th>#</th><th>Functionaliteit</th><th>Impact</th><th>Inspanning</th><th>Horizon</th><th>Besluit</th></tr></thead><tbody>
+      <tr><td><span class="score high">1</span></td><td>Productanalytics & funnelmetingen</td><td>Hoog</td><td>S</td><td>Nu</td><td>Starten</td></tr>
+      <tr><td><span class="score high">2</span></td><td>Berichtenhistorie & notificaties</td><td>Hoog</td><td>M</td><td>Nu</td><td>Starten</td></tr>
+      <tr><td><span class="score high">3</span></td><td>Digitale offerteacceptatie</td><td>Hoog</td><td>L</td><td>Nu</td><td>Ontdekken → pilot</td></tr>
+      <tr><td><span class="score high">4</span></td><td>Betaallinks & aanbetalingen</td><td>Hoog</td><td>L</td><td>Nu</td><td>Ontdekken → pilot</td></tr>
+      <tr><td><span class="score">5</span></td><td>Automatische financiële opvolging</td><td>Hoog</td><td>M</td><td>Nu</td><td>Na berichtenbasis</td></tr>
+      <tr><td><span class="score">6</span></td><td>Periodieke servicefacturatie</td><td>Hoog</td><td>M</td><td>Daarna</td><td>Proces valideren</td></tr>
+      <tr><td><span class="score">7</span></td><td>Mobiele dagstart & tijdregistratie</td><td>Hoog</td><td>M</td><td>Daarna</td><td>Pilot buitendienst</td></tr>
+      <tr><td><span class="score">8</span></td><td>Klantportaal MVP</td><td>Hoog</td><td>XL</td><td>Daarna</td><td>Na akkoord/betaling</td></tr>
+      <tr><td><span class="score">9</span></td><td>Offline werkbon</td><td>Middel</td><td>XL</td><td>Daarna</td><td>Alleen bij bewezen nood</td></tr>
+      <tr><td><span class="score">10</span></td><td>Route- en capaciteitsadvies</td><td>Middel</td><td>L</td><td>Daarna</td><td>Datakwaliteit meten</td></tr>
+      <tr><td>11</td><td>Voorraad & inkoop</td><td>Middel</td><td>XL</td><td>Later</td><td>Procesontwerp</td></tr>
+      <tr><td>12</td><td>Integratie-API & webhooks</td><td>Strategisch</td><td>L</td><td>Later</td><td>Per concrete koppeling</td></tr>
+      <tr><td>13</td><td>Telemetrie & remote service</td><td>Onzeker</td><td>XL</td><td>Later</td><td>Leverancierspilot</td></tr>
+      <tr><td>14</td><td>AI-assistent & forecasting</td><td>Onzeker</td><td>L/XL</td><td>Later</td><td>Eerst evaluatieset</td></tr>
+    </tbody></table>
+    <div class="grid3" style="margin-top:6mm"><div class="card"><h4>S</h4><h3>Klein</h3><p class="muted">Duidelijke scope, weinig integratie.</p></div><div class="card"><h4>M/L</h4><h3>Middel / groot</h3><p class="muted">Meerdere modules of leverancier.</p></div><div class="card"><h4>XL</h4><h3>Programma</h3><p class="muted">Nieuwe identiteit, sync of brede proceswijziging.</p></div></div>
+    <div class="footer"><span>Climature · Portfolioprioriteiten</span><span class="pn"></span></div>
+  </section>
+
+  <section class="page">
+    <div class="head"><div class="chapter"><b>14</b> Besturing & KPI’s</div><div class="logo"><img src="../../assets/icons/icon.svg" alt=""> CLIMATURE</div></div>
+    <h1>Elke fase verdient een stop/go-moment</h1>
+    <div class="gates"><div class="gate"><b>1</b><strong>Ontdekken</strong><small>Probleem, basislijn en prototype.</small></div><div class="gate"><b>2</b><strong>Pilot</strong><small>Beperkte groep, support dichtbij.</small></div><div class="gate"><b>3</b><strong>Evalueren</strong><small>KPI, risico, kosten en feedback.</small></div><div class="gate"><b>4</b><strong>Opschalen</strong><small>Training, monitoring en beheer.</small></div></div>
+    <h3 style="margin-top:8mm">Kernscorecard</h3>
+    <table><thead><tr><th>Waardestroom</th><th>Hoofd-KPI</th><th>Beschermende KPI</th><th>Review</th></tr></thead><tbody>
+      <tr><td>Sales</td><td>Doorlooptijd lead → akkoord</td><td>Afwijzingen en correcties</td><td>Wekelijks</td></tr>
+      <tr><td>Cashflow</td><td>Dagen factuur → betaling</td><td>Refunds en betwistingen</td><td>Wekelijks</td></tr>
+      <tr><td>Uitvoering</td><td>First-time-right en plan/realisatie</td><td>Overwerk en reistijd</td><td>Wekelijks</td></tr>
+      <tr><td>Service</td><td>Oplostijd en remote resolution</td><td>Herhaalbezoeken</td><td>Maandelijks</td></tr>
+      <tr><td>Klantportaal</td><td>Selfservice-adoptie</td><td>Support- en toegangsfouten</td><td>Tweewekelijks</td></tr>
+      <tr><td>Platform</td><td>Beschikbaarheid en p95</td><td>Security- en privacy-incidenten</td><td>Continu</td></tr>
+    </tbody></table>
+    <div class="grid2" style="margin-top:7mm"><div class="card dark"><h3>Maandelijkse portfolioreview</h3><ul class="check"><li>KPI versus basislijn.</li><li>Gebruikersfeedback en supportlast.</li><li>Technische kwaliteit en incidenten.</li><li>Werkelijke capaciteit en kosten.</li><li>Stop, bijsturen of opschalen.</li></ul></div><div class="card"><h3>Definition of done</h3><ul class="check"><li>Proces en rechten gedocumenteerd.</li><li>Testen en monitoring aanwezig.</li><li>Migratie en rollback voorbereid.</li><li>Gebruikers geïnstrueerd.</li><li>Eigenaar en KPI benoemd.</li><li>Runbook en supportroute gereed.</li></ul></div></div>
+    <div class="tip"><strong>Roadmapregel</strong>Minimaal 20% van de teamcapaciteit blijft beschikbaar voor beveiliging, betrouwbaarheid, onderhoud, supportbevindingen en kleine verbeteringen. Zonder die ruimte vertraagt iedere volgende fase.</div>
+    <div class="footer"><span>Climature · Besturing & KPI’s</span><span class="pn"></span></div>
+  </section>
+
+  <section class="page">
+    <div class="head"><div class="chapter"><b>15</b> Eerste 90 dagen</div><div class="logo"><img src="../../assets/icons/icon.svg" alt=""> CLIMATURE</div></div>
+    <h1>Concreet startplan</h1>
+    <div class="grid3">
+      <div class="card"><span class="pill now">Dag 1–30</span><h3 style="margin-top:2mm">Meten & kiezen</h3><ul class="check"><li>Basislijn conversie en doorlooptijd.</li><li>Top 10 handmatige opvolgacties.</li><li>Communicatievoorkeuren vastleggen.</li><li>Acceptatie- en betaalproces uitschrijven.</li><li>Pilotgroepen benoemen.</li></ul></div>
+      <div class="card"><span class="pill now">Dag 31–60</span><h3 style="margin-top:2mm">Bouwen & testen</h3><ul class="check"><li>Gebeurtenissen en productdashboard.</li><li>Berichtenhistorie en één sjabloonflow.</li><li>Prototype offerteacceptatie.</li><li>Provider/webhook-spike voor betaling.</li><li>Privacy- en dreigingsanalyse.</li></ul></div>
+      <div class="card"><span class="pill now">Dag 61–90</span><h3 style="margin-top:2mm">Pilot & besluiten</h3><ul class="check"><li>Interne communicatiepilot.</li><li>10–20 acceptatiecases.</li><li>Beperkte betaallinkpilot.</li><li>KPI en supportlast evalueren.</li><li>Stop/go voor fase B en klantportaal.</li></ul></div>
+    </div>
+    <h3 style="margin-top:8mm">Besluiten die direct nodig zijn</h3>
+    <table><thead><tr><th>Besluit</th><th>Eigenaar</th><th>Deadline</th><th>Uitkomst</th></tr></thead><tbody>
+      <tr><td>Welke klantcommunicatie mag automatisch?</td><td>Sales + service</td><td>Week 2</td><td>Sjablonen en uitzonderingen</td></tr>
+      <tr><td>Wat geldt als juridisch akkoord?</td><td>Directie + juridisch</td><td>Week 3</td><td>Bewijs- en bewaareisen</td></tr>
+      <tr><td>Welke betaalstromen eerst?</td><td>Financiën</td><td>Week 3</td><td>Aanbetaling of volledige factuur</td></tr>
+      <tr><td>Welke events mogen in analytics?</td><td>Product + privacy</td><td>Week 2</td><td>Meetplan zonder vrije PII</td></tr>
+      <tr><td>Wie is piloteigenaar?</td><td>Management</td><td>Week 1</td><td>Eén verantwoordelijke per flow</td></tr>
+    </tbody></table>
+    <div class="call" style="margin-top:8mm"><b>→</b><div><h3>Aanbevolen eerste investering</h3><p>Start met productanalytics plus berichtenhistorie. Deze combinatie levert direct procesinzicht, ondersteunt alle volgende fasen en heeft minder juridische en integratierisico’s dan meteen een volledig klantportaal.</p></div></div>
+    <div class="footer"><span>Climature · Eerste 90 dagen</span><span class="pn"></span></div>
+  </section>
+</body>
+</html>

@@ -303,13 +303,13 @@ async function listCollection(prisma, collection, where) {
 }
 
 const PAGE_CONFIG = {
-  customers: { model: "customer", search: ["firstName", "lastName", "companyName", "email", "postalCode", "city"], sorts: ["createdAt", "updatedAt", "lastName", "companyName", "city"], defaultSort: "createdAt", defaultOrder: "desc", filters: ["city", "postalCode"] },
+  customers: { model: "customer", search: ["firstName", "lastName", "companyName", "email", "postalCode", "city"], sorts: ["createdAt", "updatedAt", "lastName", "companyName", "city"], defaultSort: "createdAt", defaultOrder: "desc", filters: ["city", "postalCode"], summarySelect: { id: true, firstName: true, lastName: true, companyName: true, email: true, phone: true, address: true, postalCode: true, city: true, createdAt: true, updatedAt: true } },
   customerNotes: { model: "customerNote", search: ["body", "type"], sorts: ["createdAt", "updatedAt", "date", "type"], defaultSort: "createdAt", defaultOrder: "desc", filters: ["customerId", "type"] },
   customerDocuments: { model: "customerDocument", search: ["fileName"], sorts: ["createdAt", "updatedAt", "fileName", "size"], defaultSort: "createdAt", defaultOrder: "desc", filters: ["customerId", "mimeType", "scanStatus"], select: { id: true, customerId: true, fileName: true, mimeType: true, size: true, scanStatus: true, createdAt: true, updatedAt: true } },
   products: { model: "product", search: ["category", "brand", "name", "specs"], sorts: ["createdAt", "updatedAt", "category", "brand", "name", "priceExVat"], defaultSort: "name", defaultOrder: "asc", filters: ["category", "brand"] },
-  quotes: { model: "quote", search: ["quoteNumber", "notes", "documentTitle"], sorts: ["createdAt", "updatedAt", "quoteDate", "validUntil", "quoteNumber", "status", "total"], defaultSort: "createdAt", defaultOrder: "desc", filters: ["customerId", "status"], include: { lines: true }, serialize: serializeQuote },
-  invoices: { model: "invoice", search: ["invoiceNumber", "quoteNumber", "notes"], sorts: ["createdAt", "updatedAt", "invoiceDate", "dueDate", "invoiceNumber", "status", "total"], defaultSort: "createdAt", defaultOrder: "desc", filters: ["customerId", "status"], include: { lines: true }, serialize: serializeInvoice },
-  installations: { model: "installation", search: ["installer", "notes", "quoteNumber"], sorts: ["createdAt", "updatedAt", "plannedDate", "startTime", "status", "installer"], defaultSort: "plannedDate", defaultOrder: "asc", filters: ["customerId", "employeeId", "status", "workType"] },
+  quotes: { model: "quote", search: ["quoteNumber", "notes", "documentTitle", "status"], customerSearch: true, sorts: ["createdAt", "updatedAt", "quoteDate", "validUntil", "quoteNumber", "status", "total"], defaultSort: "createdAt", defaultOrder: "desc", filters: ["customerId", "status"], include: { lines: true }, serialize: serializeQuote, summarySelect: { id: true, quoteNumber: true, customerId: true, quoteDate: true, validUntil: true, status: true, templateType: true, documentTitle: true, subtotal: true, vat: true, total: true, createdAt: true, updatedAt: true, customer: { select: { firstName: true, lastName: true, companyName: true } } } },
+  invoices: { model: "invoice", search: ["invoiceNumber", "quoteNumber", "notes", "status"], customerSearch: true, sorts: ["createdAt", "updatedAt", "invoiceDate", "dueDate", "invoiceNumber", "status", "total"], defaultSort: "createdAt", defaultOrder: "desc", filters: ["customerId", "status"], include: { lines: true }, serialize: serializeInvoice, summarySelect: { id: true, invoiceNumber: true, quoteNumber: true, customerId: true, invoiceDate: true, dueDate: true, status: true, subtotal: true, vat: true, total: true, createdAt: true, updatedAt: true, customer: { select: { firstName: true, lastName: true, companyName: true } } } },
+  installations: { model: "installation", search: ["installer", "notes", "quoteNumber", "status"], customerSearch: true, sorts: ["createdAt", "updatedAt", "plannedDate", "startTime", "status", "installer"], defaultSort: "plannedDate", defaultOrder: "asc", filters: ["customerId", "employeeId", "status", "workType"], summarySelect: { id: true, customerId: true, quoteId: true, quoteNumber: true, plannedDate: true, startTime: true, durationHours: true, status: true, installer: true, employeeId: true, workType: true, createdAt: true, updatedAt: true, customer: { select: { firstName: true, lastName: true, companyName: true } } } },
   advices: { model: "advice", search: ["title", "summary", "productName", "kind"], sorts: ["createdAt", "updatedAt", "title", "kind", "investment"], defaultSort: "createdAt", defaultOrder: "desc", filters: ["customerId", "kind"] },
   salesOpportunities: { model: "salesOpportunity", search: ["title", "contactName", "companyName", "email", "phone", "notes"], sorts: ["createdAt", "updatedAt", "title", "stage", "expectedValue", "followUpDate"], defaultSort: "updatedAt", defaultOrder: "desc", filters: ["customerId", "quoteId", "stage"] },
   salesAppointments: { model: "salesAppointment", search: ["title", "contactName", "location", "notes"], sorts: ["createdAt", "updatedAt", "date", "startTime", "title", "status"], defaultSort: "date", defaultOrder: "asc", filters: ["customerId", "opportunityId", "status", "type"] }
@@ -332,23 +332,35 @@ async function listCollectionPage(prisma, collection, query = {}, scopeWhere) {
     if (value.length > 200) throw validationError(`${field} is ongeldig.`);
     filterWhere[field] = value;
   }
-  const searchWhere = parsed.search ? { OR: config.search.map((field) => ({ [field]: { contains: parsed.search, mode: "insensitive" } })) } : undefined;
+  const searchClauses = parsed.search ? config.search.map((field) => ({ [field]: { contains: parsed.search, mode: "insensitive" } })) : [];
+  if (parsed.search && config.customerSearch) searchClauses.push({ customer: { is: { OR: ["firstName", "lastName", "companyName"].map((field) => ({ [field]: { contains: parsed.search, mode: "insensitive" } })) } } });
+  const searchWhere = searchClauses.length ? { OR: searchClauses } : undefined;
   const where = combineWhere([scopeWhere, filterWhere, searchWhere]);
   const order = query.sortOrder ? parsed.sortOrder : config.defaultOrder;
   const model = prisma[config.model];
+  const summary = query.view === "summary" && config.summarySelect;
   const [totalItems, rows] = await prisma.$transaction([
     model.count({ where }),
     model.findMany({
       where,
-      include: config.include,
-      select: config.select,
+      include: summary ? undefined : config.include,
+      select: summary ? config.summarySelect : config.select,
       orderBy: [{ [parsed.sortBy]: order }, { id: "asc" }],
       skip: (parsed.page - 1) * parsed.pageSize,
       take: parsed.pageSize
     })
   ]);
-  const items = config.serialize ? rows.map(config.serialize) : rows;
+  const items = config.serialize && !summary ? rows.map(config.serialize) : rows;
   return pageResponse(items, parsed.page, parsed.pageSize, totalItems);
+}
+
+async function getCollectionItem(prisma, collection, id, scopeWhere) {
+  const config = PAGE_CONFIG[collection];
+  if (!config) throw Object.assign(new Error("Onbekende collectie."), { status: 404 });
+  const where = combineWhere([{ id }, scopeWhere]);
+  const row = await prisma[config.model].findFirst({ where, include: config.include, select: config.select });
+  if (!row) return null;
+  return config.serialize ? config.serialize(row) : row;
 }
 
 let pendingBootstrapLoad = null;
@@ -651,6 +663,13 @@ async function upsertQuote(prisma, item) {
 async function upsertInvoice(prisma, item) {
   const data = invoiceData(item);
   const id = data.header.id;
+  const linkedPayment = id ? await prisma.payment.findUnique({ where: { invoiceId: id }, select: { id: true } }) : null;
+  if (linkedPayment) {
+    throw Object.assign(new Error("Een factuur met betalingshistorie kan niet rechtstreeks worden gewijzigd."), { status: 409 });
+  }
+  if (data.header.status === "betaald") {
+    throw Object.assign(new Error("Registreer de betaling via de betalingsmodule."), { status: 409 });
+  }
   if (data.header.quoteNumber && data.header.status !== "concept") {
     const duplicate = await prisma.invoice.findFirst({
       where: {
@@ -960,6 +979,7 @@ module.exports = {
   importData,
   listCollection,
   listCollectionPage,
+  getCollectionItem,
   nextNumber,
   peekNumber,
   remove,

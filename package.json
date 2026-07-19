@@ -15,10 +15,15 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "seed": "node prisma/seed.js",
+    "check:env": "node scripts/check-node-version.js",
+    "pretest": "npm run check:env",
     "test": "vitest run",
+    "pretest:e2e": "npm run check:env",
     "test:e2e": "playwright test",
+    "pretest:a11y": "npm run check:env",
+    "test:a11y": "playwright test tests/e2e/accessibility.spec.js",
     "test:e2e:server": "npm run prisma:deploy && npm run seed && node src/server.js",
-    "lint": "node scripts/lint.js",
+    "lint": "eslint .",
     "project:digest": "node scripts/send-project-digest.js",
     "service:reminders": "node scripts/send-service-reminders.js",
     "keys:rotate": "node scripts/rotate-encryption-keys.js",
@@ -49,7 +54,10 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@playwright/test": "^1.54.1",
+    "eslint": "^10.7.0",
+    "globals": "^17.7.0",
     "supertest": "^7.1.4",
     "vitest": "^3.2.4"
   },

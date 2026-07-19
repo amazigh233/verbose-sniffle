@@ -462,7 +462,27 @@ De collectie-autorisatie wordt centraal in `src/server.js` afgedwongen:
 
 Voor installateurs worden interne werknemer-ID’s en kwalificatiechecks uit installatieresponses verwijderd. De volledige-collectie-`PUT` blijft bewust uitsluitend voor beheerders, omdat deze route transactioneel zakelijke data vervangt.
 
-### 7.4 Project-API
+### 7.4 Betalings-API
+
+Alle schrijfbewerkingen op betalingen vereisen een unieke `Idempotency-Key`-header. Admin en Financiën hebben toegang. Bedragen worden server-side als `Decimal(14,2)` verwerkt; kaartnummers, CVV's en wallet-tokens worden niet opgeslagen.
+
+| Methode | Route | Functie |
+|---|---|---|
+| GET/POST | `/api/payments` | Betalingshistorie ophalen of een betaling starten |
+| GET | `/api/payments/:id` | Volledige betaling met betaalmiddelen, refunds en bonnen |
+| GET | `/api/payments/:id/history` | Hash-keten, bonhistorie en integriteitscontrole |
+| POST | `/api/payments/:id/tenders` | Een of meer contante, PIN-, creditcard-, Apple Pay- of Google Pay-betaalmiddelen toevoegen |
+| POST | `/api/payments/:id/refunds` | Een terugbetaling over oorspronkelijke betaalmiddelen verdelen |
+| POST | `/api/payments/:id/cancel` | Een betaling en de vastgelegde betaalmiddelen annuleren |
+| GET | `/api/payments/receipts/:number` | Onveranderlijke genummerde bon-snapshot ophalen |
+| GET/POST | `/api/cash-drawers` | Kassalades ophalen of maken |
+| POST | `/api/cash-drawers/:id/shifts` | Dienst openen met openingssaldo |
+| GET | `/api/cash-drawer-shifts/:id` | Actuele of definitieve afrekening en ledgercontrole |
+| POST | `/api/cash-drawer-shifts/:id/close` | Dienst sluiten met geteld eindsaldo en kasverschil |
+
+Elke mutatie draait in een PostgreSQL `SERIALIZABLE`-transactie met aggregate-locks en retry bij serialisatieconflicten. Betaal- en kasgebeurtenissen worden dubbel geboekt in een per-aggregate SHA-256-hashketen. Database-triggers blokkeren updates en deletes van ledgerregels, idempotencyrecords en bon-snapshots. Bonnen gebruiken een eigen jaarlijkse, atomair opgehoogde reeks (`CL-BON-JJJJ-000001`).
+
+### 7.5 Project-API
 
 | Methode | Route | Toegang | Functie |
 |---|---|---|---|
@@ -481,7 +501,7 @@ Voor installateurs worden interne werknemer-ID’s en kwalificatiechecks uit ins
 
 Externe apparaat-ID’s worden alleen voor beheerders ontsleuteld. Monteurs krijgen deze waarde nooit in de response.
 
-### 7.5 HR-authenticatie en HR-sessie
+### 7.6 HR-authenticatie en HR-sessie
 
 | Methode | Route | Toegang | Functie |
 |---|---|---|---|
@@ -493,7 +513,7 @@ Externe apparaat-ID’s worden alleen voor beheerders ontsleuteld. Monteurs krij
 
 Alle onderstaande HR-routes vereisen: HR-feature actief, adminrol en geldige verhoogde HR-sessie.
 
-### 7.6 Werknemers, contracten en notities
+### 7.7 Werknemers, contracten en notities
 
 | Methode | Route | Functie |
 |---|---|---|
@@ -509,7 +529,7 @@ Alle onderstaande HR-routes vereisen: HR-feature actief, adminrol en geldige ver
 | PUT/DELETE | `/api/hr/employees/:employeeId/notes/:id` | Notitie wijzigen of verwijderen |
 | GET | `/api/hr/employees/:id/audit` | Laatste auditregels van het dossier |
 
-### 7.7 Kwalificaties, checklists en inzetbaarheid
+### 7.8 Kwalificaties, checklists en inzetbaarheid
 
 | Methode | Route | Functie |
 |---|---|---|
@@ -531,7 +551,7 @@ Alle onderstaande HR-routes vereisen: HR-feature actief, adminrol en geldige ver
 | POST | `/api/hr/employees/:id/absences` | Afwezigheid maken |
 | PUT/DELETE | `/api/hr/employees/:id/absences/:absenceId` | Afwezigheid wijzigen of verwijderen |
 
-### 7.8 Voorbeeld: API gebruiken
+### 7.9 Voorbeeld: API gebruiken
 
 De applicatie is primair bedoeld voor de browserclient. Voor handmatige integratietests kan dezelfde sessie- en CSRF-flow worden gebruikt:
 

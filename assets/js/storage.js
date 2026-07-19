@@ -80,8 +80,18 @@
     settings: Object.assign({}, DEFAULT_SETTINGS),
     counters: {},
     users: [],
-    employeeDirectory: []
+    employeeDirectory: [],
+    dashboard: { portalCounts: {} }
   };
+  var loadedCollections = {};
+  var queryPages = {};
+  var queryEntries = {};
+  var querySequence = {};
+  var dashboardEntries = {};
+  var connectionOnline = navigator.onLine !== false;
+  var legacyMode = false;
+  window.addEventListener("online", function () { setConnectionState(true); });
+  window.addEventListener("offline", function () { setConnectionState(false); });
   var authenticated = false;
   var currentUser = null;
   var currentCsrfToken = "";
@@ -89,6 +99,12 @@
 
   function api(path, options) {
     options = options || {};
+    var method = String(options.method || "GET").toUpperCase();
+    if (!connectionOnline && ["POST", "PUT", "PATCH", "DELETE"].indexOf(method) >= 0) {
+      var offlineError = new Error("Geen verbinding. Wijzigingen zijn tijdelijk geblokkeerd.");
+      offlineError.code = "OFFLINE";
+      return Promise.reject(offlineError);
+    }
     var headers = Object.assign(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }, options.headers || {});
     if (["POST", "PUT", "PATCH", "DELETE"].indexOf(String(options.method || "GET").toUpperCase()) >= 0 && currentCsrfToken) {
       headers["X-CSRF-Token"] = currentCsrfToken;
@@ -98,11 +114,33 @@
       headers: headers
     }, options, { headers: headers })).then(function (response) {
       return response.text().then(function (text) {
-        var payload = text ? JSON.parse(text) : {};
-        if (!response.ok) throw new Error(payload.error || "Serververzoek mislukt.");
+        var payload = {};
+        try { payload = text ? JSON.parse(text) : {}; } catch (_error) { payload = text || {}; }
+        setConnectionState(true);
+        if (!response.ok) {
+          var error = new Error(payload && payload.error || "Serververzoek mislukt.");
+          error.status = response.status;
+          error.code = payload && payload.code || "REQUEST_FAILED";
+          error.details = payload && payload.details || [];
+          error.requestId = payload && payload.requestId || response.headers.get("X-Request-ID") || "";
+          throw error;
+        }
         return payload;
       });
+    }).catch(function (error) {
+      if (error && (error.name === "AbortError" || error.status)) throw error;
+      setConnectionState(false);
+      var networkError = new Error("Kan geen verbinding maken met de server.");
+      networkError.code = "OFFLINE";
+      networkError.cause = error;
+      throw networkError;
     });
+  }
+
+  function setConnectionState(online) {
+    if (connectionOnline === online) return;
+    connectionOnline = online;
+    window.dispatchEvent(new CustomEvent("climature:connection", { detail: { online: online } }));
   }
 
   function clone(value) {
@@ -131,10 +169,23 @@
   function applyData(data) {
     data = data || {};
     COLLECTIONS.forEach(function (collection) {
-      cache[collection] = Array.isArray(data[collection]) ? data[collection] : [];
+      if (Array.isArray(data[collection])) {
+        cache[collection] = data[collection];
+        loadedCollections[collection] = true;
+      }
     });
     cache.settings = mergedSettings(data.settings);
     cache.counters = data.counters || {};
+    cache.dashboard = data.dashboard || cache.dashboard || { portalCounts: {} };
+  }
+
+  function clearData() {
+    COLLECTIONS.forEach(function (collection) { cache[collection] = []; });
+    cache.settings = mergedSettings({});
+    cache.counters = {};
+    cache.users = [];
+    cache.employeeDirectory = [];
+    cache.dashboard = { portalCounts: {} };
   }
 
   function currentYearKey(type) {
@@ -168,23 +219,13 @@
       applyData(bootstrap);
       if (bootstrap.user) currentUser = bootstrap.user;
       var legacyPayload = COLLECTIONS.some(function (collection) { return Array.isArray(bootstrap[collection]); });
+      legacyMode = legacyPayload;
       if (legacyPayload) {
         authenticated = true;
         return cache;
       }
-      var readable = bootstrap.permissions && Array.isArray(bootstrap.permissions.readableCollections)
-        ? bootstrap.permissions.readableCollections
-        : [];
-      return Promise.all(readable.filter(function (collection) {
-        return Boolean(COLLECTION_ENDPOINTS[collection]);
-      }).map(function (collection) {
-        return loadAllPages(COLLECTION_ENDPOINTS[collection], 1, []).then(function (items) {
-          cache[collection] = items;
-        });
-      })).then(function () {
-        authenticated = true;
-        return cache;
-      });
+      authenticated = true;
+      return cache;
     });
   }
 
@@ -195,6 +236,120 @@
       return combined;
     });
   }
+
+  function queryKey(collection, params) {
+    var query = new URLSearchParams(params || {});
+    query.sort();
+    return collection + "?" + query.toString();
+  }
+
+  function query(collection, params, options) {
+    options = options || {};
+    params = Object.assign({ page: 1, pageSize: 25 }, params || {});
+    var endpoint = COLLECTION_ENDPOINTS[collection];
+    if (!endpoint) return Promise.reject(new Error("Onbekende gegevensverzameling."));
+    var key = queryKey(collection, params);
+    var existing = queryEntries[key];
+    if (existing && existing.promise && !options.force) return existing.promise;
+    if (existing && existing.status === "success" && !options.force) {
+      cache[collection] = existing.data.items.slice();
+      queryPages[collection] = existing.data;
+      loadedCollections[collection] = true;
+      return Promise.resolve(existing.data);
+    }
+    if (options.cancelStale !== false) {
+      Object.keys(queryEntries).filter(function (entryKey) { return entryKey !== key && entryKey.indexOf(collection + "?") === 0; }).forEach(function (entryKey) {
+        var stale = queryEntries[entryKey];
+        if (stale && stale.status === "loading" && stale.controller) stale.controller.abort();
+      });
+    }
+    var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    var sequence = (querySequence[collection] || 0) + 1;
+    querySequence[collection] = sequence;
+    var entry = queryEntries[key] = { status: "loading", error: null, controller: controller, promise: null };
+    var url = endpoint + "?" + new URLSearchParams(params).toString();
+    entry.promise = api(url, controller ? { signal: controller.signal } : {}).then(function (page) {
+      entry.status = "success"; entry.data = page; entry.error = null; entry.promise = null;
+      if (querySequence[collection] === sequence) {
+        cache[collection] = (page.items || []).slice();
+        queryPages[collection] = page;
+        loadedCollections[collection] = true;
+      }
+      return page;
+    }).catch(function (error) {
+      if (error.name === "AbortError") { entry.status = "idle"; entry.promise = null; return Promise.reject(error); }
+      entry.status = "error"; entry.error = error; entry.promise = null;
+      throw error;
+    });
+    return entry.promise;
+  }
+
+  function abortCollection(collection) {
+    Object.keys(queryEntries).filter(function (key) { return key.indexOf(collection + "?") === 0; }).forEach(function (key) {
+      var entry = queryEntries[key];
+      if (entry && entry.controller && entry.status === "loading") entry.controller.abort();
+    });
+  }
+
+  function getDetail(collection, id, options) {
+    var key = collection + ":" + id;
+    if (queryEntries[key] && queryEntries[key].status === "success" && !(options && options.force)) return Promise.resolve(queryEntries[key].data.item);
+    var endpoint = COLLECTION_ENDPOINTS[collection];
+    var entry = queryEntries[key] = { status: "loading", error: null, promise: null };
+    entry.promise = api(endpoint + "/" + encodeURIComponent(id)).then(function (payload) {
+      entry.status = "success"; entry.data = payload; entry.promise = null;
+      var items = cache[collection].slice();
+      var index = items.findIndex(function (item) { return item.id === payload.item.id; });
+      if (index >= 0) items[index] = payload.item; else items.unshift(payload.item);
+      cache[collection] = items; loadedCollections[collection] = true;
+      return payload.item;
+    }).catch(function (error) { entry.status = "error"; entry.error = error; entry.promise = null; throw error; });
+    return entry.promise;
+  }
+
+  function invalidate(collection, id) {
+    Object.keys(queryEntries).forEach(function (key) {
+      if (key.indexOf(collection + "?") === 0 || key === collection + ":" + id) delete queryEntries[key];
+    });
+    if (collection) loadedCollections[collection] = false;
+    dashboardEntries = {};
+  }
+
+  function pageInfo(collection) { return queryPages[collection] || { page: 1, pageSize: 25, totalItems: cache[collection].length, totalPages: cache[collection].length ? 1 : 0 }; }
+  function queryState(collection, params) {
+    var entry = queryEntries[queryKey(collection, Object.assign({ page: 1, pageSize: 25 }, params || {}))];
+    return entry ? { status: entry.status, data: entry.data || null, error: entry.error || null } : { status: "idle", data: null, error: null };
+  }
+  function isCollectionLoaded(collection) { return Boolean(loadedCollections[collection]); }
+
+  function paginationControls(collection) {
+    var page = pageInfo(collection);
+    if (!page.totalItems) return "";
+    return '<nav class="pagination" aria-label="Paginering"><span>' + page.totalItems + ' resultaat' + (page.totalItems === 1 ? '' : 'en') + '</span><div class="button-row"><button class="small-button" type="button" data-action="collection-page" data-collection="' + escapeHtml(collection) + '" data-page="' + Math.max(1, page.page - 1) + '"' + (page.page <= 1 ? ' disabled' : '') + '>Vorige</button><strong>Pagina ' + page.page + ' van ' + Math.max(1, page.totalPages) + '</strong><button class="small-button" type="button" data-action="collection-page" data-collection="' + escapeHtml(collection) + '" data-page="' + Math.min(Math.max(1, page.totalPages), page.page + 1) + '"' + (page.page >= page.totalPages ? ' disabled' : '') + '>Volgende</button></div></nav>';
+  }
+
+  function dashboard(portal, options) {
+    options = options || {};
+    var existing = dashboardEntries[portal];
+    if (existing && existing.status === "success" && !options.force) return Promise.resolve(existing.data);
+    if (existing && existing.promise && !options.force) return existing.promise;
+    var entry = dashboardEntries[portal] = { status: "loading", promise: null, data: null, error: null };
+    entry.promise = api("/api/dashboard/" + encodeURIComponent(portal)).then(function (payload) { entry.status = "success"; entry.data = payload; entry.promise = null; return payload; }).catch(function (error) { entry.status = "error"; entry.error = error; entry.promise = null; throw error; });
+    return entry.promise;
+  }
+
+  function dashboardState(portal) { return dashboardEntries[portal] && dashboardEntries[portal].data || null; }
+  function portalCounts() { return cache.dashboard && cache.dashboard.portalCounts || {}; }
+
+  function reportSummary(params, options) {
+    var key = "reports?" + new URLSearchParams(params || {}).toString();
+    if (queryEntries[key] && queryEntries[key].status === "success" && !(options && options.force)) return Promise.resolve(queryEntries[key].data);
+    var entry = queryEntries[key] = { status: "loading", promise: null };
+    entry.promise = api("/api/reports/summary?" + new URLSearchParams(params || {}).toString()).then(function (payload) { entry.status = "success"; entry.data = payload; entry.promise = null; return payload; }).catch(function (error) { entry.status = "error"; entry.error = error; entry.promise = null; throw error; });
+    return entry.promise;
+  }
+
+  function reportState(params) { var entry = queryEntries["reports?" + new URLSearchParams(params || {}).toString()]; return entry && entry.data || null; }
 
   function login(username, password) {
     return api("/api/auth/login", {
@@ -216,7 +371,9 @@
       authenticated = false;
       currentUser = null;
       currentCsrfToken = "";
-      applyData({});
+      clearData();
+      loadedCollections = {}; queryPages = {}; queryEntries = {}; dashboardEntries = {};
+      legacyMode = false;
     });
   }
 
@@ -380,6 +537,8 @@
       var index = items.findIndex(function (existing) { return existing.id === saved.id; });
       if (index >= 0) items[index] = saved; else items.unshift(saved);
       cache[collection] = items;
+      invalidate(collection, saved.id);
+      loadedCollections[collection] = true;
       return saved;
     });
   }
@@ -389,6 +548,7 @@
       method: "DELETE"
     }).then(function () {
       cache[collection] = getAll(collection).filter(function (item) { return item.id !== id; });
+      invalidate(collection, id);
     });
   }
 
@@ -524,6 +684,21 @@
     request: api,
     init: init,
     refresh: refresh,
+    query: query,
+    abortCollection: abortCollection,
+    getDetail: getDetail,
+    invalidate: invalidate,
+    pageInfo: pageInfo,
+    queryState: queryState,
+    paginationControls: paginationControls,
+    isCollectionLoaded: isCollectionLoaded,
+    isLegacyMode: function () { return legacyMode; },
+    dashboard: dashboard,
+    dashboardState: dashboardState,
+    portalCounts: portalCounts,
+    reportSummary: reportSummary,
+    reportState: reportState,
+    isOnline: function () { return connectionOnline; },
     login: login,
     logout: logout,
     isAuthenticated: isAuthenticated,

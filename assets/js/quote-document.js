@@ -276,7 +276,9 @@
   function downloadPdf(quote, customer, settings, config) {
     if (!window.html2canvas || !window.jspdf || !window.jspdf.jsPDF) return Promise.reject(new Error("PDF-module is niet beschikbaar."));
     var regulation = regulationWarnings(quote);
-    if (regulation.length && !window.confirm(regulation[0] + " Toch doorgaan met exporteren?")) return Promise.resolve(false);
+    if (regulation.length && !(config && config.regulationConfirmed)) return C.app.confirm({ title: "Controle voor export", message: regulation[0], confirmLabel: "Toch exporteren" }).then(function (confirmed) {
+      return confirmed ? downloadPdf(quote, customer, settings, Object.assign({}, config, { regulationConfirmed: true })) : false;
+    });
     var host = document.createElement("div");
     host.className = "quote-export-host";
     host.innerHTML = render(quote, customer, settings, config);
@@ -301,7 +303,9 @@
 
   function print(quote, customer, settings, config) {
     var regulation = regulationWarnings(quote);
-    if (regulation.length && !window.confirm(regulation[0] + " Toch doorgaan met afdrukken?")) return Promise.resolve(false);
+    if (regulation.length && !(config && config.regulationConfirmed)) return C.app.confirm({ title: "Controle voor afdrukken", message: regulation[0], confirmLabel: "Toch afdrukken" }).then(function (confirmed) {
+      return confirmed ? print(quote, customer, settings, Object.assign({}, config, { regulationConfirmed: true })) : false;
+    });
     var target = document.getElementById("print-document");
     target.innerHTML = render(quote, customer, settings, config);
     return waitForAssets(target).then(function () {

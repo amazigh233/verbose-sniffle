@@ -277,10 +277,9 @@
   }
 
   function remove(id) {
-    if (!window.confirm("Saleskans verwijderen?")) return;
-    return S.remove("salesOpportunities", id).then(function () {
-      C.app.toast("Saleskans verwijderd.");
-      C.app.navigate("sales-funnel");
+    return C.app.confirm({ title: "Saleskans verwijderen", message: "Deze saleskans wordt definitief verwijderd.", confirmLabel: "Saleskans verwijderen" }).then(function (confirmed) {
+      if (!confirmed) return;
+      return S.remove("salesOpportunities", id).then(function () { C.app.toast("Saleskans verwijderd."); C.app.navigate("sales-funnel"); });
     });
   }
 

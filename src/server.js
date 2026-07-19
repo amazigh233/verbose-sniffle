@@ -25,6 +25,7 @@ const { registerCustomerRoutes } = require("./modules/customers/routes");
 const { registerQuoteRoutes } = require("./modules/quotes/routes");
 const { registerInvoiceRoutes } = require("./modules/invoices/routes");
 const { registerInstallationRoutes } = require("./modules/installations/routes");
+const { registerPaymentRoutes } = require("./modules/payments/routes");
 const authorization = require("./middleware/authorization");
 const { createObjectStorage } = require("./infrastructure/object-storage");
 const { createCoordinationStore } = require("./infrastructure/coordination");
@@ -34,6 +35,8 @@ const { Prisma } = require("@prisma/client");
 const authValidation = require("./modules/auth/validation");
 const { validateCollectionWrite } = require("./modules/collections/validation");
 const { validateMutationEnvelope, validateParam } = require("./shared/validation");
+const dashboardData = require("./dashboard-data");
+const reportData = require("./report-data");
 
 const ROLE_COLLECTIONS = {
   crm: ["customers", "customerNotes", "customerDocuments"],
@@ -226,6 +229,7 @@ function permissionsForRole(role) {
     manageSettings: role === "admin",
     exportBackup: role === "admin",
     manageProjects: ["admin", "execution"].includes(role),
+    managePayments: ["admin", "finance"].includes(role),
     updateAssignedWork: role === "installer"
   };
 }
@@ -275,11 +279,14 @@ function createApp(config = loadConfig()) {
     redisUrl: ""
   }, config);
   const app = express();
-  app.use((_req, res, next) => {
+  app.use((req, res, next) => {
     const sendJson = res.json.bind(res);
     res.json = (body) => {
       const value = apiJsonValue(body);
-      if (res.statusCode >= 400 && value && value.error && !value.code) value.code = errorCodeForStatus(res.statusCode);
+      if (res.statusCode >= 400 && value && value.error) {
+        if (!value.code) value.code = errorCodeForStatus(res.statusCode);
+        if (!value.requestId) value.requestId = req.id;
+      }
       return sendJson(value);
     };
     next();
@@ -832,7 +839,7 @@ function createApp(config = loadConfig()) {
 
   app.get("/api/bootstrap", requireAuth, asyncHandler(async (req, res) => {
     const role = req.session.user.role;
-    const [settings, counters] = await Promise.all([data.getSettings(prisma), data.getCounters(prisma)]);
+    const [settings, counters, portalCounts] = await Promise.all([data.getSettings(prisma), data.getCounters(prisma), dashboardData.portalCounts(prisma, req.session.user)]);
     const roleSettings = role === "admin" ? settings : settingsForRole(settings, role);
     res.json({ data: {
       user: req.session.user,
@@ -840,10 +847,27 @@ function createApp(config = loadConfig()) {
       permissions: permissionsForRole(role),
       settings: roleSettings,
       counters: countersForRole(counters, role),
-      dashboard: {},
+      dashboard: { portalCounts },
       references: { apiVersion: 2 }
     } });
   }));
+
+  app.get("/api/dashboard/:type", requireAuth, asyncHandler(async (req, res) => {
+    res.json(await dashboardData.dashboard(prisma, req.session.user, req.params.type));
+  }));
+
+  app.get("/api/reports/summary", requireRole("admin", "finance"), asyncHandler(async (req, res) => {
+    res.json(await reportData.summary(prisma, req.session.user, req.query || {}));
+  }));
+
+  app.get("/api/reports/export", requireRole("admin", "finance"), asyncHandler(async (req, res) => {
+    const csv = await reportData.exportCsv(prisma, req.session.user, req.query || {});
+    const dataset = String(req.query.dataset || "export").replace(/[^a-z-]/g, "");
+    res.set({ "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="climature-${dataset}-${req.query.from}_${req.query.to}.csv"`, "Cache-Control": "no-store, private" });
+    res.send(csv);
+  }));
+
+  registerPaymentRoutes({ app, asyncHandler, prisma, requireRole });
 
   registerServiceRoutes({ app, asyncHandler, config, objectStorage, prisma, requireRole, upload });
 
@@ -1107,6 +1131,7 @@ function createApp(config = loadConfig()) {
     res.status(status).json({
       error: message,
       code: status >= 500 ? "INTERNAL_ERROR" : (error.code || errorCodeForStatus(status)),
+      requestId: _req.id,
       ...(status < 500 && Array.isArray(error.details) ? { details: error.details } : {})
     });
   });
@@ -1142,7 +1167,7 @@ async function main() {
       if (typeof server.closeAllConnections === "function") server.closeAllConnections();
     }, 25_000);
     forced.unref();
-    await new Promise((resolve) => server.close(resolve));
+    await new Promise((resolve) => { server.close(resolve); });
     await Promise.allSettled([
       app.locals.coordination.close(),
       app.locals.objectStorage.close(),

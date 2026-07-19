@@ -7,7 +7,7 @@
   <meta name="description" content="Lokaal Climature bedrijfsportaal voor klanten, offertes, facturen en advies.">
   <meta name="theme-color" content="#123C24">
   <link rel="icon" type="image/svg+xml" href="assets/icons/icon.svg">
-  <link rel="apple-touch-icon" href="assets/icons/icon.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/icon-180.png">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="assets/css/app.css?v=24">
 </head>
@@ -33,7 +33,8 @@
   </section>
 
   <div class="app-shell">
-    <aside class="sidebar" aria-label="Hoofdnavigatie">
+    <aside class="sidebar" id="main-navigation" aria-label="Hoofdnavigatie">
+      <button class="sidebar-close icon-button" type="button" data-action="close-sidebar" aria-label="Menu sluiten">×</button>
       <a class="brand" href="#dashboard" aria-label="Climature dashboard">
         <svg class="brand-mark" viewBox="0 0 110 110" fill="none" aria-hidden="true">
           <rect width="110" height="110" rx="18" fill="#123C24"/>
@@ -81,6 +82,7 @@
           <p class="nav-group-label">Financiën</p>
           <a href="#finance-portal" data-route-link="finance-portal">Overzicht</a>
           <a href="#invoices" data-route-link="invoices">Facturen</a>
+          <a href="#payments" data-route-link="payments">Betalingen & kassa</a>
           <a href="#reports" data-route-link="reports">Rapportage</a>
           <a href="#service" data-route-link="service">Servicecontracten</a>
         </section>
@@ -100,10 +102,10 @@
 
     <div class="main-shell">
       <header class="topbar">
-        <button class="icon-button mobile-menu" type="button" data-action="toggle-sidebar" aria-label="Menu openen">☰</button>
+        <button class="icon-button mobile-menu" type="button" data-action="toggle-sidebar" aria-label="Menu openen" aria-controls="main-navigation" aria-expanded="false">☰</button>
         <div>
           <p class="eyebrow" id="route-eyebrow">Overzicht</p>
-          <h1 id="route-title">Dashboard</h1>
+          <h1 id="route-title" tabindex="-1">Dashboard</h1>
         </div>
         <div class="topbar-actions" id="topbar-actions"></div>
       </header>
@@ -112,7 +114,22 @@
     </div>
   </div>
 
+  <button class="sidebar-backdrop" type="button" data-action="close-sidebar" aria-label="Menu sluiten" tabindex="-1"></button>
+  <div id="connection-status" class="connection-status" role="status" aria-live="polite" hidden></div>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <dialog id="app-dialog" class="app-dialog" aria-labelledby="app-dialog-title" aria-describedby="app-dialog-message">
+    <form method="dialog" class="dialog-card">
+      <p class="eyebrow">Bevestiging</p>
+      <h2 id="app-dialog-title">Actie bevestigen</h2>
+      <p id="app-dialog-message"></p>
+      <label class="field dialog-input" hidden>Invoer<input id="app-dialog-input"></label>
+      <div class="button-row dialog-actions">
+        <button class="ghost-button" value="cancel">Annuleren</button>
+        <button class="danger-button" id="app-dialog-confirm" value="confirm">Bevestigen</button>
+      </div>
+    </form>
+  </dialog>
   <div id="print-document" aria-hidden="true"></div>
 
   <script src="assets/vendor/jspdf.umd.min.js"></script>
@@ -125,6 +142,7 @@
   <script src="assets/js/sales-funnel.js"></script>
   <script src="assets/js/sales-agenda.js"></script>
   <script src="assets/js/invoices.js?v=19"></script>
+  <script src="assets/js/payments.js?v=1"></script>
   <script src="assets/js/installations.js"></script>
   <script src="assets/js/projects.js"></script>
   <script src="assets/js/service.js?v=17"></script>
