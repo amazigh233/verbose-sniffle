@@ -2,7 +2,7 @@
 "use strict";
 
 var CACHE_PREFIX = "climature-shell-";
-var CACHE_NAME = CACHE_PREFIX + "v26";
+var CACHE_NAME = CACHE_PREFIX + "v31";
 var APP_SHELL = [
   "./", "index.html", "manifest.webmanifest",
   "assets/icons/icon.svg", "assets/icons/icon-180.png", "assets/icons/icon-192.png",
@@ -12,7 +12,7 @@ var APP_SHELL = [
   "assets/js/storage.js", "assets/js/quote-document.js", "assets/js/pdf.js",
   "assets/js/customers.js", "assets/js/quotes.js", "assets/js/sales-funnel.js",
   "assets/js/sales-agenda.js", "assets/js/invoices.js", "assets/js/payments.js", "assets/js/installations.js",
-  "assets/js/projects.js", "assets/js/service.js", "assets/js/advice-v2-engine.js",
+  "assets/js/projects.js", "assets/js/inventory.js", "assets/js/service.js", "assets/js/advice-v2-engine.js", "assets/js/product-catalog.js", "assets/js/wasco.js",
   "assets/js/advice-v2.js", "assets/js/advice.js", "assets/js/reports.js", "assets/js/app.js"
 ];
 

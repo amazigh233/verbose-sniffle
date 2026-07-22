@@ -246,6 +246,27 @@
     ].join("");
   }
 
+  function adviceEnergyPrice(value) {
+    return "€ " + Number(value || 0).toLocaleString("nl-NL", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+  }
+
+  function adviceEnergyTableHtml(result) {
+    var tariff = result.energyTariff || {};
+    var history = tariff.priceHistory || result.assumptions && result.assumptions.priceHistory || [];
+    if (!history.length) return "";
+    var contractLabel = tariff.contractType === "dynamic" ? "dynamisch" : "vast/variabel";
+    return [
+      '<section class="print-box advice-price-print"><h2>Gekozen energietarieven</h2>',
+      '<p><strong>' + S.escapeHtml(tariff.periodLabel || tariff.periodKey || "Actueel") + '</strong> · ' + S.escapeHtml(contractLabel) + '<br>Gas: ' + adviceEnergyPrice(tariff.gasPrice) + '/m³ · gebruikte stroomprijs: ' + adviceEnergyPrice(tariff.electricityPrice) + '/kWh</p>',
+      '<table class="print-table"><thead><tr><th>Maand</th><th class="num">Gas / m³</th><th class="num">Stroom / kWh</th><th class="num">Dynamisch / kWh</th></tr></thead><tbody>',
+      history.map(function (item) {
+        var selected = String(item.periodKey) === String(tariff.periodKey);
+        return '<tr class="' + (selected ? 'is-selected' : '') + '"><td>' + (selected ? '<strong>✓ ' : '') + S.escapeHtml(item.periodLabel || item.periodKey) + (selected ? '</strong>' : '') + '</td><td class="num">' + adviceEnergyPrice(item.gasPrice) + '</td><td class="num">' + adviceEnergyPrice(item.electricityPrice) + '</td><td class="num">' + adviceEnergyPrice(item.dynamicElectricityPrice) + '</td></tr>';
+      }).join(''),
+      '</tbody></table><p class="print-disclaimer">Bron: CBS, Gemiddelde energietarieven voor consumenten' + (tariff.refreshedAt ? ' · opgehaald ' + S.escapeHtml(S.formatDate(String(tariff.refreshedAt).slice(0, 10))) : '') + '. Inclusief btw en belastingen, exclusief vaste leverings- en netbeheerkosten. Bron en tarieven zijn vastgelegd bij het berekenen van dit advies.</p></section>'
+    ].join("");
+  }
+
   function buildAdviceV2Html(result, customer) {
     var settings = S.settings();
     var address = result.input && [result.input.address, result.input.city].filter(Boolean).join(", ");
@@ -259,6 +280,7 @@
         '<div class="print-page advice-v2-print">',
         '<header class="print-header"><div class="print-brand">' + logoSvg + '<span>CLIMATURE</span></div><div><strong>' + S.escapeHtml(moduleLabel) + '</strong><br>Datum: ' + S.formatDate(S.today()) + '<br>Zekerheid: ' + S.escapeHtml(result.inputQuality.label) + '<br>Rekenversie: ' + S.escapeHtml(result.engineVersion) + '</div></header>',
         '<section class="print-box"><p><strong>ONS ADVIES</strong></p><h1>' + S.escapeHtml(result.recommendation.title) + '</h1><p>' + S.escapeHtml(result.recommendation.rationale) + '</p><p>' + S.escapeHtml(S.customerName(customer) || "Losse woningscan") + (address ? '<br>' + S.escapeHtml(address) : '') + '</p></section>',
+        adviceEnergyTableHtml(result),
         checks.length ? '<section class="print-box"><h2>Vóór definitieve offerte controleren</h2><ol>' + checks.map(function (check) { return '<li>' + S.escapeHtml(check) + '</li>'; }).join('') + '</ol></section>' : '',
         '<section class="print-grid">' + adviceTechnologyHtml("Warmtepomp", result.warmtepomp) + adviceTechnologyHtml("Thuisbatterij", result.batterij) + '</section>',
         result.alternative ? '<section class="print-box"><h2>Passend alternatief</h2><h3>' + S.escapeHtml(result.alternative.title) + '</h3><p>' + S.escapeHtml(result.alternative.difference || "Alternatief scenario ter vergelijking.") + '</p></section>' : '',

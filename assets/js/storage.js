@@ -33,7 +33,7 @@
     googleBusinessProfile: { profileUrl: "", reviewUrl: "" },
     serviceReminders: { enabled: true, daysBefore: 30 },
     adviceAssumptions: {
-      energy: { gasPrice: 1.45, electricityPrice: 0.30, dynamicElectricityPrice: 0.26, gasAnnualIncrease: 5, electricityAnnualIncrease: 2 },
+      energy: { gasPrice: 1.45, electricityPrice: 0.30, dynamicElectricityPrice: 0.26, gasAnnualIncrease: 5, electricityAnnualIncrease: 2, priceHistory: [] },
       battery: { feedInCost: 0.15, epexMargin: 0.22, imbalancePerKwh: 250, aggregatorFeeExternal: 25, aggregatorFeeClimature: 15 },
       warmtepompProducts: {
         allelectric: [
@@ -47,15 +47,15 @@
       },
       batteryProducts: {
         "1fase": [
-          { name: "Climature A10", kwh: 10, priceExVat: 12094 },
-          { name: "Climature A21", kwh: 21, priceExVat: 14594 }
+          { id: "climature-a10", name: "Climature A10", kwh: 10, priceExVat: 12094 },
+          { id: "climature-a21", name: "Climature A21", kwh: 21, priceExVat: 14594 }
         ],
         "3fase": [
-          { name: "Climature T10", kwh: 10, priceExVat: 12094 },
-          { name: "Climature T15", kwh: 15, priceExVat: 13594 },
-          { name: "Climature T21", kwh: 21, priceExVat: 14594 },
-          { name: "Climature T30", kwh: 30, priceExVat: 20094 },
-          { name: "Climature T40", kwh: 40, priceExVat: 24549 }
+          { id: "climature-t10", name: "Climature T10", kwh: 10, priceExVat: 12094 },
+          { id: "climature-t15", name: "Climature T15", kwh: 15, priceExVat: 13594 },
+          { id: "climature-t21", name: "Climature T21", kwh: 21, priceExVat: 14594 },
+          { id: "climature-t30", name: "Climature T30", kwh: 30, priceExVat: 20094 },
+          { id: "climature-t40", name: "Climature T40", kwh: 40, priceExVat: 24549 }
         ]
       },
       sources: {
@@ -88,6 +88,8 @@
   var queryEntries = {};
   var querySequence = {};
   var dashboardEntries = {};
+  var energyPriceEntry = { status: "idle", data: null, error: null, promise: null };
+  var productCatalogPromise = null;
   var connectionOnline = navigator.onLine !== false;
   var legacyMode = false;
   window.addEventListener("online", function () { setConnectionState(true); });
@@ -186,6 +188,7 @@
     cache.users = [];
     cache.employeeDirectory = [];
     cache.dashboard = { portalCounts: {} };
+    energyPriceEntry = { status: "idle", data: null, error: null, promise: null };
   }
 
   function currentYearKey(type) {
@@ -284,6 +287,27 @@
     return entry.promise;
   }
 
+  function loadProductCatalog(options) {
+    options = options || {};
+    if (loadedCollections.products && !options.force) return Promise.resolve(getAll("products"));
+    if (productCatalogPromise && !options.force) return productCatalogPromise;
+    function page(number) {
+      return api("/api/products?" + new URLSearchParams({ page: number, pageSize: 100, sortBy: "category", sortOrder: "asc" }).toString());
+    }
+    productCatalogPromise = page(1).then(function (first) {
+      var requests = [];
+      for (var number = 2; number <= first.totalPages; number += 1) requests.push(page(number));
+      return Promise.all(requests).then(function (rest) {
+        var items = (first.items || []).concat.apply(first.items || [], rest.map(function (result) { return result.items || []; }));
+        cache.products = items;
+        queryPages.products = { items: items, page: 1, pageSize: items.length || 100, totalItems: first.totalItems, totalPages: first.totalPages };
+        loadedCollections.products = true;
+        return items;
+      });
+    }).finally(function () { productCatalogPromise = null; });
+    return productCatalogPromise;
+  }
+
   function abortCollection(collection) {
     Object.keys(queryEntries).filter(function (key) { return key.indexOf(collection + "?") === 0; }).forEach(function (key) {
       var entry = queryEntries[key];
@@ -312,6 +336,7 @@
       if (key.indexOf(collection + "?") === 0 || key === collection + ":" + id) delete queryEntries[key];
     });
     if (collection) loadedCollections[collection] = false;
+    if (collection === "products") productCatalogPromise = null;
     dashboardEntries = {};
   }
 
@@ -340,6 +365,32 @@
 
   function dashboardState(portal) { return dashboardEntries[portal] && dashboardEntries[portal].data || null; }
   function portalCounts() { return cache.dashboard && cache.dashboard.portalCounts || {}; }
+
+  function loadEnergyPrices(options) {
+    options = options || {};
+    if (energyPriceEntry.status === "success" && !options.reload) return Promise.resolve(energyPriceEntry.data);
+    if (energyPriceEntry.promise) return energyPriceEntry.promise;
+    var previous = energyPriceEntry.data;
+    energyPriceEntry = { status: "loading", data: previous, error: null, promise: null };
+    var path = "/api/energy-prices" + (options.refresh ? "?refresh=1" : "");
+    energyPriceEntry.promise = api(path).then(function (payload) {
+      energyPriceEntry.status = "success";
+      energyPriceEntry.data = payload;
+      energyPriceEntry.error = null;
+      energyPriceEntry.promise = null;
+      return payload;
+    }).catch(function (error) {
+      energyPriceEntry.status = "error";
+      energyPriceEntry.error = error;
+      energyPriceEntry.promise = null;
+      throw error;
+    });
+    return energyPriceEntry.promise;
+  }
+
+  function energyPriceState() {
+    return { status: energyPriceEntry.status, data: energyPriceEntry.data, error: energyPriceEntry.error };
+  }
 
   function reportSummary(params, options) {
     var key = "reports?" + new URLSearchParams(params || {}).toString();
@@ -685,6 +736,7 @@
     init: init,
     refresh: refresh,
     query: query,
+    loadProductCatalog: loadProductCatalog,
     abortCollection: abortCollection,
     getDetail: getDetail,
     invalidate: invalidate,
@@ -696,6 +748,8 @@
     dashboard: dashboard,
     dashboardState: dashboardState,
     portalCounts: portalCounts,
+    loadEnergyPrices: loadEnergyPrices,
+    energyPriceState: energyPriceState,
     reportSummary: reportSummary,
     reportState: reportState,
     isOnline: function () { return connectionOnline; },

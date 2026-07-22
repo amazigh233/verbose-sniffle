@@ -6,14 +6,43 @@ const { createApp } = require("../src/server");
 const { prisma } = require("../src/prisma");
 const data = require("../src/data");
 const service = require("../src/service-data");
-const { assumptionsFromCbsRows } = require("../src/advice-assumptions");
+const { assumptionsFromCbsRows, priceHistoryFromCbsRows, refreshEnergyAssumptions } = require("../src/advice-assumptions");
 const { authenticator, encrypt, decrypt, scanWithClamav } = require("../src/hr-security");
+const { inventoryWorkbookBuffer } = require("./helpers/inventory-workbook");
 
 let app;
 let hrApp;
+let energyPriceFetchMock;
+
+function binaryParser(response, callback) {
+  const chunks = [];
+  response.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+  response.on("end", () => callback(null, Buffer.concat(chunks)));
+}
+
+function energyPricePoint(start, hours, price) {
+  const startDate = new Date(start);
+  return { start: startDate.toISOString(), end: new Date(startDate.getTime() + hours * 60 * 60 * 1000).toISOString(), price: { value: String(price) } };
+}
+
+function energyPriceFixture(url) {
+  const parsed = new URL(String(url));
+  let points;
+  if (parsed.searchParams.get("energyType") === "ENERGY_TYPE_ELECTRICITY") {
+    const start = Date.parse("2026-07-19T22:00:00.000Z");
+    points = Array.from({ length: 48 }, (_, index) => energyPricePoint(start + index * 60 * 60 * 1000, 1, 0.2 + index / 1000));
+  } else {
+    const month = Number(parsed.searchParams.get("month"));
+    const start = Date.parse(month === 7 ? "2026-07-01T04:00:00.000Z" : "2026-06-01T04:00:00.000Z");
+    const count = month === 7 ? 20 : 30;
+    points = Array.from({ length: count }, (_, index) => energyPricePoint(start + index * 24 * 60 * 60 * 1000, 24, 1.1 + index / 1000));
+  }
+  return { ok: true, json: async () => ({ all_in_with_vat: points }) };
+}
 
 beforeAll(async () => {
   const adminPasswordHash = await bcrypt.hash("test-password", 4);
+  energyPriceFetchMock = vi.fn(async (url) => energyPriceFixture(url));
   app = createApp({
     databaseUrl: process.env.DATABASE_URL,
     sessionSecret: "test-session-secret-at-least-32-chars",
@@ -22,7 +51,9 @@ beforeAll(async () => {
     port: 0,
     nodeEnv: "test",
     isProduction: false,
-    allowUnscannedHrFiles: true
+    allowUnscannedHrFiles: true,
+    energyPriceFetch: (...args) => energyPriceFetchMock(...args),
+    energyPriceNow: () => new Date("2026-07-20T10:30:00.000Z")
   });
   hrApp = createApp({
     databaseUrl: process.env.DATABASE_URL,
@@ -260,6 +291,52 @@ describe("auth", () => {
   });
 });
 
+describe("live energy price endpoint", () => {
+  it("is admin-only and returns a cached normalized dashboard response", async () => {
+    await request(app).get("/api/energy-prices").expect(401);
+    const admin = agent();
+    await login(admin);
+    await createRoleUser(admin, "sales");
+    const sales = await loginAsRole("sales");
+    await sales.get("/api/energy-prices").expect(403);
+
+    const first = await admin.get("/api/energy-prices").expect(200);
+    expect(first.body.source).toMatchObject({ name: "EnergyZero", status: "fresh" });
+    expect(first.body.electricity).toMatchObject({ unit: "EUR/kWh", interval: "hour" });
+    expect(first.body.electricity.points).toHaveLength(48);
+    expect(first.body.gas.points).toHaveLength(30);
+    expect(energyPriceFetchMock).toHaveBeenCalledTimes(3);
+
+    await admin.get("/api/energy-prices").expect(200);
+    expect(energyPriceFetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("returns 502 when the source fails and no last-good response exists", async () => {
+    const failingApp = createApp({
+      databaseUrl: process.env.DATABASE_URL,
+      sessionSecret: "failing-energy-session-secret-at-least-32-chars",
+      adminUsername: "admin",
+      adminPasswordHash: await bcrypt.hash("test-password", 4),
+      port: 0,
+      nodeEnv: "test",
+      isProduction: false,
+      allowUnscannedHrFiles: true,
+      energyPriceFetch: async () => { throw new Error("offline"); },
+      energyPriceNow: () => new Date("2026-07-20T10:30:00.000Z")
+    });
+    try {
+      const client = request.agent(failingApp);
+      await client.post("/api/auth/login").send({ username: "admin", password: "test-password" }).expect(200);
+      const response = await client.get("/api/energy-prices").expect(502);
+      expect(response.body).toMatchObject({ code: "ENERGY_PRICES_UNAVAILABLE", error: "Actuele energieprijzen zijn tijdelijk niet beschikbaar." });
+    } finally {
+      await failingApp.locals.coordination.close();
+      await failingApp.locals.objectStorage.close();
+      await failingApp.locals.pool.end();
+    }
+  });
+});
+
 describe("role access", () => {
   it("limits installers to customers, installations and work orders", async () => {
     const admin = agent();
@@ -385,6 +462,7 @@ describe("role access", () => {
     await execution.get("/api/collections/installations").expect(200);
     await execution.get("/api/collections/invoices").expect(403);
     await execution.get("/api/projects").expect(200);
+    await execution.get("/api/inventory").expect(200);
     await execution.post("/api/collections/installations").send({ customerId: customer.id, plannedDate: "2026-08-21", startTime: "09:00", durationHours: 4, workType: "other" }).expect(200);
     await execution.post("/api/collections/invoices").send({}).expect(403);
 
@@ -394,6 +472,7 @@ describe("role access", () => {
     expect(financeData.invoices).toBeUndefined();
     await finance.get("/api/collections/invoices").expect(200);
     await finance.get("/api/collections/salesOpportunities").expect(403);
+    await finance.get("/api/inventory").expect(403);
     await finance.post("/api/counters/invoice/next").expect(200);
     await finance.post("/api/counters/quote/next").expect(403);
     await finance.post("/api/collections/customers").send({ firstName: "Nope" }).expect(403);
@@ -430,6 +509,50 @@ describe("business data", () => {
     expect(response.body.data.user.role).toBe("admin");
     expect(response.body.data.references.apiVersion).toBe(2);
     expect((await client.get("/api/products?pageSize=25").expect(200)).body.items.length).toBeGreaterThan(0);
+  });
+
+  it("beheert voorraad met minimumwaarden en een controleerbare mutatie", async () => {
+    const client = agent();
+    await login(client);
+    const product = await prisma.product.findFirst({ orderBy: { name: "asc" } });
+    const response = await client.put(`/api/inventory/${product.id}`).send({
+      quantity: "7,5",
+      minimumStock: 3,
+      stockUnit: "stuk",
+      stockLocation: "Magazijn A, vak 3",
+      reason: "Voorraadtelling test"
+    }).expect(200);
+
+    expect(response.body.item).toMatchObject({ stockQuantity: 7.5, minimumStock: 3, stockLocation: "Magazijn A, vak 3" });
+    const overview = await client.get("/api/inventory").expect(200);
+    expect(overview.body.movements[0]).toMatchObject({ productId: product.id, delta: 7.5, reason: "Voorraadtelling test" });
+  });
+
+  it("voegt voorraadproducten toe vanuit een echt Excel-bestand", async () => {
+    const client = agent();
+    await login(client);
+    const response = await client.post("/api/inventory/import")
+      .attach("file", inventoryWorkbookBuffer(), { filename: "voorraad.xlsx", contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" })
+      .expect(201);
+
+    expect(response.body.summary).toMatchObject({ total: 1, created: 1, updated: 0 });
+    const product = await prisma.product.findUnique({ where: { sku: "WP-100" } });
+    expect(product).toMatchObject({ name: "Model 100", stockQuantity: expect.anything(), stockLocation: "Magazijn A" });
+    expect(Number(product.stockQuantity)).toBe(8);
+  });
+
+  it("downloadt een geldig Excel-sjabloon voor de voorraadimport", async () => {
+    const client = agent();
+    await login(client);
+    const response = await client.get("/api/inventory/template")
+      .buffer(true)
+      .parse(binaryParser)
+      .expect("Content-Type", /spreadsheetml/)
+      .expect("Content-Disposition", /climature-voorraad-import\.xlsx/)
+      .expect(200);
+
+    expect(Buffer.isBuffer(response.body)).toBe(true);
+    expect(response.body.subarray(0, 2).toString("ascii")).toBe("PK");
   });
 
   it("serves scoped summaries, details, dashboards and server-side reports", async () => {
@@ -1239,6 +1362,28 @@ describe("advice assumptions", () => {
     expect(assumptions.energy.dynamicElectricityPrice).toBe(0.26);
     expect(assumptions.sources.energy.period).toBe("juni 2026");
     expect(assumptions.sources.energy.periodKey).toBe("2026MM06");
+    expect(assumptions.energy.priceHistory.map((item) => item.periodKey)).toEqual(["2026MM06", "2026MM05"]);
+    expect(assumptions.energy.priceHistory[0]).toMatchObject({ vatIncluded: true, gasPrice: 1.45, electricityPrice: 0.30, dynamicElectricityPrice: 0.26 });
+  });
+
+  it("keeps only the newest twelve CBS months and ignores annual rows", () => {
+    const rows = [];
+    for (let year = 2025; year <= 2026; year += 1) {
+      for (let month = 1; month <= 12; month += 1) rows.push({ ...cbsRows[0], Perioden: `${year}MM${String(month).padStart(2, "0")}` });
+    }
+    rows.push({ ...cbsRows[0], Perioden: "2026JJ00" });
+    const history = priceHistoryFromCbsRows(rows, "2026-07-09T10:00:00.000Z");
+    expect(history).toHaveLength(12);
+    expect(history[0].periodKey).toBe("2026MM12");
+    expect(history[11].periodKey).toBe("2026MM01");
+  });
+
+  it("preserves the last valid history when the scheduled CBS refresh fails", async () => {
+    const current = assumptionsFromCbsRows(cbsRows, undefined, "2026-07-09T10:00:00.000Z");
+    const refreshed = await refreshEnergyAssumptions(current, { fetch: async () => ({ ok: false }) });
+    expect(refreshed.energy.priceHistory).toEqual(current.energy.priceHistory);
+    expect(refreshed.sources.lastEnergyRefresh.ok).toBe(false);
+    expect(refreshed.sources.lastEnergyRefresh.errors[0]).toContain("CBS-tarieven");
   });
 
   it("refreshes advice assumptions and preserves manual market values", async () => {

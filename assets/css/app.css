@@ -18,6 +18,17 @@
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 html { min-height: 100%; }
 body {
   min-height: 100%;
@@ -651,6 +662,30 @@ body:not(.auth-locked) .login-screen {
 .status-pill.warn { background: #fff8df; color: var(--warn); }
 .status-pill.ok { background: #edf7ed; color: var(--ok); }
 .status-pill.danger { background: #fff0eb; color: var(--danger); }
+
+.inventory-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.inventory-import details {
+  margin: 12px 0;
+  color: var(--brand);
+  font-weight: 800;
+}
+
+.inventory-import details p { font-weight: 600; }
+.inventory-import-errors {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(166, 90, 46, 0.35);
+  border-radius: var(--radius);
+  background: #fff4ef;
+  color: var(--danger);
+}
+.inventory-import-errors ul { margin: 8px 0 0; padding-left: 20px; }
+.inventory-table { min-width: 900px; }
+.inventory-positive { color: var(--ok); }
+.inventory-negative { color: var(--danger); }
 
 .line-table {
   display: grid;
@@ -1563,6 +1598,54 @@ button.calendar-card {
   letter-spacing: 0;
 }
 
+.product-category-group > .panel-head {
+  margin-bottom: 18px;
+}
+
+.product-brand-group + .product-brand-group {
+  margin-top: 26px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.product-brand-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.product-brand-head h3,
+.product-brand-head p {
+  margin: 0;
+}
+
+.product-advice-meta {
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.product-advice-fields {
+  margin: 4px 0 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--soft);
+}
+
+.product-advice-fields legend {
+  padding: 0 6px;
+  color: var(--brand);
+  font-weight: 900;
+}
+
+.product-advice-fields .hint {
+  display: block;
+  margin-top: 8px;
+}
+
 .advice-tool-embed {
   min-height: calc(100vh - 142px);
   margin: -28px;
@@ -1960,6 +2043,35 @@ button.calendar-card {
 [data-module-scope][hidden],
 [data-advice-v2-conditional][hidden] { display: none !important; }
 
+.advice-v2-energy-prices {
+  margin: 20px 0 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #f8faf6;
+}
+
+.advice-v2-energy-prices legend { padding: 0 6px; color: var(--brand); font-weight: 800; }
+.advice-v2-energy-prices > .hint { display: block; margin: 0 0 12px; }
+.advice-v2-table-scroll { overflow-x: auto; }
+.advice-v2-energy-prices table { width: 100%; min-width: 660px; border-collapse: collapse; }
+.advice-v2-energy-prices th,
+.advice-v2-energy-prices td { padding: 10px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+.advice-v2-energy-prices thead th { color: var(--muted); font-size: 12px; }
+.advice-v2-energy-prices tbody tr.is-selected { background: #eaf4e6; }
+.advice-v2-energy-prices tbody th span { display: block; color: var(--brand); font-size: 10px; text-transform: uppercase; }
+.advice-v2-energy-prices td small { display: block; color: var(--muted); font-size: 10px; }
+.advice-v2-energy-prices input { width: 18px; height: 18px; accent-color: var(--brand); }
+
+.advice-v2-battery-picker { display: grid; gap: 12px; margin-top: 16px; }
+.advice-v2-battery-picker > div:first-child { display: grid; gap: 2px; }
+.advice-v2-battery-picker > div:first-child span { color: var(--muted); font-size: 12px; }
+.advice-v2-battery-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.advice-v2-battery-option { display: grid; gap: 3px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; color: var(--text); text-align: left; background: #fff; }
+.advice-v2-battery-option > span { color: var(--brand); font-size: 10px; font-weight: 800; text-transform: uppercase; }
+.advice-v2-battery-option small { color: var(--muted); line-height: 1.35; }
+.advice-v2-battery-option.is-selected { border-color: var(--brand); box-shadow: 0 0 0 2px rgba(18, 60, 36, .12); background: #edf5e9; }
+
 .advice-v2-status {
   max-width: 190px;
   padding: 7px 10px;
@@ -2097,6 +2209,7 @@ button.calendar-card {
   .advice-v2-module-grid,
   .advice-v2-summary-metrics,
   .advice-v2-scenarios,
+  .advice-v2-battery-options,
   .field-grid > [data-module-scope] {
     grid-template-columns: 1fr;
   }
@@ -2370,6 +2483,9 @@ button.calendar-card {
 .print-table .num {
   text-align: right;
 }
+
+.advice-price-print .print-table tr.is-selected { background: #edf5e9; }
+.advice-price-print .print-disclaimer { margin-bottom: 0; }
 
 .quote-print-hero {
   margin: -16mm -16mm 10mm;
@@ -2879,6 +2995,510 @@ button.calendar-card {
   fill: var(--muted);
   font-size: 11px;
   font-weight: 600;
+}
+
+.energy-price-dashboard {
+  display: grid;
+  gap: 16px;
+}
+
+.energy-price-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.energy-price-header h2,
+.energy-price-card h3 {
+  margin: 4px 0 6px;
+}
+
+.energy-price-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.energy-price-status {
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.energy-price-status.is-stale {
+  color: #9a5a00;
+}
+
+.energy-price-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.energy-price-card {
+  min-width: 0;
+}
+
+.energy-current-price {
+  color: var(--brand);
+  font-size: clamp(18px, 2vw, 26px);
+  white-space: nowrap;
+}
+
+.energy-price-stats {
+  display: flex;
+  gap: 24px;
+  margin: 14px 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.energy-price-stats span {
+  display: grid;
+  gap: 2px;
+}
+
+.energy-price-stats strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.energy-chart-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.energy-chart-svg {
+  display: block;
+  width: 100%;
+  min-width: 520px;
+  height: auto;
+}
+
+.energy-chart-line {
+  fill: none;
+  stroke: var(--brand);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.energy-chart-line.gas {
+  stroke: #357a8a;
+}
+
+.energy-chart-point {
+  fill: var(--surface);
+  stroke: var(--brand);
+  stroke-width: 2;
+  cursor: help;
+}
+
+.gas .energy-chart-point,
+.energy-price-card.gas .energy-chart-point {
+  stroke: #357a8a;
+}
+
+.energy-chart-point.is-current {
+  fill: var(--accent);
+  stroke: var(--accent-dark);
+  stroke-width: 3;
+}
+
+.energy-chart-point:focus {
+  outline: none;
+  stroke: #005fcc;
+  stroke-width: 5;
+}
+
+.energy-chart-forecast {
+  fill: rgba(182, 215, 42, 0.10);
+}
+
+.energy-chart-forecast-label,
+.energy-chart-axis-label,
+.energy-chart-value-label {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.energy-chart-forecast-label {
+  fill: var(--brand);
+  font-weight: 800;
+}
+
+.energy-chart-baseline {
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+
+.energy-chart-zero {
+  stroke: #a15a5a;
+  stroke-dasharray: 5 4;
+  stroke-width: 1.5;
+}
+
+.energy-price-note,
+.energy-price-source {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.energy-price-source a {
+  color: var(--brand);
+  font-weight: 700;
+}
+
+.energy-price-dashboard .notice.warning {
+  margin: 0;
+  border-color: #dfb76d;
+  background: #fff8e8;
+  color: #744300;
+}
+
+@media (max-width: 1050px) {
+  .energy-price-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .energy-price-header {
+    flex-direction: column;
+  }
+
+  .energy-price-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .energy-price-card .panel-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+.wasco-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.6fr);
+  gap: 24px;
+  align-items: center;
+  padding: 24px;
+  border: 1px solid #ead8d8;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, #fff 0%, #fff9f8 55%, #f8efee 100%);
+  box-shadow: var(--shadow);
+}
+
+.wasco-hero h2 {
+  margin: 4px 0 8px;
+  color: var(--brand);
+  font-size: clamp(24px, 3vw, 34px);
+  letter-spacing: -0.025em;
+}
+
+.wasco-hero p { margin: 0; }
+
+.wasco-brandline {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.wasco-logo {
+  display: grid;
+  width: 54px;
+  height: 54px;
+  flex: none;
+  place-items: center;
+  border-radius: 12px;
+  background: #c8202f;
+  color: #fff;
+  font-size: 26px;
+  font-weight: 950;
+  box-shadow: 0 10px 25px rgba(200, 32, 47, 0.2);
+}
+
+.wasco-hero-status {
+  display: grid;
+  gap: 7px;
+  padding: 18px;
+  border: 1px solid rgba(200, 32, 47, 0.15);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.wasco-hero-status strong { color: var(--brand); font-size: 18px; }
+.wasco-hero-status > span:last-child { color: var(--muted); font-size: 13px; line-height: 1.45; }
+
+.wasco-connection {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 7px;
+  color: #8f5a00;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.wasco-connection > span,
+.wasco-stock > span {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: #d7921d;
+}
+
+.wasco-connection.is-live { color: var(--ok); }
+.wasco-connection.is-live > span { background: var(--ok); box-shadow: 0 0 0 4px rgba(31, 107, 58, 0.12); }
+
+.wasco-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(310px, 380px);
+  gap: 18px;
+  align-items: start;
+}
+
+.wasco-catalog { min-width: 0; }
+
+.wasco-search {
+  display: grid;
+  grid-template-columns: minmax(200px, 0.8fr) minmax(260px, 1.5fr) minmax(180px, 0.7fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.wasco-search h2 { margin: 3px 0 0; }
+
+.wasco-result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 62px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.wasco-result-head strong { color: var(--brand); }
+
+.wasco-product-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.wasco-product-card {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  min-height: 220px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(16, 32, 23, 0.055);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.wasco-product-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 36px rgba(16, 32, 23, 0.1);
+}
+
+.wasco-product-visual {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 14px;
+  background: linear-gradient(145deg, #eef4ea, #f8faf5);
+  text-align: center;
+}
+
+.wasco-product-visual > span {
+  display: grid;
+  width: 54px;
+  height: 54px;
+  place-items: center;
+  border: 1px solid #d5e3d2;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--brand);
+  font-size: 23px;
+  font-weight: 950;
+}
+
+.wasco-product-visual small { color: var(--muted); font-size: 10px; font-weight: 800; }
+
+.wasco-product-body {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: 16px;
+}
+
+.wasco-product-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.wasco-product-meta code { color: var(--muted); font-size: 10px; }
+
+.wasco-product-body h3 {
+  margin: 10px 0;
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.wasco-stock {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: auto;
+  color: #8f5a00;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.wasco-stock.is-available { color: var(--ok); }
+.wasco-stock.is-available > span { background: var(--ok); }
+
+.wasco-product-footer {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 15px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.wasco-product-footer strong { display: block; color: var(--brand); font-size: 18px; }
+.wasco-product-footer small { color: var(--muted); font-size: 10px; }
+.wasco-product-footer button { flex: none; }
+
+.wasco-cart {
+  position: sticky;
+  top: 18px;
+}
+
+.wasco-cart-lines { display: grid; gap: 2px; }
+
+.wasco-cart-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.wasco-cart-line > div:first-child { min-width: 0; }
+.wasco-cart-line strong { display: block; overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.wasco-cart-line small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
+
+.wasco-quantity {
+  display: grid;
+  grid-template-columns: 32px 30px 32px;
+  align-items: center;
+  text-align: center;
+}
+
+.wasco-quantity button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-soft);
+  color: var(--brand);
+  font-weight: 900;
+}
+
+.wasco-quantity span { font-size: 13px; font-weight: 900; }
+
+.wasco-empty-cart {
+  display: grid;
+  place-items: center;
+  min-height: 210px;
+  padding: 24px;
+  border: 1px dashed #cbdac9;
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  text-align: center;
+}
+
+.wasco-empty-cart > span { color: var(--accent-dark); font-size: 34px; }
+.wasco-empty-cart p { margin: -8px 0 0; color: var(--muted); font-size: 13px; }
+
+.wasco-cart-total {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 7px;
+  margin-top: 16px;
+  padding: 15px;
+  border-radius: var(--radius);
+  background: var(--brand);
+  color: #fff;
+}
+
+.wasco-cart-total span { font-size: 13px; font-weight: 700; }
+.wasco-cart-total strong { font-size: 20px; }
+.wasco-cart-total small { grid-column: 1 / -1; color: rgba(255, 255, 255, 0.72); line-height: 1.4; }
+
+.wasco-order-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.wasco-order-result {
+  display: grid;
+  gap: 4px;
+  margin-top: 14px;
+  padding: 13px;
+  border: 1px solid rgba(31, 107, 58, 0.3);
+  border-radius: var(--radius);
+  background: #eef8ef;
+  color: var(--ok);
+}
+
+.wasco-order-result span { font-size: 12px; }
+
+@media (max-width: 1250px) {
+  .wasco-product-grid { grid-template-columns: 1fr; }
+  .wasco-search { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 900px) {
+  .wasco-hero, .wasco-layout { grid-template-columns: 1fr; }
+  .wasco-cart { position: static; }
+}
+
+@media (max-width: 620px) {
+  .wasco-hero { padding: 18px; }
+  .wasco-search { grid-template-columns: 1fr; }
+  .wasco-product-card { grid-template-columns: 88px minmax(0, 1fr); }
+  .wasco-product-footer { align-items: stretch; flex-direction: column; }
+  .wasco-product-footer button { width: 100%; }
 }
 
 .account-create {

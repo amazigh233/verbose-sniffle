@@ -15,6 +15,7 @@
   var dirtyRoute = "";
   var hashGuard = false;
   var menuReturnFocus = null;
+  var energyPricePollTimer = null;
 
   var routeMeta = {
     portals: ["Werkruimte", "Kies een portaal"],
@@ -22,6 +23,7 @@
     "sales-portal": ["Sales", "Salesoverzicht"],
     "execution-portal": ["Uitvoering", "Uitvoeringsoverzicht"],
     "finance-portal": ["Financiën", "Financieel overzicht"],
+    "wasco-portal": ["Inkoop", "Wasco koppeling"],
     "management-portal": ["Beheer", "Beheeromgeving"],
     dashboard: ["Overzicht", "Dashboard"],
     customers: ["CRM", "Klantenbestand"],
@@ -32,6 +34,7 @@
     "advice-v2": ["Sales", "Advies Tool 2.0"],
     projects: ["Uitvoering", "Projectcockpits"],
     installations: ["Uitvoering", "Installaties"],
+    inventory: ["Uitvoering", "Voorraadbeheer"],
     service: ["Service", "Service & onderhoud"],
     invoices: ["Financiën", "Facturen"],
     payments: ["Financiën", "Betalingen & kassa"],
@@ -131,8 +134,9 @@
     }
     if (baseRoute === "crm-portal" || baseRoute === "customers") return "crm";
     if (["sales-portal", "sales-funnel", "sales-agenda", "advice", "advice-v2", "quotes"].indexOf(baseRoute) >= 0) return "sales";
-    if (["execution-portal", "projects", "installations"].indexOf(baseRoute) >= 0) return "execution";
+    if (["execution-portal", "projects", "installations", "inventory"].indexOf(baseRoute) >= 0) return "execution";
     if (["finance-portal", "invoices", "payments", "reports"].indexOf(baseRoute) >= 0) return "finance";
+    if (baseRoute === "wasco-portal") return "wasco";
     if (["management-portal", "quote-studio", "products", "messages", "google-business", "settings"].indexOf(baseRoute) >= 0) return "management";
     return "global";
   }
@@ -167,6 +171,7 @@
     if (portal === "sales") return S.hasRole("sales");
     if (portal === "execution") return S.hasRole("execution", "installer");
     if (portal === "finance") return S.hasRole("finance");
+    if (portal === "wasco") return S.hasRole("execution");
     return false;
   }
 
@@ -235,7 +240,11 @@
     if (path === "sales-portal") return S.dashboard("sales");
     if (path === "execution-portal") return S.dashboard("execution");
     if (path === "finance-portal") return S.dashboard("finance");
-    if (path === "management-portal") return S.dashboard("management");
+    if (path === "management-portal") return Promise.all([
+      S.dashboard("management"),
+      S.loadEnergyPrices().catch(function () { return null; })
+    ]);
+    if (path === "wasco-portal") return C.wasco.load(current);
     if (path === "customers") return loadCollection("customers", listParams(current, { sortBy: "createdAt", sortOrder: "desc" }));
     if (path === "quotes" || path === "quote-studio") return loadCollection("quotes", listParams(current, { sortBy: "createdAt", sortOrder: "desc" }));
     if (path === "invoices") return loadCollection("invoices", listParams(current, { sortBy: "createdAt", sortOrder: "desc" }));
@@ -243,11 +252,12 @@
     if (path === "payment-new") return Promise.all([loadCollection("invoices", { page: 1, pageSize: 100, view: "summary" }), C.payments.load("payments")]);
     if (path.indexOf("payment:") === 0) return C.payments.load(current);
     if (path === "installations") return Promise.all([loadCollection("installations", listParams(current, { sortBy: "plannedDate", sortOrder: "asc" })), loadCollection("customers", { page: 1, pageSize: 100, view: "summary" })]);
-    if (path === "products") return loadCollection("products", listParams(current, { pageSize: 25, sortBy: "name", sortOrder: "asc" }));
+    if (path === "inventory" || path.indexOf("inventory-edit:") === 0) return C.inventory.load(current);
+    if (path === "products") return S.loadProductCatalog();
     if (path === "sales-funnel") return Promise.all([loadCollection("salesOpportunities", { page: 1, pageSize: 100 }), loadCollection("customers", { page: 1, pageSize: 100, view: "summary" }), loadCollection("quotes", { page: 1, pageSize: 100, view: "summary" })]);
     if (path === "sales-agenda") return Promise.all([loadCollection("salesAppointments", { page: 1, pageSize: 100 }), loadCollection("salesOpportunities", { page: 1, pageSize: 100 }), loadCollection("customers", { page: 1, pageSize: 100, view: "summary" })]);
     if (path === "messages") return loadCollection("customers", { page: 1, pageSize: 100, view: "summary" });
-    if (path === "advice" || path.indexOf("advice:") === 0 || path === "advice-v2" || path.indexOf("advice-v2:") === 0) return Promise.all([loadCollection("customers", { page: 1, pageSize: 100, view: "summary" }), loadCollection("products", { page: 1, pageSize: 100 })]);
+    if (path === "advice" || path.indexOf("advice:") === 0 || path === "advice-v2" || path.indexOf("advice-v2:") === 0) return Promise.all([loadCollection("customers", { page: 1, pageSize: 100, view: "summary" }), S.loadProductCatalog()]);
     if (path === "customer-new" || path === "customer-import") return Promise.resolve();
     if (path.indexOf("customer:") === 0 || path.indexOf("customer-edit:") === 0) {
       id = path.split(":")[1];
@@ -263,8 +273,8 @@
         ]);
       });
     }
-    if (path === "quote-new") return Promise.all([loadCollection("customers", { page: 1, pageSize: 20, search: params.get("customerSearch") || "", view: "summary" }), loadCollection("products", { page: 1, pageSize: 100 })]);
-    if (path.indexOf("quote:") === 0 || path.indexOf("quote-edit:") === 0) { id = path.split(":")[1]; return Promise.all([S.getDetail("quotes", id).then(loadCustomerFor), loadCollection("products", { page: 1, pageSize: 100 })]); }
+    if (path === "quote-new") return Promise.all([loadCollection("customers", { page: 1, pageSize: 20, search: params.get("customerSearch") || "", view: "summary" }), S.loadProductCatalog()]);
+    if (path.indexOf("quote:") === 0 || path.indexOf("quote-edit:") === 0) { id = path.split(":")[1]; return Promise.all([S.getDetail("quotes", id).then(loadCustomerFor), S.loadProductCatalog()]); }
     if (path === "invoice-new" || path.indexOf("invoice-from-quote:") === 0) return Promise.all([loadCollection("customers", { page: 1, pageSize: 20, view: "summary" }), loadCollection("quotes", { page: 1, pageSize: 100, view: "summary" })]);
     if (path.indexOf("invoice:") === 0 || path.indexOf("invoice-edit:") === 0) { id = path.split(":")[1]; return Promise.all([S.getDetail("invoices", id).then(loadCustomerFor), loadCollection("quotes", { page: 1, pageSize: 100, view: "summary" })]); }
     if (path === "installation-new" || path.indexOf("installation-from-quote:") === 0) return Promise.all([loadCollection("customers", { page: 1, pageSize: 20, view: "summary" }), loadCollection("quotes", { page: 1, pageSize: 100, view: "summary" })]);
@@ -280,6 +290,7 @@
     if (base.indexOf("invoice") === 0) return "invoices";
     if (base.indexOf("payment") === 0) return "payments";
     if (base.indexOf("installation") === 0) return "installations";
+    if (base.indexOf("inventory") === 0) return "inventory";
     return base;
   }
 
@@ -346,6 +357,7 @@
   function render() {
     var current = route();
     var path = current.split("?")[0];
+    if (path !== "management-portal") stopEnergyPricePolling();
     var base = path.split(":")[0];
     if (base === "customer") base = "customers";
     if (base === "customer-new" || base === "customer-edit" || base === "customer-import") base = "customers";
@@ -358,6 +370,7 @@
     if (base === "payment" || base === "payment-new") base = "payments";
     if (base === "installation") base = "installations";
     if (base === "installation-new" || base === "installation-edit" || base === "installation-from-quote") base = "installations";
+    if (base === "inventory-edit") base = "inventory";
     if (base === "product-new" || base === "product-edit") base = "products";
     if (base === "project") base = "projects";
     if (base.indexOf("service-") === 0) base = "service";
@@ -373,6 +386,7 @@
     else if (path === "execution-portal") appEl.innerHTML = executionPortal();
     else if (path === "finance-portal") appEl.innerHTML = financePortal();
     else if (path === "management-portal") appEl.innerHTML = managementPortal();
+    else if (path === "wasco-portal") appEl.innerHTML = C.wasco.render();
     else if (path === "dashboard") appEl.innerHTML = portalSelector();
     else if (path === "customers") appEl.innerHTML = C.customers.renderList(new URLSearchParams(current.split("?")[1] || "").get("search") || "");
     else if (path === "customer-new") appEl.innerHTML = C.customers.renderForm();
@@ -406,6 +420,8 @@
     else if (path.indexOf("installation-from-quote:") === 0) appEl.innerHTML = C.installations.renderForm(C.installations.createFromQuote(path.split(":")[1]));
     else if (path.indexOf("installation-edit:") === 0) appEl.innerHTML = C.installations.renderForm(findByRoute("installations", path));
     else if (path.indexOf("installation:") === 0) appEl.innerHTML = C.installations.renderDetail(path.split(":")[1]);
+    else if (path === "inventory") appEl.innerHTML = C.inventory.render();
+    else if (path.indexOf("inventory-edit:") === 0) appEl.innerHTML = C.inventory.renderEdit(path.split(":")[1]);
     else if (path === "projects") appEl.innerHTML = C.projects.renderList(new URLSearchParams(current.split("?")[1] || "").get("customerId") || "");
     else if (path.indexOf("project:") === 0) appEl.innerHTML = C.projects.renderDetail(path.split(":")[1]);
     else if (path === "service") appEl.innerHTML = C.service.render();
@@ -424,7 +440,7 @@
     else if (path.indexOf("advice-v2:") === 0) appEl.innerHTML = C.adviceV2.render(path.split(":")[1], true);
     else if (path === "products") appEl.innerHTML = products();
     else if (path === "google-business") appEl.innerHTML = googleBusinessProfile();
-    else if (path === "product-new") appEl.innerHTML = productForm();
+    else if (path === "product-new") appEl.innerHTML = productForm(C.app.state.productSeed);
     else if (path.indexOf("product-edit:") === 0) appEl.innerHTML = productForm(findByRoute("products", path));
     else if (path === "messages") appEl.innerHTML = messages();
     else if (path === "settings") appEl.innerHTML = settings();
@@ -459,6 +475,7 @@
       S.hasRole("admin", "sales") ? portalCard("sales-portal", "Sales", "Van lead naar opdracht", "Werk met de funnel, agenda, adviezen en offertes.", Number(counts.openOpportunities != null ? counts.openOpportunities : S.getAll("salesOpportunities").length) + " open kansen") : "",
       S.hasRole("admin", "execution", "installer") ? portalCard("execution-portal", "Uitvoering", "Projecten en installaties", "Plan werk, bereid projecten voor en rond werkbonnen af.", Number(counts.scheduledInstallations != null ? counts.scheduledInstallations : S.getAll("installations").length) + " ingepland") : "",
       S.hasRole("admin", "finance") ? portalCard("finance-portal", "Financiën", "Facturen en rapportage", "Volg openstaande bedragen, betalingen en omzet.", Number(counts.openInvoices != null ? counts.openInvoices : S.getAll("invoices").length) + " open facturen") : "",
+      S.hasRole("admin", "execution") ? portalCard("wasco-portal", "Inkoop · Wasco", "Materialen en bestellijsten", "Zoek Wasco-artikelen, bekijk beschikbaarheid en bereid bestellingen voor.", (C.wasco ? C.wasco.cartCount() : 0) + " in bestellijst") : "",
       S.isAdmin() ? portalCard("management-portal", "Beheer", "Instellingen en hulpmiddelen", "Beheer producten, accounts, communicatie en HR.", Number(counts.products != null ? counts.products : S.getAll("products").length) + " producten") : ""
     ].join("");
     return '<section class="portal-hero section"><p class="eyebrow">Climature werkruimtes</p><h2>Waar wilt u werken?</h2><p class="muted">Elk portaal bevat alleen de functies die bij dat werkproces horen.</p></section><section class="portal-grid section">' + cards + "</section>";
@@ -555,7 +572,132 @@
       metric("Producten", productCount || 0), metric("Betaaltermijn", Number(S.settings().paymentDays || 14) + " dagen"), metric("HR-portaal", S.isHrPortalEnabled() ? "Actief" : "Uit")
     ], [
       portalLink("quote-studio", "Offertebouwer", "Ontwerp offertes met producttemplates en regelingen."), portalLink("products", "Producten", "Beheer catalogus en prijzen."), portalLink("messages", "Tekstgenerator", "Maak klantcommunicatie."), portalLink("google-business", "Google Bedrijfsprofiel", "Werk profielgegevens, foto's en beoordelingen bij."), portalLink("settings", "Instellingen", "Bedrijf, accounts en aannames.")
-    ]) + '<section class="section portal-management-grid"><a class="panel portal-management-card" href="#google-business"><p class="eyebrow">Online vindbaarheid</p><h2>Google Bedrijfsprofiel</h2><p class="muted">Open het officiële Google-beheer en bewaar de profiel- en beoordelingslink.</p></a><a class="panel portal-management-card" href="#settings"><p class="eyebrow">Configuratie</p><h2>Instellingen en accounts</h2><p class="muted">Beheer bedrijfsgegevens, gebruikers, adviesaannames, digest en back-ups.</p></a>' + (S.isHrPortalEnabled() ? '<a class="panel portal-management-card" href="/medewerkers/"><p class="eyebrow">Beveiligd</p><h2>Werknemersportaal</h2><p class="muted">Open HR-dossiers, kwalificaties, roosters en checklists met extra verificatie.</p></a>' : "") + "</section>";
+    ]) + energyPriceDashboard() + '<section class="section portal-management-grid"><a class="panel portal-management-card" href="#google-business"><p class="eyebrow">Online vindbaarheid</p><h2>Google Bedrijfsprofiel</h2><p class="muted">Open het officiële Google-beheer en bewaar de profiel- en beoordelingslink.</p></a><a class="panel portal-management-card" href="#settings"><p class="eyebrow">Configuratie</p><h2>Instellingen en accounts</h2><p class="muted">Beheer bedrijfsgegevens, gebruikers, adviesaannames, digest en back-ups.</p></a>' + (S.isHrPortalEnabled() ? '<a class="panel portal-management-card" href="/medewerkers/"><p class="eyebrow">Beveiligd</p><h2>Werknemersportaal</h2><p class="muted">Open HR-dossiers, kwalificaties, roosters en checklists met extra verificatie.</p></a>' : "") + "</section>";
+  }
+
+  function energyPriceValue(value, unit) {
+    var number = Number(value);
+    if (!Number.isFinite(number)) return "Niet beschikbaar";
+    var digits = unit === "EUR/kWh" ? 3 : 3;
+    return new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR", minimumFractionDigits: digits, maximumFractionDigits: digits }).format(number) + (unit === "EUR/kWh" ? "/kWh" : "/m³");
+  }
+
+  function energyDateKey(value) {
+    var parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Amsterdam", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(value)).map(function (part) { return [part.type, part.value]; }));
+    return parts.year + "-" + parts.month + "-" + parts.day;
+  }
+
+  function livePoint(points) {
+    var now = Date.now();
+    return (points || []).find(function (point) { return Date.parse(point.start) <= now && now < Date.parse(point.end); }) || null;
+  }
+
+  function energyPointLabel(point, kind) {
+    var date = new Date(point.start);
+    var label = kind === "electricity"
+      ? new Intl.DateTimeFormat("nl-NL", { timeZone: "Europe/Amsterdam", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(date)
+      : new Intl.DateTimeFormat("nl-NL", { timeZone: "Europe/Amsterdam", weekday: "short", day: "numeric", month: "short" }).format(date);
+    return label + ": " + energyPriceValue(point.price, kind === "electricity" ? "EUR/kWh" : "EUR/m3");
+  }
+
+  function energyChart(data, kind) {
+    var points = data.points || [];
+    if (!points.length) return '<div class="empty-state">Geen prijsgegevens beschikbaar.</div>';
+    var width = 760, height = 270, padL = 58, padR = 18, padT = 26, padB = 42;
+    var plotW = width - padL - padR, plotH = height - padT - padB;
+    var values = points.map(function (point) { return Number(point.price); });
+    var minimum = Math.min.apply(null, values), maximum = Math.max.apply(null, values);
+    var padding = Math.max((maximum - minimum) * 0.12, kind === "electricity" ? 0.01 : 0.03);
+    var low = minimum - padding, high = maximum + padding;
+    if (low === high) { low -= 1; high += 1; }
+    function x(index) { return padL + (points.length === 1 ? plotW / 2 : plotW * index / (points.length - 1)); }
+    function y(value) { return padT + (high - value) / (high - low) * plotH; }
+    var path = points.map(function (point, index) { return (index ? "L" : "M") + x(index).toFixed(1) + " " + y(Number(point.price)).toFixed(1); }).join(" ");
+    var today = energyDateKey(new Date());
+    var forecastIndex = points.findIndex(function (point) { return point.forecast || energyDateKey(point.start) > today; });
+    var forecast = "";
+    if (forecastIndex >= 0) {
+      var forecastX = Math.max(padL, x(forecastIndex) - (points.length > 1 ? plotW / (points.length - 1) / 2 : 0));
+      forecast = '<rect class="energy-chart-forecast" x="' + forecastX.toFixed(1) + '" y="' + padT + '" width="' + (width - padR - forecastX).toFixed(1) + '" height="' + plotH + '"></rect><text class="energy-chart-forecast-label" x="' + (forecastX + 8).toFixed(1) + '" y="' + (padT + 16) + '">Morgen</text>';
+    }
+    var zero = low < 0 && high > 0 ? '<line class="energy-chart-zero" x1="' + padL + '" y1="' + y(0).toFixed(1) + '" x2="' + (width - padR) + '" y2="' + y(0).toFixed(1) + '"></line>' : "";
+    var current = livePoint(points);
+    var dots = points.map(function (point, index) {
+      var label = energyPointLabel(point, kind);
+      var currentClass = current && current.start === point.start ? " is-current" : "";
+      return '<circle class="energy-chart-point' + currentClass + '" cx="' + x(index).toFixed(1) + '" cy="' + y(Number(point.price)).toFixed(1) + '" r="' + (currentClass ? 6 : 3.5) + '" tabindex="0" role="img" aria-label="' + S.escapeHtml(label) + '"><title>' + S.escapeHtml(label) + "</title></circle>";
+    }).join("");
+    var labelEvery = Math.max(1, Math.ceil(points.length / 7));
+    var labels = points.map(function (point, index) {
+      if (index % labelEvery !== 0 && index !== points.length - 1) return "";
+      var text = kind === "electricity"
+        ? new Intl.DateTimeFormat("nl-NL", { timeZone: "Europe/Amsterdam", hour: "2-digit", minute: "2-digit" }).format(new Date(point.start))
+        : new Intl.DateTimeFormat("nl-NL", { timeZone: "Europe/Amsterdam", day: "numeric", month: "short" }).format(new Date(point.start));
+      return '<text class="energy-chart-axis-label" x="' + x(index).toFixed(1) + '" y="' + (height - 14) + '" text-anchor="middle">' + S.escapeHtml(text) + "</text>";
+    }).join("");
+    var aria = kind === "electricity" ? "Elektriciteitsprijzen per uur voor vandaag en morgen" : "Gasprijzen per dag voor de laatste dertig dagen";
+    return '<div class="energy-chart-wrap"><svg class="energy-chart-svg" viewBox="0 0 ' + width + " " + height + '" role="img" aria-label="' + aria + '" preserveAspectRatio="xMidYMid meet">' +
+      forecast + zero +
+      '<line class="energy-chart-baseline" x1="' + padL + '" y1="' + (padT + plotH) + '" x2="' + (width - padR) + '" y2="' + (padT + plotH) + '"></line>' +
+      '<text class="energy-chart-value-label" x="' + (padL - 8) + '" y="' + (padT + 4) + '" text-anchor="end">' + S.escapeHtml(maximum.toFixed(3)) + '</text>' +
+      '<text class="energy-chart-value-label" x="' + (padL - 8) + '" y="' + (padT + plotH) + '" text-anchor="end">' + S.escapeHtml(minimum.toFixed(3)) + '</text>' +
+      '<path class="energy-chart-line ' + kind + '" d="' + path + '"></path>' + dots + labels + "</svg></div>";
+  }
+
+  function energyPriceCard(data, kind) {
+    var points = data.points || [];
+    var current = livePoint(points) || data.current;
+    var values = points.map(function (point) { return Number(point.price); }).filter(Number.isFinite);
+    var minimum = values.length ? Math.min.apply(null, values) : null;
+    var maximum = values.length ? Math.max.apply(null, values) : null;
+    var electricity = kind === "electricity";
+    var tomorrowAvailable = !electricity || points.some(function (point) { return point.forecast; });
+    return '<article class="panel energy-price-card ' + kind + '"><div class="panel-head"><div><p class="eyebrow">' + (electricity ? "Elektriciteit · per uur" : "Gas · per dag") + '</p><h3>' + (electricity ? "Vandaag en morgen" : "Laatste 30 dagen") + '</h3></div><strong class="energy-current-price">' + energyPriceValue(current && current.price, data.unit) + '</strong></div><div class="energy-price-stats"><span>Laagste<strong>' + energyPriceValue(minimum, data.unit) + '</strong></span><span>Hoogste<strong>' + energyPriceValue(maximum, data.unit) + '</strong></span></div>' + energyChart(data, kind) + (!tomorrowAvailable ? '<p class="energy-price-note">De stroomprijzen voor morgen zijn nog niet gepubliceerd.</p>' : "") + "</article>";
+  }
+
+  function energyPriceDashboard() {
+    var state = S.energyPriceState ? S.energyPriceState() : { status: "idle" };
+    var data = state.data;
+    if (!data) {
+      var message = state.status === "error" ? (state.error && state.error.message || "Actuele energieprijzen konden niet worden geladen.") : "Actuele energieprijzen worden geladen…";
+      return '<section class="section panel energy-price-dashboard" data-energy-price-dashboard><div class="panel-head"><div><p class="eyebrow">Live energiemarkt</p><h2>Gas- en elektriciteitsprijzen</h2></div><button class="ghost-button" data-action="energy-prices-refresh">Opnieuw proberen</button></div><div class="empty-state" role="status">' + S.escapeHtml(message) + "</div></section>";
+    }
+    var source = data.source || {};
+    var fetchedAt = source.fetchedAt ? new Intl.DateTimeFormat("nl-NL", { timeZone: "Europe/Amsterdam", dateStyle: "medium", timeStyle: "short" }).format(new Date(source.fetchedAt)) : "onbekend";
+    var stale = source.status === "stale" || state.status === "error";
+    var offline = S.isOnline && !S.isOnline();
+    var status = offline ? "Offline · laatst geladen " + fetchedAt : stale ? "Verouderde gegevens · bijgewerkt " + fetchedAt : "Live bijgewerkt " + fetchedAt;
+    var warning = source.warning || (state.status === "error" ? "Vernieuwen is mislukt; de laatst geladen prijzen blijven zichtbaar." : "");
+    var sourceUrl = safeHttpsUrl(source.url) || "https://docs.api.energyzero.nl/";
+    return '<section class="section energy-price-dashboard" data-energy-price-dashboard><div class="panel energy-price-header"><div><p class="eyebrow">Live energiemarkt</p><h2>Gas- en elektriciteitsprijzen</h2><p class="muted">Dynamische energiecomponent inclusief energiebelasting en btw; exclusief vaste kosten.</p></div><div class="energy-price-controls"><span class="energy-price-status' + (stale || offline ? " is-stale" : "") + '">' + S.escapeHtml(status) + '</span><button class="ghost-button" data-action="energy-prices-refresh"' + (state.status === "loading" ? " disabled" : "") + '>Nu verversen</button></div></div>' + (warning ? '<div class="notice warning" role="status">' + S.escapeHtml(warning) + "</div>" : "") + '<div class="energy-price-grid">' + energyPriceCard(data.electricity || { points: [], unit: "EUR/kWh" }, "electricity") + energyPriceCard(data.gas || { points: [], unit: "EUR/m3" }, "gas") + '</div><p class="energy-price-source">Bron: <a href="' + S.escapeHtml(sourceUrl) + '" target="_blank" rel="noopener noreferrer">EnergyZero ↗</a>. Indicatief; leveranciersopslagen, vaste leveringskosten en netbeheerkosten zijn niet inbegrepen.</p></section>';
+  }
+
+  function replaceEnergyPriceDashboard() {
+    var current = document.querySelector("[data-energy-price-dashboard]");
+    if (current && route().split("?")[0] === "management-portal") current.outerHTML = energyPriceDashboard();
+  }
+
+  function refreshEnergyPriceDashboard(forceUpstream) {
+    if (route().split("?")[0] !== "management-portal") return Promise.resolve();
+    replaceEnergyPriceDashboard();
+    return S.loadEnergyPrices({ reload: true, refresh: Boolean(forceUpstream) }).then(function () {
+      replaceEnergyPriceDashboard();
+      if (forceUpstream) toast("Energieprijzen bijgewerkt.");
+    }).catch(function (error) {
+      replaceEnergyPriceDashboard();
+      if (forceUpstream) toast(error.message || "Energieprijzen vernieuwen mislukt.");
+    });
+  }
+
+  function stopEnergyPricePolling() {
+    window.clearInterval(energyPricePollTimer);
+    energyPricePollTimer = null;
+  }
+
+  function startEnergyPricePolling() {
+    stopEnergyPricePolling();
+    if (route().split("?")[0] !== "management-portal" || document.hidden) return;
+    energyPricePollTimer = window.setInterval(function () { refreshEnergyPriceDashboard(false); }, 5 * 60 * 1000);
   }
 
   function portalOverview(label, title, text, metrics, actions) {
@@ -854,11 +996,15 @@
   function products() {
     var grouped = {};
     S.getAll("products").forEach(function (product) {
-      grouped[product.category] = grouped[product.category] || [];
-      grouped[product.category].push(product);
+      grouped[product.category] = grouped[product.category] || {};
+      grouped[product.category][product.brand] = grouped[product.category][product.brand] || [];
+      grouped[product.category][product.brand].push(product);
     });
-    var cards = Object.keys(grouped).map(function (category) {
-      return '<section class="panel section"><div class="panel-head"><div><p class="eyebrow">Categorie</p><h2>' + S.escapeHtml(category) + '</h2></div><button class="small-button" data-action="product-new">Nieuw product</button></div><div class="product-grid">' + grouped[category].map(productCard).join("") + "</div></section>";
+    var cards = Object.keys(grouped).sort(function (a, b) { return a.localeCompare(b, "nl"); }).map(function (category) {
+      var brands = Object.keys(grouped[category]).sort(function (a, b) { return a.localeCompare(b, "nl"); }).map(function (brand) {
+        return '<section class="product-brand-group"><div class="product-brand-head"><div><p class="eyebrow">Merk</p><h3>' + S.escapeHtml(brand) + '</h3></div><button class="small-button" data-action="product-new" data-category="' + S.escapeHtml(category) + '" data-brand="' + S.escapeHtml(brand) + '">Model toevoegen</button></div><div class="product-grid">' + grouped[category][brand].map(productCard).join("") + '</div></section>';
+      }).join("");
+      return '<section class="panel section product-category-group"><div class="panel-head"><div><p class="eyebrow">Categorie</p><h2>' + S.escapeHtml(category) + '</h2></div><button class="small-button" data-action="product-new" data-category="' + S.escapeHtml(category) + '">Merk/model toevoegen</button></div>' + brands + "</section>";
     }).join("");
     return cards || '<section class="panel"><div class="panel-head"><div><p class="eyebrow">Producten</p><h2>Productbeheer</h2></div><button class="primary-button" data-action="product-new">Nieuw product</button></div><div class="empty-state">Geen producten gevonden.</div></section>';
   }
@@ -866,10 +1012,12 @@
   function productCard(product) {
     return [
       '<article class="product-card">',
-      '<span class="category-pill">' + S.escapeHtml(product.category) + "</span>",
-      "<h3>" + S.escapeHtml(product.brand + " " + product.name) + "</h3>",
+      '<span class="category-pill">Model</span>',
+      "<h3>" + S.escapeHtml(product.name) + "</h3>",
+      product.sku ? '<p class="muted">Artikelnummer: ' + S.escapeHtml(product.sku) + '</p>' : "",
       '<p class="muted">' + S.escapeHtml(product.specs) + "</p>",
       "<p>" + S.escapeHtml(product.description) + "</p>",
+      productAdviceSummary(product),
       "<strong>" + S.money(product.priceExVat) + " excl. BTW</strong>",
       '<div class="button-row"><button class="small-button" data-action="product-edit" data-id="' + S.escapeHtml(product.id) + '">Bewerk</button><button class="small-button" data-action="product-delete" data-id="' + S.escapeHtml(product.id) + '">Verwijder</button></div>',
       "</article>"
@@ -879,29 +1027,65 @@
   function emptyProduct() {
     return {
       category: "warmtepomp",
+      sku: "",
       brand: "",
       name: "",
       specs: "",
       priceExVat: 0,
       vatRate: 21,
-      description: ""
+      description: "",
+      adviceType: "allelectric",
+      capacityKw: 0,
+      capacityKwh: 0,
+      connection: "1fase",
+      subsidy: 0
     };
+  }
+
+  function normalizedProductCategory(category) {
+    return String(category || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  }
+
+  function productAdviceSummary(product) {
+    var category = normalizedProductCategory(product.category);
+    if (category.indexOf("warmtepomp") >= 0 && Number(product.capacityKw || 0) > 0) {
+      return '<span class="product-advice-meta">Advies-tool · ' + S.escapeHtml(product.adviceType === "hybride" ? "hybride" : "all-electric") + ' · ' + S.escapeHtml(product.capacityKw) + ' kW</span>';
+    }
+    if ((category.indexOf("thuisbatterij") >= 0 || category === "batterij") && Number(product.capacityKwh || 0) > 0) {
+      return '<span class="product-advice-meta">Advies-tool · ' + S.escapeHtml(product.capacityKwh) + ' kWh · ' + S.escapeHtml(product.connection === "3fase" ? "3-fase" : "1-fase") + '</span>';
+    }
+    return "";
+  }
+
+  function productOptions(values) {
+    return values.filter(function (value, index) { return value && values.indexOf(value) === index; }).sort(function (a, b) { return a.localeCompare(b, "nl"); }).map(function (value) {
+      return '<option value="' + S.escapeHtml(value) + '"></option>';
+    }).join("");
   }
 
   function productForm(product) {
     var p = Object.assign(emptyProduct(), product || {});
+    var category = normalizedProductCategory(p.category);
+    var isHeatPump = category.indexOf("warmtepomp") >= 0;
+    var isBattery = category.indexOf("thuisbatterij") >= 0 || category === "batterij";
+    var catalog = S.getAll("products");
     return [
       '<form class="panel" data-form="product" data-id="' + S.escapeHtml(p.id || "") + '">',
       '<div class="panel-head"><div><p class="eyebrow">Productbeheer</p><h2>' + (p.id ? "Product bewerken" : "Nieuw product") + '</h2></div><div class="button-row"><button class="ghost-button" type="button" data-action="products">Annuleren</button><button class="primary-button" type="submit">Opslaan</button></div></div>',
       '<div class="field-grid">',
-      '<label class="field">Categorie<input name="category" required value="' + S.escapeHtml(p.category || "") + '" placeholder="warmtepomp"></label>',
-      '<label class="field">Merk<input name="brand" required value="' + S.escapeHtml(p.brand || "") + '"></label>',
-      '<label class="field">Naam<input name="name" required value="' + S.escapeHtml(p.name || "") + '"></label>',
+      '<label class="field">Artikelnummer<input name="sku" maxlength="80" value="' + S.escapeHtml(p.sku || "") + '" placeholder="Bijvoorbeeld WP-001"></label>',
+      '<label class="field">Categorie<input name="category" list="product-categories" required value="' + S.escapeHtml(p.category || "") + '" placeholder="warmtepomp"><span class="hint">Kies een bestaande categorie of typ een nieuwe.</span></label>',
+      '<label class="field">Merk<input name="brand" list="product-brands" required value="' + S.escapeHtml(p.brand || "") + '"><span class="hint">Kies een bestaand merk of typ een nieuw merk.</span></label>',
+      '<label class="field">Model<input name="name" required value="' + S.escapeHtml(p.name || "") + '"></label>',
       '<label class="field">Specificaties<input name="specs" value="' + S.escapeHtml(p.specs || "") + '"></label>',
       '<label class="field">Prijs excl. BTW<input name="priceExVat" type="number" min="0" step="0.01" required value="' + S.escapeHtml(p.priceExVat || 0) + '"></label>',
       '<label class="field">BTW<select name="vatRate">' + productVatOptions(p.vatRate) + '</select></label>',
       '<label class="field full">Omschrijving<textarea name="description" rows="5">' + S.escapeHtml(p.description || "") + "</textarea></label>",
+      '<fieldset class="product-advice-fields full" data-product-advice-fields="warmtepomp"' + (isHeatPump ? "" : " hidden disabled") + '><legend>Gebruik in de advies-tool</legend><div class="field-grid"><label class="field">Type warmtepomp<select name="adviceType"><option value="allelectric"' + (p.adviceType === "allelectric" ? " selected" : "") + '>All-electric</option><option value="hybride"' + (p.adviceType === "hybride" ? " selected" : "") + '>Hybride</option></select></label><label class="field">Vermogen (kW)<input name="capacityKw" type="number" min="0.1" step="0.1" value="' + S.escapeHtml(p.capacityKw || 0) + '"></label><label class="field">ISDE-subsidie<input name="subsidy" type="number" min="0" step="0.01" value="' + S.escapeHtml(p.subsidy || 0) + '"></label></div><p class="hint">Dit model wordt hiermee automatisch meegenomen in warmtepompadviezen.</p></fieldset>',
+      '<fieldset class="product-advice-fields full" data-product-advice-fields="thuisbatterij"' + (isBattery ? "" : " hidden disabled") + '><legend>Gebruik in de advies-tool</legend><div class="field-grid"><label class="field">Capaciteit (kWh)<input name="capacityKwh" type="number" min="0.1" step="0.1" value="' + S.escapeHtml(p.capacityKwh || 0) + '"></label><label class="field">Aansluiting<select name="connection"><option value="1fase"' + (p.connection === "1fase" ? " selected" : "") + '>1-fase</option><option value="3fase"' + (p.connection === "3fase" ? " selected" : "") + '>3-fase</option></select></label></div><p class="hint">Dit model wordt hiermee automatisch meegenomen in batterijadviezen.</p></fieldset>',
       "</div>",
+      '<datalist id="product-categories">' + productOptions(catalog.map(function (item) { return item.category; }).concat(["warmtepomp", "thuisbatterij", "airco", "cv-ketel"])) + '</datalist>',
+      '<datalist id="product-brands">' + productOptions(catalog.map(function (item) { return item.brand; })) + '</datalist>',
       "</form>"
     ].join("");
   }
@@ -921,7 +1105,20 @@
     if (form.dataset.id) data.id = form.dataset.id;
     data.priceExVat = S.parseNumber(data.priceExVat);
     data.vatRate = S.parseNumber(data.vatRate);
+    data.capacityKw = S.parseNumber(data.capacityKw);
+    data.capacityKwh = S.parseNumber(data.capacityKwh);
+    data.subsidy = S.parseNumber(data.subsidy);
+    var category = normalizedProductCategory(data.category);
+    if (category.indexOf("warmtepomp") >= 0 && data.capacityKw <= 0) {
+      toast("Vul het vermogen van het warmtepompmodel in.");
+      return;
+    }
+    if ((category.indexOf("thuisbatterij") >= 0 || category === "batterij") && data.capacityKwh <= 0) {
+      toast("Vul de capaciteit van het batterijmodel in.");
+      return;
+    }
     return S.upsert("products", data).then(function (saved) {
+      C.app.state.productSeed = null;
       toast("Product opgeslagen.");
       navigate("products");
       return saved;
@@ -1126,12 +1323,8 @@
       assumptionField("Aggregator-fee extern (%)", "battery.aggregatorFeeExternal", battery.aggregatorFeeExternal, "1"),
       assumptionField("Aggregator-fee Climature (%)", "battery.aggregatorFeeClimature", battery.aggregatorFeeClimature, "1"),
       "</div>",
-      '<h3>Warmtepompen</h3>',
-      productAssumptionRows("warmtepompProducts.allelectric", assumptions.warmtepompProducts && assumptions.warmtepompProducts.allelectric, "priceIncl", "subsidy"),
-      productAssumptionRows("warmtepompProducts.hybride", assumptions.warmtepompProducts && assumptions.warmtepompProducts.hybride, "priceIncl", "subsidy"),
-      '<h3>Thuisbatterijen</h3>',
-      productAssumptionRows("batteryProducts.1fase", assumptions.batteryProducts && assumptions.batteryProducts["1fase"], "priceExVat"),
-      productAssumptionRows("batteryProducts.3fase", assumptions.batteryProducts && assumptions.batteryProducts["3fase"], "priceExVat"),
+      '<h3>Productassortiment</h3>',
+      '<div class="notice"><strong>Productbeheer is de centrale bron.</strong> Merken, modellen, prijzen, vermogens, capaciteiten en subsidies die u daar vastlegt worden automatisch gebruikt in de adviestools en offertebouwer. <button class="small-button" type="button" data-action="products">Open productbeheer</button></div>',
       "</form>"
     ].join("");
   }
@@ -1152,21 +1345,6 @@
 
   function assumptionField(label, path, value, step) {
     return '<label class="field">' + S.escapeHtml(label) + '<input type="number" step="' + S.escapeHtml(step || "0.01") + '" value="' + S.escapeHtml(value == null ? "" : value) + '" data-advice-assumption="' + S.escapeHtml(path) + '"></label>';
-  }
-
-  function productAssumptionRows(prefix, products, priceKey, subsidyKey) {
-    products = products || [];
-    if (!products.length) return '<div class="empty-state">Geen producten ingesteld.</div>';
-    return '<div class="table-wrap" style="margin-bottom:14px;"><table class="data-table"><tbody>' + products.map(function (product, index) {
-      return [
-        "<tr>",
-        "<td><strong>" + S.escapeHtml(product.name || "-") + "</strong><br><span class=\"muted\">" + (product.kw ? S.escapeHtml(product.kw + " kW") : product.kwh ? S.escapeHtml(product.kwh + " kWh") : "") + "</span></td>",
-        '<td>' + assumptionField(priceKey === "priceIncl" ? "Prijs incl. BTW" : "Prijs ex. BTW", prefix + "." + index + "." + priceKey, product[priceKey], "1") + "</td>",
-        subsidyKey ? '<td>' + assumptionField("ISDE subsidie", prefix + "." + index + "." + subsidyKey, product[subsidyKey], "1") + "</td>" : "",
-        '<td><label class="field">Meldcode / zoekterm<input value="' + S.escapeHtml(product.meldcode || product.rvoSearch || "") + '" data-advice-assumption="' + S.escapeHtml(prefix + "." + index + "." + (product.meldcode ? "meldcode" : "rvoSearch")) + '"></label></td>',
-        "</tr>"
-      ].join("");
-    }).join("") + "</tbody></table></div>";
   }
 
   function backupPanel() {
@@ -1299,6 +1477,7 @@
   }
 
   function afterRender() {
+    if (route().split("?")[0] === "management-portal") startEnergyPricePolling();
     var quoteForm = document.querySelector('[data-form="quote"]');
     if (quoteForm) { C.quotes.recalc(quoteForm); if (C.quotes.initDraft) C.quotes.initDraft(quoteForm); }
     var invoiceForm = document.querySelector('[data-form="invoice"]');
@@ -1334,6 +1513,7 @@
       return confirmDialog({ title: "Uitloggen met niet-opgeslagen wijzigingen", message: "Uw wijzigingen gaan verloren als u nu uitlogt.", confirmLabel: "Toch uitloggen" }).then(function (confirmed) { if (!confirmed) return; clearDirty(); return logout(); });
     }
     if (action === "route-retry") return guardedRender();
+    if (action === "energy-prices-refresh") return refreshEnergyPriceDashboard(true);
     if (action === "collection-page") {
       var pageParams = currentQuery();
       pageParams.set("page", target.dataset.page || "1");
@@ -1423,13 +1603,18 @@
     if (action === "installation-view") navigate("installations?view=" + target.dataset.view + "&date=" + target.dataset.date);
     if (action === "installation-period") navigate("installations?view=" + target.dataset.view + "&date=" + target.dataset.date);
     if (action === "installation-today") navigate("installations?view=" + target.dataset.view + "&date=" + S.today());
+    if (action === "inventory") navigate("inventory");
+    if (action === "inventory-edit") navigate("inventory-edit:" + target.dataset.id);
     if (action.indexOf("project-") === 0 && C.projects) return C.projects.handleAction(target);
     if (action.indexOf("service-") === 0 && C.service) {
       if (action === "service-visit-new") return navigate("service-visit-new");
       return C.service.action(target);
     }
-    if (action === "product-new") navigate("product-new");
-    if (action === "products") navigate("products");
+    if (action === "product-new") {
+      C.app.state.productSeed = target.dataset.category || target.dataset.brand ? { category: target.dataset.category || "warmtepomp", brand: target.dataset.brand || "" } : null;
+      navigate("product-new");
+    }
+    if (action === "products") { C.app.state.productSeed = null; navigate("products"); }
     if (action === "product-edit") navigate("product-edit:" + target.dataset.id);
     if (action === "product-delete") return removeProduct(target.dataset.id);
     if (action === "report-period") navigate("reports?period=" + target.dataset.period);
@@ -1449,6 +1634,7 @@
     if (action === "advice-select-product") selectAdviceProduct(target.dataset.id);
     if (action === "advice-create-quote") return C.advice.createQuote();
     if (action === "copy-message") copyMessage();
+    if (action.indexOf("wasco-") === 0 && C.wasco) return C.wasco.action(target);
   }
 
   function find(collection, id) {
@@ -1546,6 +1732,7 @@
     var form = event.target.closest("form");
     if (form) markDirty(form);
     var action = event.target.dataset.action;
+    if (form && form.dataset.form === "product" && event.target.name === "category") updateProductAdviceFields(form);
     if (action === "quote-product-select") {
       C.quotes.fillProduct(event.target);
       C.quotes.recalc(form);
@@ -1566,6 +1753,19 @@
     }
   }
 
+  function updateProductAdviceFields(form) {
+    var category = normalizedProductCategory(form.elements.category && form.elements.category.value);
+    var heatPump = category.indexOf("warmtepomp") >= 0;
+    var battery = category.indexOf("thuisbatterij") >= 0 || category === "batterij";
+    Array.from(form.querySelectorAll("[data-product-advice-fields]")).forEach(function (section) {
+      var enabled = section.dataset.productAdviceFields === "warmtepomp" ? heatPump : battery;
+      section.hidden = !enabled;
+      section.disabled = !enabled;
+    });
+    if (form.elements.capacityKw) form.elements.capacityKw.required = heatPump;
+    if (form.elements.capacityKwh) form.elements.capacityKwh.required = battery;
+  }
+
   function handleSubmit(event) {
     var form = event.target.closest("form");
     if (!form) return;
@@ -1579,6 +1779,7 @@
     if (form.dataset.form === "login") {
       return login(form).then(done, done);
     }
+    if (form.dataset.form === "wasco-search") return Promise.resolve(C.wasco.search(form)).then(done, done);
     clearDirty(form);
     var work = Promise.resolve();
     if (form.dataset.form === "customer") work = C.customers.saveFromForm(form);
@@ -1592,6 +1793,8 @@
     if (form.dataset.form.indexOf("payment-") === 0 || form.dataset.form.indexOf("cash-") === 0) work = C.payments.submit(form);
     if (form.dataset.form === "installation") work = C.installations.saveFromForm(form);
     if (form.dataset.form === "workorder") work = C.installations.saveWorkOrderFromForm(form);
+    if (form.dataset.form === "inventory-adjust") work = C.inventory.submitAdjustment(form);
+    if (form.dataset.form === "inventory-import") work = C.inventory.submitImport(form);
     if (form.dataset.form.indexOf("project-") === 0) work = C.projects.submit(form);
     if (form.dataset.form.indexOf("service-") === 0) work = C.service.submit(form);
     if (form.dataset.form === "product") work = saveProductFromForm(form);
@@ -1611,6 +1814,7 @@
         render();
       });
     }
+    if (form.dataset.form === "wasco-order") work = C.wasco.submitOrder(form);
     if (form.dataset.form === "advice-wp" || form.dataset.form === "advice-bat") C.advice.submit(form);
     return Promise.resolve(work).then(function (value) {
       if (form.dataset.form === "quote" && C.quotes && C.quotes.clearDraft) C.quotes.clearDraft(form);
@@ -1736,7 +1940,7 @@
 
   function handleSearch(event) {
     var action = event.target.dataset.action;
-    var routes = { "customer-search": "customers", "quote-search": route().split("?")[0] === "quote-studio" ? "quote-studio" : "quotes", "invoice-search": "invoices", "installation-search": "installations" };
+    var routes = { "customer-search": "customers", "quote-search": route().split("?")[0] === "quote-studio" ? "quote-studio" : "quotes", "invoice-search": "invoices", "installation-search": "installations", "inventory-search": "inventory" };
     if (!routes[action]) return;
     var value = event.target.value;
     window.clearTimeout(searchTimer);
@@ -1790,6 +1994,17 @@
       status.hidden = event.detail.online;
       status.textContent = event.detail.online ? "Verbinding hersteld." : "Geen verbinding. Bekijken blijft mogelijk; wijzigingen zijn tijdelijk geblokkeerd.";
       if (event.detail.online) { status.hidden = false; window.setTimeout(function () { status.hidden = true; }, 2400); }
+      if (route().split("?")[0] === "management-portal") {
+        if (event.detail.online) refreshEnergyPriceDashboard(false);
+        else replaceEnergyPriceDashboard();
+      }
+    });
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) stopEnergyPricePolling();
+      else if (route().split("?")[0] === "management-portal") {
+        startEnergyPricePolling();
+        refreshEnergyPriceDashboard(false);
+      }
     });
     document.addEventListener("keydown", handleGlobalKeydown);
     document.addEventListener("click", function (event) {

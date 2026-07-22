@@ -41,6 +41,8 @@ model User {
   createdPaymentRefunds   PaymentRefund[]         @relation("PaymentRefundCreatedBy")
   openedCashDrawerShifts  CashDrawerShift[]       @relation("CashDrawerShiftOpenedBy")
   closedCashDrawerShifts  CashDrawerShift[]       @relation("CashDrawerShiftClosedBy")
+  inventoryMovements      InventoryMovement[]     @relation("InventoryMovementCreatedBy")
+  wascoOrders             WascoOrder[]             @relation("WascoOrderCreatedBy")
 
   @@index([role])
   @@index([active])
@@ -58,38 +60,38 @@ model UserMfaRecoveryCode {
 }
 
 model Employee {
-  id                   String                  @id @default(cuid())
-  employeeNumber       String                  @unique
-  firstName            String
-  lastName             String
-  workEmail            String                  @default("")
-  workPhone            String                  @default("")
-  jobTitle             String                  @default("")
-  department           String                  @default("")
-  status               String                  @default("active")
-  employmentType       String                  @default("permanent")
-  hoursPerWeek         Float                   @default(0)
-  startDate            String
-  endDate              String                  @default("")
-  privateDataCipher    Bytes?
-  privateDataIv        Bytes?
-  privateDataTag       Bytes?
-  privateDataKeyVersion String                 @default("v1")
-  archivedAt           DateTime?
-  createdAt            DateTime                @default(now())
-  updatedAt            DateTime                @updatedAt
-  contracts            EmploymentContract[]
-  notes                EmployeeNote[]
-  installations        Installation[]
-  qualifications       EmployeeQualification[]
-  checklists           EmployeeChecklist[]
-  user                 User?                   @relation("EmployeeAccount")
-  projectMemberships   ProjectMember[]
-  assignedProjectTasks ProjectTask[]
-  workSchedules        EmployeeWorkSchedule[]
-  absences             EmployeeAbsence[]
-  maintenanceVisits    MaintenanceVisit[]
-  serviceRequests      ServiceRequest[]
+  id                    String                  @id @default(cuid())
+  employeeNumber        String                  @unique
+  firstName             String
+  lastName              String
+  workEmail             String                  @default("")
+  workPhone             String                  @default("")
+  jobTitle              String                  @default("")
+  department            String                  @default("")
+  status                String                  @default("active")
+  employmentType        String                  @default("permanent")
+  hoursPerWeek          Float                   @default(0)
+  startDate             String
+  endDate               String                  @default("")
+  privateDataCipher     Bytes?
+  privateDataIv         Bytes?
+  privateDataTag        Bytes?
+  privateDataKeyVersion String                  @default("v1")
+  archivedAt            DateTime?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  contracts             EmploymentContract[]
+  notes                 EmployeeNote[]
+  installations         Installation[]
+  qualifications        EmployeeQualification[]
+  checklists            EmployeeChecklist[]
+  user                  User?                   @relation("EmployeeAccount")
+  projectMemberships    ProjectMember[]
+  assignedProjectTasks  ProjectTask[]
+  workSchedules         EmployeeWorkSchedule[]
+  absences              EmployeeAbsence[]
+  maintenanceVisits     MaintenanceVisit[]
+  serviceRequests       ServiceRequest[]
 
   @@index([status])
   @@index([department])
@@ -113,7 +115,7 @@ model EmploymentContract {
   sha256       String
   scanStatus   String   @default("quarantine")
   scanMessage  String   @default("")
-  storageKey  String   @unique
+  storageKey   String   @unique
   keyVersion   String   @default("v1")
   createdById  String
   createdAt    DateTime @default(now())
@@ -335,18 +337,18 @@ model Customer {
 }
 
 model CustomerDocument {
-  id         String   @id @default(cuid())
-  customerId String
-  fileName   String
-  mimeType   String   @default("application/pdf")
-  size       Int      @default(0)
-  storageKey String   @unique
-  sha256     String   @default("")
-  scanStatus String   @default("quarantine")
-  scanMessage String  @default("")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  id          String   @id @default(cuid())
+  customerId  String
+  fileName    String
+  mimeType    String   @default("application/pdf")
+  size        Int      @default(0)
+  storageKey  String   @unique
+  sha256      String   @default("")
+  scanStatus  String   @default("quarantine")
+  scanMessage String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([customerId])
 }
@@ -386,20 +388,98 @@ model CustomerNote {
 }
 
 model Product {
-  id          String   @id @default(cuid())
-  category    String
-  brand       String
-  name        String
-  specs       String   @default("")
-  priceExVat  Decimal  @db.Decimal(14, 2)
-  vatRate     Decimal  @default(21) @db.Decimal(5, 2)
-  description String   @default("")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                 String              @id @default(cuid())
+  sku                String?             @unique
+  category           String
+  brand              String
+  name               String
+  specs              String              @default("")
+  priceExVat         Decimal             @db.Decimal(14, 2)
+  vatRate            Decimal             @default(21) @db.Decimal(5, 2)
+  description        String              @default("")
+  adviceType         String              @default("")
+  capacityKw         Decimal             @default(0) @db.Decimal(8, 2)
+  capacityKwh        Decimal             @default(0) @db.Decimal(8, 2)
+  connection         String              @default("")
+  subsidy            Decimal             @default(0) @db.Decimal(14, 2)
+  stockQuantity      Decimal             @default(0) @db.Decimal(12, 2)
+  minimumStock       Decimal             @default(0) @db.Decimal(12, 2)
+  stockUnit          String              @default("stuk")
+  stockLocation      String              @default("")
+  inventoryUpdatedAt DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  inventoryMovements InventoryMovement[]
+  wascoOrderLines    WascoOrderLine[]
 
   @@index([category, brand, name])
   @@index([name])
   @@index([createdAt])
+  @@index([stockQuantity])
+}
+
+model InventoryMovement {
+  id             String   @id @default(cuid())
+  productId      String
+  type           String   @default("adjustment")
+  source         String   @default("manual")
+  quantityBefore Decimal  @db.Decimal(12, 2)
+  quantityAfter  Decimal  @db.Decimal(12, 2)
+  delta          Decimal  @db.Decimal(12, 2)
+  reason         String   @default("")
+  reference      String   @default("")
+  createdById    String?
+  wascoOrderId   String?
+  createdAt      DateTime @default(now())
+  product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdBy      User?    @relation("InventoryMovementCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  wascoOrder     WascoOrder? @relation(fields: [wascoOrderId], references: [id], onDelete: SetNull)
+
+  @@index([productId, createdAt])
+  @@index([createdAt])
+  @@index([wascoOrderId])
+}
+
+model WascoOrder {
+  id               String              @id @default(cuid())
+  orderNumber      String              @unique
+  mode             String              @default("demo")
+  status           String              @default("concept")
+  submitted        Boolean             @default(false)
+  reference        String              @default("")
+  deliveryMethod   String              @default("delivery")
+  deliveryLocation String              @default("")
+  notes            String              @default("")
+  totalQuantity    Int                 @default(0)
+  subtotalExVat    Decimal             @default(0) @db.Decimal(14, 2)
+  createdById      String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  createdBy        User?               @relation("WascoOrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  lines            WascoOrderLine[]
+  movements        InventoryMovement[]
+
+  @@index([createdAt])
+  @@index([createdById])
+}
+
+model WascoOrderLine {
+  id         String     @id @default(cuid())
+  orderId    String
+  productId  String?
+  sku        String
+  name       String
+  brand      String     @default("Wasco")
+  category   String     @default("Overig")
+  unit       String     @default("stuk")
+  quantity   Int
+  priceExVat Decimal    @default(0) @db.Decimal(14, 2)
+  order      WascoOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product    Product?   @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([sku])
 }
 
 model Quote {
@@ -443,20 +523,20 @@ model Quote {
 }
 
 model QuoteAsset {
-  id        String   @id @default(cuid())
-  quoteId   String
-  role      String   @default("product")
-  fileName  String
-  mimeType  String   @default("image/webp")
-  size      Int
-  width     Int      @default(0)
-  height    Int      @default(0)
-  storageKey String  @unique
-  sha256     String  @default("")
-  scanStatus String  @default("quarantine")
-  scanMessage String @default("")
-  createdAt DateTime @default(now())
-  quote     Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  id          String   @id @default(cuid())
+  quoteId     String
+  role        String   @default("product")
+  fileName    String
+  mimeType    String   @default("image/webp")
+  size        Int
+  width       Int      @default(0)
+  height      Int      @default(0)
+  storageKey  String   @unique
+  sha256      String   @default("")
+  scanStatus  String   @default("quarantine")
+  scanMessage String   @default("")
+  createdAt   DateTime @default(now())
+  quote       Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
 
   @@index([quoteId, createdAt])
 }
@@ -519,22 +599,22 @@ model SalesAppointment {
 }
 
 model QuoteLine {
-  id                   String  @id @default(cuid())
-  quoteId              String
-  position             Int
-  productId            String  @default("")
-  componentKey         String  @default("general")
-  lineKind             String  @default("item")
-  vatRefundEligible    Boolean @default(false)
-  description          String
-  qty                  Decimal @db.Decimal(12, 3)
-  unit                 String
-  priceExVat           Decimal @db.Decimal(14, 2)
-  vatRate              Decimal @db.Decimal(5, 2)
-  subtotal             Decimal @db.Decimal(14, 2)
-  vat                  Decimal @db.Decimal(14, 2)
-  total                Decimal @db.Decimal(14, 2)
-  quote                 Quote   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  id                String  @id @default(cuid())
+  quoteId           String
+  position          Int
+  productId         String  @default("")
+  componentKey      String  @default("general")
+  lineKind          String  @default("item")
+  vatRefundEligible Boolean @default(false)
+  description       String
+  qty               Decimal @db.Decimal(12, 3)
+  unit              String
+  priceExVat        Decimal @db.Decimal(14, 2)
+  vatRate           Decimal @db.Decimal(5, 2)
+  subtotal          Decimal @db.Decimal(14, 2)
+  vat               Decimal @db.Decimal(14, 2)
+  total             Decimal @db.Decimal(14, 2)
+  quote             Quote   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
 
   @@index([quoteId])
 }

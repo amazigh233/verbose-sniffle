@@ -6,7 +6,7 @@
 }(typeof window !== "undefined" ? window : globalThis, function () {
   "use strict";
 
-  var ENGINE_VERSION = "3.0.0";
+  var ENGINE_VERSION = "3.1.0";
 
   function number(value, fallback) {
     var parsed = Number(String(value == null ? "" : value).replace(",", "."));
@@ -37,7 +37,8 @@
       emitters: input.emitters || "radiatoren", flowTempTest: input.flowTempTest || "onbekend", outdoorUnit: input.outdoorUnit || "twijfel",
       indoorSpace: input.indoorSpace || "twijfel", cvAge: number(input.cvAge), meterCheck: input.meterCheck || "onbekend",
       pvCount: number(input.pvCount), pvWp: number(input.pvWp), inverterKw: number(input.inverterKw), connection: input.connection || "1fase",
-      contract: input.contract || "vast", ems: input.ems || "nee", imbalance: input.imbalance || "nee", batteryGoal: input.batteryGoal || "combinatie",
+      contract: input.contract || "vast", energyPricePeriod: String(input.energyPricePeriod || ""), ems: input.ems || "nee", imbalance: input.imbalance || "nee", batteryGoal: input.batteryGoal || "combinatie",
+      batteryProductId: String(input.batteryProductId || ""),
       ev: input.ev || "nee", evKwh: number(input.evKwh), heatPumpPresent: input.heatPumpPresent || "nee", heatPumpKwh: number(input.heatPumpKwh),
       homePattern: input.homePattern || "gemiddeld", vatRefund: input.vatRefund || "ja"
     };
@@ -63,6 +64,39 @@
     return group.slice().sort(function (a, b) { return number(a[key]) - number(b[key]); }).find(function (product) {
       var size = number(product[key]); return size >= required && (!maximum || size <= maximum);
     }) || null;
+  }
+
+  function batteryProductId(product, connection, index) {
+    if (product && product.id) return String(product.id);
+    var slug = String(product && product.name || "batterij").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    return connection + "-" + (slug || "batterij") + "-" + number(product && product.kwh) + "-" + (index + 1);
+  }
+
+  function energyTariff(input, assumptions) {
+    var energy = path(assumptions, "energy", {});
+    var history = Array.isArray(energy.priceHistory) ? energy.priceHistory.slice(0, 12).map(function (item) { return Object.assign({}, item); }) : [];
+    if (!history.length) {
+      history = [{
+        periodKey: "fallback", periodLabel: "Handmatig tarief", gasPrice: number(energy.gasPrice, 1.45),
+        electricityPrice: number(energy.electricityPrice, 0.30), dynamicElectricityPrice: number(energy.dynamicElectricityPrice, number(energy.electricityPrice, 0.30)),
+        dynamicPriceFallback: !energy.dynamicElectricityPrice, vatIncluded: true, sourceUrl: path(assumptions, "sources.energy.url", ""), refreshedAt: path(assumptions, "sources.energy.refreshedAt", "")
+      }];
+    }
+    var requested = input.energyPricePeriod;
+    var selected = history.find(function (item) { return String(item.periodKey) === requested; }) || history[0];
+    var periodFallback = Boolean(requested && requested !== String(selected.periodKey));
+    input.energyPricePeriod = String(selected.periodKey || "");
+    var dynamic = input.contract === "dynamic";
+    var dynamicFallback = dynamic && Boolean(selected.dynamicPriceFallback);
+    return {
+      periodKey: String(selected.periodKey || ""), periodLabel: selected.periodLabel || selected.periodKey || "Actueel tarief",
+      gasPrice: number(selected.gasPrice, number(energy.gasPrice, 1.45)),
+      electricityPrice: dynamic ? number(selected.dynamicElectricityPrice, number(selected.electricityPrice, 0.30)) : number(selected.electricityPrice, number(energy.electricityPrice, 0.30)),
+      regularElectricityPrice: number(selected.electricityPrice, number(energy.electricityPrice, 0.30)),
+      dynamicElectricityPrice: number(selected.dynamicElectricityPrice, number(selected.electricityPrice, 0.30)),
+      contractType: dynamic ? "dynamic" : "vast-variabel", dynamicPriceFallback: dynamicFallback, periodFallback: periodFallback,
+      vatIncluded: selected.vatIncluded !== false, sourceUrl: selected.sourceUrl || "", refreshedAt: selected.refreshedAt || "", priceHistory: history
+    };
   }
 
   function heatPumpScenario(kind, requiredHigh, heatingGas, assumptions) {
@@ -146,12 +180,18 @@
     var technicalMax = input.connection === "1fase" ? 21 : 40;
     if (input.inverterKw > 0) technicalMax = Math.min(technicalMax, Math.max(5, input.inverterKw * 4));
     target = round(Math.min(target, technicalMax), 1);
-    var group = path(assumptions, "batteryProducts." + input.connection, []);
-    var product = hasModel ? findProduct(group, target, "kwh", technicalMax) : null;
+    var group = path(assumptions, "batteryProducts." + input.connection, []).map(function (item, index) { return Object.assign({}, item, { id: batteryProductId(item, input.connection, index) }); });
+    var availableProducts = hasModel ? group.filter(function (item) { var capacity = number(item.kwh); return capacity > 0 && capacity <= technicalMax; }).sort(function (a, b) { return number(a.kwh) - number(b.kwh); }) : [];
+    var automaticProduct = hasModel ? findProduct(availableProducts, target, "kwh", technicalMax) : null;
+    var manualProduct = input.batteryProductId ? availableProducts.find(function (item) { return item.id === input.batteryProductId; }) : null;
+    var product = manualProduct || automaticProduct;
+    var selectionMode = manualProduct ? "manual" : "automatic";
+    input.batteryProductId = product ? product.id : "";
     var blockers = [];
     if (!hasModel) blockers.push("Zonder relevant PV-overschot, dynamische EMS-sturing of onbalansdeelname ontbreekt een verdienmodel.");
     if (target >= technicalMax && usableDaily / 0.9 > technicalMax) blockers.push("De technische grens van de aansluiting beperkt de gewenste capaciteit.");
-    if (hasModel && !product) blockers.push("Geen batterij in het assortiment past binnen de technische grens van de aansluiting.");
+    if (hasModel && !availableProducts.length) blockers.push("Geen batterij in het assortiment past binnen de technische grens van de aansluiting.");
+    else if (hasModel && !product) blockers.push("Geen beschikbare batterij bereikt de berekende adviescapaciteit.");
     var kwh = product ? number(product.kwh) : target;
     var feedInCost = number(path(assumptions, "battery.feedInCost", 0.15));
     var epexMargin = number(path(assumptions, "battery.epexMargin", 0.22));
@@ -181,14 +221,16 @@
     if (dynamicEnabled || imbalanceEnabled) checks.push("Bevestig EMS- en aggregatorvoorwaarden.");
     var alternative = null;
     if (product) {
-      var sorted = group.slice().sort(function (a, b) { return number(a.kwh) - number(b.kwh); });
+      var sorted = availableProducts.slice();
       var index = sorted.indexOf(product); var altProduct = sorted[index + 1] || sorted[index - 1];
       if (altProduct) alternative = { title: altProduct.name, product: altProduct, difference: number(altProduct.kwh) > kwh ? "Meer handelsruimte, maar een hogere investering." : "Lagere investering, maar minder verschuifbare energie." };
     }
     return {
       status: status, label: product ? "Thuisbatterij van " + number(product.kwh) + " kWh" : "Momenteel geen batterijadvies", readiness: blockers.length ? 35 : 80,
       recommendedKwh: kwh, pvProduction: round(production), surplus: round(surplus), shiftableUse: round(shiftable), technicalMaxKwh: technicalMax,
-      product: product, investmentExVat: round(investmentExVat), investment: round(investment), netInvestment: round(netInvestment), subsidy: 0,
+      product: product, availableProducts: availableProducts.map(function (item) { return Object.assign({}, item, { priceIncl: round(number(item.priceExVat) * 1.21), recommended: Boolean(automaticProduct && item.id === automaticProduct.id), selected: Boolean(product && item.id === product.id) }); }),
+      selectedProductId: product && product.id || "", selectionMode: selectionMode,
+      investmentExVat: round(investmentExVat), investment: round(investment), netInvestment: round(netInvestment), subsidy: 0,
       yearlySaving: round(yearly), paybackYears: yearly > 0 && netInvestment > 0 ? round(netInvestment / yearly, 1) : 0,
       valueStreams: { selfConsumption: round(selfValue), dynamic: round(dynamicValue), imbalance: round(imbalanceValue), degradation: round(degradationCost) },
       scenarios: scenarios, ranges: { capacity: range(Math.max(5, target * 0.8), target, Math.min(technicalMax, target * 1.15), "kWh"), investment: range(netInvestment, netInvestment, investment, "EUR"), yearlySaving: range(scenarios.conservative.yearlySaving, scenarios.expected.yearlySaving, scenarios.favorable.yearlySaving, "EUR/jaar"), payback: range(scenarios.favorable.paybackYears, scenarios.expected.paybackYears, scenarios.conservative.paybackYears, "jaar") },
@@ -233,8 +275,10 @@
   function calculate(raw, assumptions) {
     assumptions = assumptions || {};
     var input = normalize(raw); var errors = validate(input);
-    var wp = input.module === "batterij" ? null : heatPump(input, assumptions);
-    var bat = input.module === "warmtepomp" ? null : battery(input, assumptions);
+    var tariff = energyTariff(input, assumptions);
+    var calculationAssumptions = Object.assign({}, assumptions, { energy: Object.assign({}, path(assumptions, "energy", {}), { gasPrice: tariff.gasPrice, electricityPrice: tariff.electricityPrice }) });
+    var wp = input.module === "batterij" ? null : heatPump(input, calculationAssumptions);
+    var bat = input.module === "warmtepomp" ? null : battery(input, calculationAssumptions);
     var quality = inputQuality(input, errors); var plan = actions(input, wp, bat);
     var selected = [wp && wp.product && wp, bat && bat.product && bat].filter(Boolean);
     var title = selected.length ? selected.map(function (item) { return item.label; }).join(" + ") : "Eerst randvoorwaarden bevestigen";
@@ -250,7 +294,9 @@
       ranges: { investment: range(totalInvestment * 0.95, totalInvestment, totalInvestment * 1.10, "EUR"), yearlySaving: range(totalSaving * 0.78, totalSaving, totalSaving * 1.18, "EUR/jaar"), payback: totalSaving > 0 ? range(totalInvestment / (totalSaving * 1.18), totalInvestment / totalSaving, totalInvestment / (totalSaving * 0.78), "jaar") : range(0, 0, 0, "jaar") },
       requiredChecks: checks, scenarios: bat ? bat.scenarios : null, warmtepomp: wp, batterij: bat,
       actions: plan.items, suggestions: plan.suggestions,
-      assumptions: { gasPrice: number(path(assumptions, "energy.gasPrice", 1.45)), electricityPrice: number(path(assumptions, "energy.electricityPrice", 0.30)), feedInCost: number(path(assumptions, "battery.feedInCost", 0.15)), epexMargin: number(path(assumptions, "battery.epexMargin", 0.22)), sources: path(assumptions, "sources", {}) }
+      energyTariff: tariff,
+      warnings: unique([tariff.periodFallback ? "De eerder gekozen tariefmaand is niet meer beschikbaar; de nieuwste maand is gebruikt." : "", tariff.dynamicPriceFallback ? "Voor deze maand ontbreekt een dynamisch stroomtarief; het reguliere stroomtarief is gebruikt." : ""]),
+      assumptions: { gasPrice: tariff.gasPrice, electricityPrice: tariff.electricityPrice, regularElectricityPrice: tariff.regularElectricityPrice, dynamicElectricityPrice: tariff.dynamicElectricityPrice, energyPricePeriod: tariff.periodKey, priceHistory: tariff.priceHistory, feedInCost: number(path(assumptions, "battery.feedInCost", 0.15)), epexMargin: number(path(assumptions, "battery.epexMargin", 0.22)), sources: path(assumptions, "sources", {}) }
     };
   }
 

@@ -55,6 +55,14 @@ services:
         sync: false
       - key: SERVICE_MAIL_FROM
         sync: false
+      - key: WASCO_API_BASE_URL
+        sync: false
+      - key: WASCO_API_KEY
+        sync: false
+      - key: WASCO_CUSTOMER_NUMBER
+        sync: false
+      - key: WASCO_ORDERS_ENABLED
+        value: "false"
   - type: pserv
     name: climature-clamav
     runtime: image
@@ -98,6 +106,23 @@ services:
         sync: false
       - key: SERVICE_MAIL_FROM
         sync: false
+  - type: cron
+    name: climature-advice-energy-refresh
+    runtime: node
+    plan: starter
+    region: frankfurt
+    schedule: "15 7 * * *"
+    buildCommand: npm ci && npm run prisma:generate
+    startCommand: npm run advice:refresh-energy
+    envVars:
+      - key: NODE_VERSION
+        value: 24.18.0
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: climature-bedrijfsportaal-db
+          property: connectionString
   - type: cron
     name: climature-nightly-backup
     runtime: docker

@@ -9,7 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="assets/icons/icon.svg">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/icon-180.png">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="assets/css/app.css?v=24">
+  <link rel="stylesheet" href="assets/css/app.css?v=25">
 </head>
 <body class="auth-locked">
   <section class="login-screen" aria-label="Inloggen">
@@ -75,7 +75,8 @@
           <a href="#execution-portal" data-route-link="execution-portal">Overzicht</a>
           <a href="#projects" data-route-link="projects">1. Projecten</a>
           <a href="#installations" data-route-link="installations">2. Installaties</a>
-          <a href="#service" data-route-link="service">3. Service & onderhoud</a>
+          <a href="#inventory" data-route-link="inventory">3. Voorraadbeheer</a>
+          <a href="#service" data-route-link="service">4. Service & onderhoud</a>
         </section>
 
         <section class="nav-group" data-nav-group data-portal="finance">
@@ -85,6 +86,11 @@
           <a href="#payments" data-route-link="payments">Betalingen & kassa</a>
           <a href="#reports" data-route-link="reports">Rapportage</a>
           <a href="#service" data-route-link="service">Servicecontracten</a>
+        </section>
+
+        <section class="nav-group" data-nav-group data-portal="wasco">
+          <p class="nav-group-label">Inkoop</p>
+          <a href="#wasco-portal" data-route-link="wasco-portal">Wasco koppeling</a>
         </section>
 
         <section class="nav-group" data-nav-group data-portal="management">
@@ -134,7 +140,7 @@
 
   <script src="assets/vendor/jspdf.umd.min.js"></script>
   <script src="assets/vendor/html2canvas.min.js"></script>
-  <script src="assets/js/storage.js?v=18"></script>
+  <script src="assets/js/storage.js?v=19"></script>
   <script src="assets/js/quote-document.js?v=18"></script>
   <script src="assets/js/pdf.js?v=24"></script>
   <script src="assets/js/customers.js"></script>
@@ -145,11 +151,14 @@
   <script src="assets/js/payments.js?v=1"></script>
   <script src="assets/js/installations.js"></script>
   <script src="assets/js/projects.js"></script>
+  <script src="assets/js/inventory.js?v=1"></script>
   <script src="assets/js/service.js?v=17"></script>
   <script src="assets/js/advice-v2-engine.js?v=24"></script>
-  <script src="assets/js/advice-v2.js?v=24"></script>
+  <script src="assets/js/product-catalog.js?v=1"></script>
+  <script src="assets/js/wasco.js?v=1"></script>
+  <script src="assets/js/advice-v2.js?v=25"></script>
   <script src="assets/js/advice.js?v=16"></script>
   <script src="assets/js/reports.js"></script>
-  <script src="assets/js/app.js?v=18"></script>
+  <script src="assets/js/app.js?v=19"></script>
 </body>
 </html>

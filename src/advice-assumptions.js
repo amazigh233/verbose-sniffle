@@ -5,6 +5,7 @@ const { DEFAULT_SETTINGS } = require("./defaults");
 const { parseLocalizedNumber } = require("./numbers");
 
 const CBS_URL = "https://opendata.cbs.nl/ODataApi/OData/85592NED/TypedDataSet?$filter=Btw%20eq%20%27A048944%27";
+const CBS_SOURCE_URL = "https://www.cbs.nl/nl-nl/cijfers/detail/85592NED";
 const RVO_LIST_URL = "https://www.rvo.nl/subsidies-financiering/isde/meldcodelijsten";
 
 function clone(value) {
@@ -38,8 +39,28 @@ function round(value, decimals = 4) {
   return Math.round(number(value) * factor) / factor;
 }
 
+function productId(product, connection, index) {
+  const slug = String(product && product.name || "batterij")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  return String(product && product.id || `${connection}-${slug || "batterij"}-${number(product && product.kwh)}-${index + 1}`);
+}
+
 function normalizeAssumptions(input) {
-  return deepMerge(DEFAULT_SETTINGS.adviceAssumptions, input || {});
+  const assumptions = deepMerge(DEFAULT_SETTINGS.adviceAssumptions, input || {});
+  assumptions.energy = assumptions.energy || {};
+  if (!Array.isArray(assumptions.energy.priceHistory)) assumptions.energy.priceHistory = [];
+  assumptions.energy.priceHistory = assumptions.energy.priceHistory.slice(0, 12);
+  assumptions.batteryProducts = assumptions.batteryProducts || {};
+  ["1fase", "3fase"].forEach((connection) => {
+    assumptions.batteryProducts[connection] = (assumptions.batteryProducts[connection] || []).map((product, index) => ({
+      ...product,
+      id: productId(product, connection, index)
+    }));
+  });
+  return assumptions;
 }
 
 function periodLabel(period) {
@@ -49,27 +70,53 @@ function periodLabel(period) {
   return date.toLocaleDateString("nl-NL", { month: "long", year: "numeric" });
 }
 
-function latestCbsRow(rows) {
-  return (rows || []).filter((row) => row && row.Perioden).sort((a, b) => String(b.Perioden).localeCompare(String(a.Perioden)))[0] || null;
+function monthlyCbsRows(rows) {
+  return (rows || [])
+    .filter((row) => row && /^\d{4}MM(?:0[1-9]|1[0-2])$/.test(String(row.Perioden || "")))
+    .sort((a, b) => String(b.Perioden).localeCompare(String(a.Perioden)))
+    .slice(0, 12);
+}
+
+function priceHistoryFromCbsRows(rows, refreshedAt) {
+  return monthlyCbsRows(rows).map((row) => {
+    const gasPrice = round(number(row.VariabelLeveringstariefContractprijs_3) + number(row.OpslagDuurzameEnergieODE_5) + number(row.Energiebelasting_6), 4);
+    const electricityPrice = round(number(row.VariabelLeveringstariefContractprijs_9) + number(row.OpslagDuurzameEnergieODE_13) + number(row.Energiebelasting_14), 4);
+    const hasDynamicPrice = row.VariabelLeveringstariefDynamisch_12 !== null && row.VariabelLeveringstariefDynamisch_12 !== undefined && row.VariabelLeveringstariefDynamisch_12 !== "";
+    const dynamicElectricityPrice = hasDynamicPrice
+      ? round(number(row.VariabelLeveringstariefDynamisch_12) + number(row.OpslagDuurzameEnergieODE_13) + number(row.Energiebelasting_14), 4)
+      : electricityPrice;
+    return {
+      periodKey: row.Perioden,
+      periodLabel: periodLabel(row.Perioden),
+      gasPrice,
+      electricityPrice,
+      dynamicElectricityPrice,
+      dynamicPriceFallback: !hasDynamicPrice,
+      vatIncluded: true,
+      sourceUrl: CBS_SOURCE_URL,
+      refreshedAt
+    };
+  });
 }
 
 function assumptionsFromCbsRows(rows, current = DEFAULT_SETTINGS.adviceAssumptions, refreshedAt = new Date().toISOString()) {
-  const row = latestCbsRow(rows);
-  if (!row) throw Object.assign(new Error("CBS gaf geen energietarieven terug."), { status: 502 });
-  const gasPrice = round(number(row.VariabelLeveringstariefContractprijs_3) + number(row.OpslagDuurzameEnergieODE_5) + number(row.Energiebelasting_6), 4);
-  const electricityPrice = round(number(row.VariabelLeveringstariefContractprijs_9) + number(row.OpslagDuurzameEnergieODE_13) + number(row.Energiebelasting_14), 4);
-  const dynamicElectricityPrice = row.VariabelLeveringstariefDynamisch_12 == null
-    ? electricityPrice
-    : round(number(row.VariabelLeveringstariefDynamisch_12) + number(row.OpslagDuurzameEnergieODE_13) + number(row.Energiebelasting_14), 4);
+  const priceHistory = priceHistoryFromCbsRows(rows, refreshedAt);
+  const latest = priceHistory[0];
+  if (!latest) throw Object.assign(new Error("CBS gaf geen maandelijkse energietarieven terug."), { status: 502 });
   return deepMerge(current, {
-    energy: { gasPrice, electricityPrice, dynamicElectricityPrice },
+    energy: {
+      gasPrice: latest.gasPrice,
+      electricityPrice: latest.electricityPrice,
+      dynamicElectricityPrice: latest.dynamicElectricityPrice,
+      priceHistory
+    },
     sources: {
       energy: {
         label: "CBS gemiddelde energietarieven voor consumenten",
-        period: periodLabel(row.Perioden),
-        periodKey: row.Perioden,
+        period: latest.periodLabel,
+        periodKey: latest.periodKey,
         refreshedAt,
-        url: "https://www.cbs.nl/nl-nl/cijfers/detail/85592NED"
+        url: CBS_SOURCE_URL
       }
     }
   });
@@ -191,11 +238,31 @@ async function refreshAdviceAssumptions(current, options = {}) {
   return assumptions;
 }
 
+async function refreshEnergyAssumptions(current, options = {}) {
+  const refreshedAt = new Date().toISOString();
+  let assumptions = normalizeAssumptions(current);
+  let errorMessage = "";
+  try {
+    assumptions = await fetchCbsAssumptions(assumptions, options.fetch || fetch);
+  } catch (error) {
+    errorMessage = error.message || "CBS-refresh mislukt.";
+  }
+  assumptions.sources = assumptions.sources || {};
+  assumptions.sources.lastEnergyRefresh = {
+    refreshedAt,
+    ok: !errorMessage,
+    errors: errorMessage ? [errorMessage] : []
+  };
+  return assumptions;
+}
+
 module.exports = {
   assumptionsFromCbsRows,
   deepMerge,
   findRvoWarmtepompXlsx,
   normalizeAssumptions,
   parseRvoWarmtepompWorkbook,
+  priceHistoryFromCbsRows,
+  refreshEnergyAssumptions,
   refreshAdviceAssumptions
 };

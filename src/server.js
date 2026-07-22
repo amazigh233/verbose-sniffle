@@ -26,6 +26,7 @@ const { registerQuoteRoutes } = require("./modules/quotes/routes");
 const { registerInvoiceRoutes } = require("./modules/invoices/routes");
 const { registerInstallationRoutes } = require("./modules/installations/routes");
 const { registerPaymentRoutes } = require("./modules/payments/routes");
+const { registerInventoryRoutes } = require("./modules/inventory/routes");
 const authorization = require("./middleware/authorization");
 const { createObjectStorage } = require("./infrastructure/object-storage");
 const { createCoordinationStore } = require("./infrastructure/coordination");
@@ -37,6 +38,8 @@ const { validateCollectionWrite } = require("./modules/collections/validation");
 const { validateMutationEnvelope, validateParam } = require("./shared/validation");
 const dashboardData = require("./dashboard-data");
 const reportData = require("./report-data");
+const { createEnergyPriceService } = require("./energy-prices");
+const { createWascoIntegration } = require("./wasco-integration");
 
 const ROLE_COLLECTIONS = {
   crm: ["customers", "customerNotes", "customerDocuments"],
@@ -276,7 +279,16 @@ function createApp(config = loadConfig()) {
     allowUnscannedHrFiles: false,
     objectStorageProvider: "local",
     objectStorageRoot: path.join(__dirname, "..", ".data", "objects"),
-    redisUrl: ""
+    redisUrl: "",
+    energyPriceApiUrl: "https://public.api.energyzero.nl",
+    energyPriceCacheTtlMs: 5 * 60 * 1000,
+    energyPriceStaleTtlMs: 24 * 60 * 60 * 1000,
+    energyPriceTimeoutMs: 8000,
+    wascoApiBaseUrl: "",
+    wascoApiKey: "",
+    wascoCustomerNumber: "",
+    wascoOrdersEnabled: false,
+    wascoTimeoutMs: 8000
   }, config);
   const app = express();
   app.use((req, res, next) => {
@@ -294,6 +306,14 @@ function createApp(config = loadConfig()) {
   const objectStorage = createObjectStorage(config);
   const coordination = createCoordinationStore(config);
   const logger = createLogger(config);
+  const energyPriceService = createEnergyPriceService({
+    store: coordination,
+    config,
+    logger,
+    fetchImpl: config.energyPriceFetch || fetch,
+    now: config.energyPriceNow || (() => new Date())
+  });
+  const wascoIntegration = createWascoIntegration(config, config.wascoFetch || fetch);
   const deleteStoredObjects = async (keys, requestId) => {
     const unique = [...new Set((keys || []).filter(Boolean))];
     const results = await Promise.allSettled(unique.map((key) => objectStorage.delete(key)));
@@ -856,6 +876,37 @@ function createApp(config = loadConfig()) {
     res.json(await dashboardData.dashboard(prisma, req.session.user, req.params.type));
   }));
 
+  app.get("/api/energy-prices", requireRole("admin"), asyncHandler(async (req, res) => {
+    try {
+      res.json(await energyPriceService.get({ force: req.query.refresh === "1" }));
+    } catch (error) {
+      logger.warn({ requestId: req.id, errorCategory: error && (error.code || error.name) || "ENERGY_PRICE_ERROR", source: "EnergyZero" }, "energy_prices.unavailable");
+      res.status(502).json({
+        error: "Actuele energieprijzen zijn tijdelijk niet beschikbaar.",
+        code: error && error.code || "ENERGY_PRICES_UNAVAILABLE"
+      });
+    }
+  }));
+
+  app.get("/api/wasco/status", requireRole("admin", "execution"), (_req, res) => {
+    res.json(wascoIntegration.status());
+  });
+
+  app.get("/api/wasco/products", requireRole("admin", "execution"), asyncHandler(async (req, res) => {
+    res.set("Cache-Control", "no-store, private");
+    res.json(await wascoIntegration.searchProducts({ query: req.query.q, category: req.query.category, limit: req.query.limit }));
+  }));
+
+  app.post("/api/wasco/availability", requireRole("admin", "execution"), asyncHandler(async (req, res) => {
+    res.json(await wascoIntegration.availability(req.body && req.body.skus));
+  }));
+
+  app.post("/api/wasco/orders", requireRole("admin", "execution"), asyncHandler(async (req, res) => {
+    const result = await wascoIntegration.createOrder(req.body || {});
+    logger.info({ requestId: req.id, userId: req.session.user.id, mode: result.mode, submitted: result.submitted, orderNumber: result.orderNumber }, "wasco.order_created");
+    res.status(result.submitted ? 201 : 200).json(result);
+  }));
+
   app.get("/api/reports/summary", requireRole("admin", "finance"), asyncHandler(async (req, res) => {
     res.json(await reportData.summary(prisma, req.session.user, req.query || {}));
   }));
@@ -868,6 +919,8 @@ function createApp(config = loadConfig()) {
   }));
 
   registerPaymentRoutes({ app, asyncHandler, prisma, requireRole });
+
+  registerInventoryRoutes({ app, asyncHandler, config, prisma, requireRole, scanFile, upload });
 
   registerServiceRoutes({ app, asyncHandler, config, objectStorage, prisma, requireRole, upload });
 
@@ -1139,6 +1192,8 @@ function createApp(config = loadConfig()) {
   app.locals.pool = pool;
   app.locals.objectStorage = objectStorage;
   app.locals.coordination = coordination;
+  app.locals.energyPriceService = energyPriceService;
+  app.locals.wascoIntegration = wascoIntegration;
   app.locals.logger = logger;
   return app;
 }

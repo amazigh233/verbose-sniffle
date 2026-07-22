@@ -2,7 +2,7 @@
 
 const crypto = require("crypto");
 const { DEFAULT_PRODUCTS, DEFAULT_SETTINGS } = require("./defaults");
-const { normalizeAssumptions, refreshAdviceAssumptions: refreshAssumptionsFromSources } = require("./advice-assumptions");
+const { normalizeAssumptions, refreshAdviceAssumptions: refreshAssumptionsFromSources, refreshEnergyAssumptions: refreshEnergyFromSource } = require("./advice-assumptions");
 const bootstrapCache = require("./bootstrap-cache");
 const { multiplyMoney, parseLocalizedNumber: parseNumber, percentageMoney, roundMoney, sumMoney } = require("./numbers");
 const { pageResponse, parsePagination, validationError } = require("./shared/pagination");
@@ -220,6 +220,12 @@ async function refreshAdviceAssumptions(prisma) {
   return saveSettings(prisma, { ...current, adviceAssumptions });
 }
 
+async function refreshEnergyPrices(prisma) {
+  const current = await getSettings(prisma);
+  const adviceAssumptions = await refreshEnergyFromSource(current.adviceAssumptions);
+  return saveSettings(prisma, { ...current, adviceAssumptions });
+}
+
 async function getCounters(prisma) {
   const rows = await prisma.counter.findMany();
   return Object.fromEntries(rows.map((row) => [row.key, row.value]));
@@ -306,7 +312,7 @@ const PAGE_CONFIG = {
   customers: { model: "customer", search: ["firstName", "lastName", "companyName", "email", "postalCode", "city"], sorts: ["createdAt", "updatedAt", "lastName", "companyName", "city"], defaultSort: "createdAt", defaultOrder: "desc", filters: ["city", "postalCode"], summarySelect: { id: true, firstName: true, lastName: true, companyName: true, email: true, phone: true, address: true, postalCode: true, city: true, createdAt: true, updatedAt: true } },
   customerNotes: { model: "customerNote", search: ["body", "type"], sorts: ["createdAt", "updatedAt", "date", "type"], defaultSort: "createdAt", defaultOrder: "desc", filters: ["customerId", "type"] },
   customerDocuments: { model: "customerDocument", search: ["fileName"], sorts: ["createdAt", "updatedAt", "fileName", "size"], defaultSort: "createdAt", defaultOrder: "desc", filters: ["customerId", "mimeType", "scanStatus"], select: { id: true, customerId: true, fileName: true, mimeType: true, size: true, scanStatus: true, createdAt: true, updatedAt: true } },
-  products: { model: "product", search: ["category", "brand", "name", "specs"], sorts: ["createdAt", "updatedAt", "category", "brand", "name", "priceExVat"], defaultSort: "name", defaultOrder: "asc", filters: ["category", "brand"] },
+  products: { model: "product", search: ["sku", "category", "brand", "name", "specs"], sorts: ["createdAt", "updatedAt", "sku", "category", "brand", "name", "priceExVat", "stockQuantity"], defaultSort: "name", defaultOrder: "asc", filters: ["category", "brand"] },
   quotes: { model: "quote", search: ["quoteNumber", "notes", "documentTitle", "status"], customerSearch: true, sorts: ["createdAt", "updatedAt", "quoteDate", "validUntil", "quoteNumber", "status", "total"], defaultSort: "createdAt", defaultOrder: "desc", filters: ["customerId", "status"], include: { lines: true }, serialize: serializeQuote, summarySelect: { id: true, quoteNumber: true, customerId: true, quoteDate: true, validUntil: true, status: true, templateType: true, documentTitle: true, subtotal: true, vat: true, total: true, createdAt: true, updatedAt: true, customer: { select: { firstName: true, lastName: true, companyName: true } } } },
   invoices: { model: "invoice", search: ["invoiceNumber", "quoteNumber", "notes", "status"], customerSearch: true, sorts: ["createdAt", "updatedAt", "invoiceDate", "dueDate", "invoiceNumber", "status", "total"], defaultSort: "createdAt", defaultOrder: "desc", filters: ["customerId", "status"], include: { lines: true }, serialize: serializeInvoice, summarySelect: { id: true, invoiceNumber: true, quoteNumber: true, customerId: true, invoiceDate: true, dueDate: true, status: true, subtotal: true, vat: true, total: true, createdAt: true, updatedAt: true, customer: { select: { firstName: true, lastName: true, companyName: true } } } },
   installations: { model: "installation", search: ["installer", "notes", "quoteNumber", "status"], customerSearch: true, sorts: ["createdAt", "updatedAt", "plannedDate", "startTime", "status", "installer"], defaultSort: "plannedDate", defaultOrder: "asc", filters: ["customerId", "employeeId", "status", "workType"], summarySelect: { id: true, customerId: true, quoteId: true, quoteNumber: true, plannedDate: true, startTime: true, durationHours: true, status: true, installer: true, employeeId: true, workType: true, createdAt: true, updatedAt: true, customer: { select: { firstName: true, lastName: true, companyName: true } } } },
@@ -450,6 +456,7 @@ function customerDocumentData(item) {
 function productData(item) {
   return stripUndefined({
     id: item.id || undefined,
+    sku: item.sku === undefined ? undefined : (String(item.sku || "").trim().toUpperCase() || null),
     category: String(item.category || "").trim(),
     brand: String(item.brand || "").trim(),
     name: String(item.name || "").trim(),
@@ -457,6 +464,16 @@ function productData(item) {
     priceExVat: parseNumber(item.priceExVat),
     vatRate: parseNumber(item.vatRate) || 21,
     description: String(item.description || ""),
+    adviceType: String(item.adviceType || ""),
+    capacityKw: Math.max(0, parseNumber(item.capacityKw)),
+    capacityKwh: Math.max(0, parseNumber(item.capacityKwh)),
+    connection: String(item.connection || ""),
+    subsidy: Math.max(0, parseNumber(item.subsidy)),
+    stockQuantity: item.stockQuantity === undefined ? undefined : Math.max(0, parseNumber(item.stockQuantity)),
+    minimumStock: item.minimumStock === undefined ? undefined : Math.max(0, parseNumber(item.minimumStock)),
+    stockUnit: item.stockUnit === undefined ? undefined : (String(item.stockUnit || "").trim() || "stuk"),
+    stockLocation: item.stockLocation === undefined ? undefined : String(item.stockLocation || "").trim(),
+    inventoryUpdatedAt: item.inventoryUpdatedAt === undefined ? undefined : asDate(item.inventoryUpdatedAt),
     createdAt: asDate(item.createdAt) || undefined
   });
 }
@@ -988,5 +1005,6 @@ module.exports = {
   saveSettings,
   saveInstallationWorkOrder,
   refreshAdviceAssumptions,
+  refreshEnergyPrices,
   upsert
 };

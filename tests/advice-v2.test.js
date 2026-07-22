@@ -85,4 +85,40 @@ describe("Advies Tool 2.0 engine v3", () => {
     const errors = engine.validate(scan({ buildYear: 1800, area: 5, gasYear: 0, hotWater: "cv", pvCount: 12, pvWp: 100 }));
     expect(errors).toEqual(expect.arrayContaining(["Vul een geldig bouwjaar in.", "Het woonoppervlak moet tussen 20 en 1.000 m² liggen.", "Tapwater kan niet via een cv-ketel lopen wanneer het gasverbruik 0 is."]));
   });
+
+  it("uses the selected CBS month and the matching contract price", () => {
+    const withHistory = Object.assign({}, assumptions, { energy: {
+      gasPrice: 1.45, electricityPrice: 0.30, dynamicElectricityPrice: 0.26,
+      priceHistory: [
+        { periodKey: "2026MM06", periodLabel: "juni 2026", gasPrice: 1.31, electricityPrice: 0.25, dynamicElectricityPrice: 0.27, vatIncluded: true },
+        { periodKey: "2026MM05", periodLabel: "mei 2026", gasPrice: 1.28, electricityPrice: 0.24, dynamicElectricityPrice: 0.22, vatIncluded: true }
+      ]
+    } });
+    const regular = engine.calculate(scan({ module: "warmtepomp", contract: "vast", energyPricePeriod: "2026MM05" }), withHistory);
+    const dynamic = engine.calculate(scan({ module: "warmtepomp", contract: "dynamic", energyPricePeriod: "2026MM05" }), withHistory);
+    expect(regular.energyTariff).toMatchObject({ periodKey: "2026MM05", gasPrice: 1.28, electricityPrice: 0.24, contractType: "vast-variabel" });
+    expect(dynamic.energyTariff).toMatchObject({ periodKey: "2026MM05", electricityPrice: 0.22, contractType: "dynamic" });
+    expect(dynamic.assumptions.priceHistory).toHaveLength(2);
+  });
+
+  it("falls back to the newest month and reports missing dynamic data", () => {
+    const withHistory = Object.assign({}, assumptions, { energy: { priceHistory: [
+      { periodKey: "2026MM06", periodLabel: "juni 2026", gasPrice: 1.31, electricityPrice: 0.25, dynamicElectricityPrice: 0.25, dynamicPriceFallback: true }
+    ] } });
+    const result = engine.calculate(scan({ module: "batterij", contract: "dynamic", energyPricePeriod: "2024MM01" }), withHistory);
+    expect(result.input.energyPricePeriod).toBe("2026MM06");
+    expect(result.warnings).toHaveLength(2);
+  });
+
+  it("returns only technically compatible batteries and recalculates a manual choice", () => {
+    const automatic = engine.calculate(scan({ module: "batterij", connection: "3fase", inverterKw: 5 }), assumptions).batterij;
+    expect(automatic.availableProducts.map((item) => item.kwh)).toEqual([10, 15]);
+    const manualId = automatic.availableProducts.find((item) => item.kwh === 15).id;
+    const manual = engine.calculate(scan({ module: "batterij", connection: "3fase", inverterKw: 5, batteryProductId: manualId }), assumptions).batterij;
+    expect(manual.selectionMode).toBe("manual");
+    expect(manual.selectedProductId).toBe(manualId);
+    expect(manual.recommendedKwh).toBe(15);
+    expect(manual.investmentExVat).toBe(12500);
+    expect(manual.yearlySaving).toBeGreaterThan(automatic.yearlySaving);
+  });
 });

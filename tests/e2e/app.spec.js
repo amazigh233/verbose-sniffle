@@ -59,6 +59,35 @@ test("login page loads", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Inloggen" })).toBeVisible();
 });
 
+test("voorraadbeheer toont Excel-import, waarschuwingen en handmatige correcties", async ({ page }) => {
+  let item = {
+    id: "p1", sku: "WP-001", category: "warmtepomp", brand: "Climature", name: "Warmtepomp 8 kW",
+    stockQuantity: 2, minimumStock: 3, stockUnit: "stuk", stockLocation: "Magazijn A"
+  };
+  await page.route("**/api/auth/session", (route) => route.fulfill({ json: { authenticated: true, user: { id: "a1", username: "admin", role: "admin" }, csrfToken: "test-token", features: { hrPortalEnabled: false } } }));
+  await page.route("**/api/bootstrap", (route) => route.fulfill({ json: { data: { user: { id: "a1", username: "admin", role: "admin" }, role: "admin", permissions: {}, settings: { companyName: "Climature" }, counters: {}, dashboard: { portalCounts: {} } } } }));
+  await page.route("**/api/inventory**", async (route) => {
+    if (route.request().method() === "PUT") {
+      const input = route.request().postDataJSON();
+      item = { ...item, stockQuantity: Number(String(input.quantity).replace(",", ".")), minimumStock: Number(input.minimumStock), stockUnit: input.stockUnit, stockLocation: input.stockLocation };
+      return route.fulfill({ json: { item } });
+    }
+    return route.fulfill({ json: { items: [item], movements: [], stats: { productCount: 1, totalQuantity: item.stockQuantity, lowStockCount: item.stockQuantity <= item.minimumStock ? 1 : 0, outOfStockCount: 0 } } });
+  });
+
+  await page.goto("/#inventory");
+  await expect(page.getByRole("heading", { name: "Actuele voorraad" })).toBeVisible();
+  await expect(page.getByRole("table").getByText("Bijbestellen", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Download Excel-sjabloon" })).toHaveAttribute("href", "/api/inventory/template");
+
+  await page.getByRole("button", { name: "Aanpassen" }).click();
+  await page.locator('input[name="quantity"]').fill("6");
+  await page.locator('textarea[name="reason"]').fill("Nieuwe levering ontvangen");
+  await page.getByRole("button", { name: "Voorraad opslaan" }).click();
+  await expect(page.locator("#toast")).toContainText("Voorraad bijgewerkt");
+  await expect(page.getByText("6 stuk", { exact: true })).toBeVisible();
+});
+
 test("advice v2 keeps draft state and renders after revisiting the advice route", async ({ page }) => {
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error));
@@ -710,6 +739,56 @@ test("admin configures Google Business Profile from management", async ({ page }
   await expect(page.getByRole("button", { name: /Kopieer beoordelingslink/ })).toBeVisible();
 });
 
+test("management shows live electricity and gas charts with refresh and offline states", async ({ page }) => {
+  function pricePoint(start, hours, price, forecast) {
+    return { start: new Date(start).toISOString(), end: new Date(start + hours * 60 * 60 * 1000).toISOString(), price, ...(forecast ? { forecast: true } : {}) };
+  }
+  const electricityStart = Date.parse("2026-07-19T22:00:00.000Z");
+  const electricity = Array.from({ length: 24 }, (_, index) => pricePoint(electricityStart + index * 60 * 60 * 1000, 1, index === 5 ? -0.02 : 0.22 + index / 1000, false));
+  const gasStart = Date.parse("2026-06-21T04:00:00.000Z");
+  const gas = Array.from({ length: 30 }, (_, index) => pricePoint(gasStart + index * 24 * 60 * 60 * 1000, 24, 1.2 + index / 1000, false));
+  let energyRequests = 0;
+
+  await page.route("**/api/auth/session", (route) => route.fulfill({ json: { authenticated: true, user: { id: "u1", username: "admin", role: "admin" }, csrfToken: "test-token", features: { hrPortalEnabled: false } } }));
+  await page.route("**/api/bootstrap", (route) => route.fulfill({ json: { data: {
+    user: { id: "u1", username: "admin", role: "admin" }, role: "admin", permissions: {}, settings: { companyName: "Climature", paymentDays: 14 }, counters: {}, dashboard: { portalCounts: { products: 0 } }
+  } } }));
+  await page.route("**/api/dashboard/management", (route) => route.fulfill({ json: { metrics: { productCount: 0 }, items: {} } }));
+  await page.route("**/api/energy-prices*", (route) => {
+    energyRequests += 1;
+    const stale = route.request().url().includes("refresh=1");
+    return route.fulfill({ json: {
+      source: { name: "EnergyZero", url: "https://docs.api.energyzero.nl/", fetchedAt: "2026-07-20T00:00:00.000Z", status: stale ? "stale" : "fresh", ...(stale ? { warning: "De live bron is tijdelijk niet bereikbaar. De laatst geldige prijzen worden getoond." } : {}) },
+      electricity: { unit: "EUR/kWh", interval: "hour", current: electricity[2], points: electricity },
+      gas: { unit: "EUR/m3", interval: "day", current: gas[28], points: gas }
+    } });
+  });
+
+  await page.goto("/#management-portal");
+  await expect(page.getByRole("heading", { name: "Gas- en elektriciteitsprijzen" })).toBeVisible();
+  await expect(page.locator(".energy-price-card")).toHaveCount(2);
+  await expect(page.locator(".energy-chart-svg")).toHaveCount(2);
+  await expect(page.locator(".energy-current-price").first()).toContainText("/kWh");
+  await expect(page.getByText("De stroomprijzen voor morgen zijn nog niet gepubliceerd.")).toBeVisible();
+  await expect(page.locator(".energy-chart-zero")).toHaveCount(1);
+  await page.locator(".energy-chart-point").first().focus();
+  await expect(page.locator(".energy-chart-point").first()).toHaveAttribute("aria-label", /€/);
+
+  await page.getByRole("button", { name: "Nu verversen" }).click();
+  await expect(page.locator(".energy-price-status")).toContainText("Verouderde gegevens");
+  await expect(page.getByText(/laatst geldige prijzen/)).toBeVisible();
+  expect(energyRequests).toBe(2);
+
+  await page.evaluate(() => window.dispatchEvent(new Event("offline")));
+  await expect(page.locator(".energy-price-status")).toContainText("Offline");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const cards = page.locator(".energy-price-card");
+  const firstBox = await cards.nth(0).boundingBox();
+  const secondBox = await cards.nth(1).boundingBox();
+  expect(secondBox.y).toBeGreaterThan(firstBox.y + firstBox.height - 2);
+});
+
 test("sales role only sees and can enter the sales portal", async ({ page }) => {
   await page.route("**/api/auth/session", (route) => route.fulfill({ json: { authenticated: true, user: { id: "s1", username: "sales", role: "sales" }, features: { hrPortalEnabled: true } } }));
   await page.route("**/api/bootstrap", (route) => route.fulfill({ json: { data: {
@@ -735,21 +814,34 @@ test("sales role only sees and can enter the sales portal", async ({ page }) => 
 test("advice tool 2.0 renders below the legacy tool and completes a combined scan", async ({ page }) => {
   let savedAdvice;
   let savedQuote;
+  await page.addInitScript(() => { window.print = () => { document.documentElement.dataset.printed = "true"; }; });
   const customer = { id: "c1", firstName: "Slimme", lastName: "Klant", companyName: "", address: "Groeneweg 12", postalCode: "1234 AB", city: "Utrecht" };
   const settings = {
     companyName: "Climature",
     adviceAssumptions: {
-      energy: { gasPrice: 1.45, electricityPrice: 0.30 },
+      energy: { gasPrice: 1.45, electricityPrice: 0.30, priceHistory: [
+        { periodKey: "2026MM06", periodLabel: "juni 2026", gasPrice: 1.45, electricityPrice: 0.30, dynamicElectricityPrice: 0.26, vatIncluded: true },
+        { periodKey: "2026MM05", periodLabel: "mei 2026", gasPrice: 1.40, electricityPrice: 0.28, dynamicElectricityPrice: 0.24, vatIncluded: true }
+      ] },
       battery: { feedInCost: 0.15, epexMargin: 0.22, imbalancePerKwh: 250 },
       warmtepompProducts: {
         allelectric: [{ name: "Test All-electric 8", kw: 8, priceIncl: 13000, subsidy: 3500 }, { name: "Test All-electric 12", kw: 12, priceIncl: 15000, subsidy: 4500 }],
         hybride: [{ name: "Test Hybride 8", kw: 8, priceIncl: 11000, subsidy: 3000 }]
       },
-      batteryProducts: { "1fase": [{ name: "Test Batterij 10", kwh: 10, priceExVat: 10000 }], "3fase": [{ name: "Test Batterij 15", kwh: 15, priceExVat: 12500 }] }
+      batteryProducts: { "1fase": [{ id: "test-10-1f", name: "Test Batterij 10", kwh: 10, priceExVat: 10000 }], "3fase": [{ id: "test-10-3f", name: "Test Batterij 10", kwh: 10, priceExVat: 10000 }, { id: "test-15-3f", name: "Test Batterij 15", kwh: 15, priceExVat: 12500 }, { id: "test-30-3f", name: "Test Batterij 30", kwh: 30, priceExVat: 19000 }] }
     }
   };
+  const products = [
+    { id: "catalog-wp-8", category: "warmtepomp", brand: "Catalog", name: "All-electric 8", priceExVat: 10743.80, vatRate: 21, adviceType: "allelectric", capacityKw: 8, subsidy: 3500 },
+    { id: "catalog-wp-12", category: "warmtepomp", brand: "Catalog", name: "All-electric 12", priceExVat: 12396.69, vatRate: 21, adviceType: "allelectric", capacityKw: 12, subsidy: 4500 },
+    { id: "catalog-hyb-8", category: "warmtepomp", brand: "Catalog", name: "Hybride 8", priceExVat: 9090.91, vatRate: 21, adviceType: "hybride", capacityKw: 8, subsidy: 3000 },
+    { id: "test-10-1f", category: "thuisbatterij", brand: "Catalog", name: "Batterij 10", priceExVat: 10000, vatRate: 21, capacityKwh: 10, connection: "1fase" },
+    { id: "test-10-3f", category: "thuisbatterij", brand: "Catalog", name: "Batterij 10", priceExVat: 10000, vatRate: 21, capacityKwh: 10, connection: "3fase" },
+    { id: "test-15-3f", category: "thuisbatterij", brand: "Catalog", name: "Batterij 15", priceExVat: 12500, vatRate: 21, capacityKwh: 15, connection: "3fase" },
+    { id: "test-30-3f", category: "thuisbatterij", brand: "Catalog", name: "Batterij 30", priceExVat: 19000, vatRate: 21, capacityKwh: 30, connection: "3fase" }
+  ];
   await page.route("**/api/auth/session", (route) => route.fulfill({ json: { authenticated: true, user: { id: "a1", username: "admin", role: "admin" }, csrfToken: "test-token", features: {} } }));
-  await page.route("**/api/bootstrap", (route) => route.fulfill({ json: { data: { customers: [customer], customerNotes: [], customerDocuments: [], products: [], quotes: [], invoices: [], installations: [], advices: [], salesOpportunities: [], salesAppointments: [], settings, counters: {} } } }));
+  await page.route("**/api/bootstrap", (route) => route.fulfill({ json: { data: { customers: [customer], customerNotes: [], customerDocuments: [], products, quotes: [], invoices: [], installations: [], advices: [], salesOpportunities: [], salesAppointments: [], settings, counters: {} } } }));
   await page.route("**/api/collections/advices", (route) => {
     savedAdvice = route.request().postDataJSON();
     return route.fulfill({ json: { item: { ...savedAdvice, id: savedAdvice.id || "a-v2", createdAt: new Date().toISOString() } } });
@@ -775,8 +867,12 @@ test("advice tool 2.0 renders below the legacy tool and completes a combined sca
   await expect(page.locator('#toast')).toHaveText('');
   await expect(page.locator('[data-advice-v2-root]')).toHaveAttribute('data-current-step', '2');
   await expect(page.locator('[data-advice-v2-step="2"]')).toBeVisible();
+  await expect(page.locator('.advice-v2-energy-prices tbody tr')).toHaveCount(2);
+  await page.locator('input[name="energyPricePeriod"][value="2026MM05"]').check();
   await page.locator('select[name="emitters"]').selectOption("vloer");
   await page.locator('input[name="pvCount"]').fill("14");
+  await page.locator('input[name="pvCount"]').dispatchEvent("change");
+  await page.locator('input[name="inverterKw"]').fill("5");
   await page.locator('[data-advice-v2-step="2"] [data-action="advice-v2-next"]').dispatchEvent('click');
   await page.locator('select[name="outdoorUnit"]').selectOption("ja");
   await page.locator('select[name="connection"]').selectOption("3fase");
@@ -786,17 +882,59 @@ test("advice tool 2.0 renders below the legacy tool and completes a combined sca
 
   await expect(page.getByRole("heading", { name: /Ons advies:/ })).toBeVisible();
   await expect(page.getByText("All-electric warmtepomp", { exact: true })).toBeVisible();
+  await expect(page.locator('[data-action="advice-v2-battery"]')).toHaveCount(2);
+  await page.locator('[data-action="advice-v2-battery"][data-product-id="test-15-3f"]').click();
+  await expect(page.locator('[data-action="advice-v2-battery"][data-product-id="test-15-3f"]')).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("heading", { name: "Van advies naar definitieve offerte" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Opslaan bij klant" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Maak conceptofferte" })).toBeVisible();
+  await page.getByRole("button", { name: "PDF opslaan" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-printed", "true");
+  await expect(page.locator("#print-document")).toContainText("mei 2026");
+  await expect(page.locator("#print-document")).toContainText("Catalog Batterij 15");
   await page.getByRole("button", { name: "Opslaan bij klant" }).click();
   await expect(page.locator(".toast")).toContainText("Advies 2.0 opgeslagen");
   expect(savedAdvice.customerId).toBe("c1");
   expect(savedAdvice.payload.version).toBe(3);
+  expect(savedAdvice.payload.energyTariff.periodKey).toBe("2026MM05");
+  expect(savedAdvice.payload.batterij.selectedProductId).toBe("test-15-3f");
   expect(savedAdvice.payload.actions.length).toBeGreaterThan(0);
 
   await page.getByRole("button", { name: "Maak conceptofferte" }).click();
   await expect.poll(() => savedQuote && savedQuote.lines.length).toBe(2);
   expect(savedQuote.customerId).toBe("c1");
   expect(savedQuote.sourceAdviceId).toBe("a-v2");
+  expect(savedQuote.lines.find((line) => line.componentKey === "thuisbatterij")).toMatchObject({ productId: "test-15-3f", priceExVat: 12500 });
+});
+
+test("productbeheer ordent categorie, merk en model en bewaart adviesgegevens", async ({ page }) => {
+  let savedProduct;
+  const products = [
+    { id: "bat-10", category: "thuisbatterij", brand: "TestMerk", name: "Store 10", specs: "10 kWh, 3-fase", priceExVat: 8000, vatRate: 21, description: "Testmodel", capacityKwh: 10, connection: "3fase" }
+  ];
+  await page.route("**/api/auth/session", (route) => route.fulfill({ json: { authenticated: true, user: { id: "a1", username: "admin", role: "admin" }, csrfToken: "test-token", features: {} } }));
+  await page.route("**/api/bootstrap", (route) => route.fulfill({ json: { data: { customers: [], customerNotes: [], customerDocuments: [], products, quotes: [], invoices: [], installations: [], advices: [], salesOpportunities: [], salesAppointments: [], settings: { companyName: "Climature" }, counters: {} } } }));
+  await page.route("**/api/collections/products", (route) => {
+    savedProduct = route.request().postDataJSON();
+    return route.fulfill({ json: { item: { ...savedProduct, id: "bat-15" } } });
+  });
+
+  await page.goto("/#products");
+  const category = page.locator(".product-category-group", { hasText: "thuisbatterij" });
+  await expect(category.getByRole("heading", { name: "TestMerk" })).toBeVisible();
+  await expect(category.getByRole("heading", { name: "Store 10" })).toBeVisible();
+  await expect(category.getByText("Advies-tool · 10 kWh · 3-fase")).toBeVisible();
+
+  await category.getByRole("button", { name: "Model toevoegen", exact: true }).click();
+  const form = page.locator('form[data-form="product"]');
+  await expect(form.locator('input[name="category"]')).toHaveValue("thuisbatterij");
+  await expect(form.locator('input[name="brand"]')).toHaveValue("TestMerk");
+  await form.locator('input[name="name"]').fill("Store 15");
+  await form.locator('input[name="priceExVat"]').fill("9500");
+  await form.locator('input[name="capacityKwh"]').fill("15");
+  await form.locator('select[name="connection"]').selectOption("3fase");
+  await form.getByRole("button", { name: "Opslaan" }).click();
+
+  await expect(page.locator(".toast")).toContainText("Product opgeslagen");
+  expect(savedProduct).toMatchObject({ category: "thuisbatterij", brand: "TestMerk", name: "Store 15", capacityKwh: 15, connection: "3fase", priceExVat: 9500 });
 });

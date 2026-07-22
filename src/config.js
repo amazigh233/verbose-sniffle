@@ -16,6 +16,13 @@ function booleanEnv(name, fallback) {
   return ["1", "true", "yes", "on"].includes(String(value).toLowerCase());
 }
 
+function positiveNumberEnv(name, fallback) {
+  if (process.env[name] === undefined) return fallback;
+  const value = Number(process.env[name]);
+  if (!Number.isFinite(value) || value <= 0) throw new Error(`${name} must be a positive number`);
+  return value;
+}
+
 function keyringEnv(name) {
   const value = String(process.env[name] || "").trim();
   if (!value) return {};
@@ -52,6 +59,15 @@ function loadConfig() {
     serviceMailFrom: String(process.env.SERVICE_MAIL_FROM || process.env.PROJECT_MAIL_FROM || ""),
     appBaseUrl: String(process.env.APP_BASE_URL || `http://localhost:${Number(process.env.PORT || 3000)}`),
     redisUrl: String(process.env.REDIS_URL || ""),
+    energyPriceApiUrl: String(process.env.ENERGY_PRICE_API_URL || "https://public.api.energyzero.nl"),
+    energyPriceCacheTtlMs: positiveNumberEnv("ENERGY_PRICE_CACHE_TTL_MS", 5 * 60 * 1000),
+    energyPriceStaleTtlMs: positiveNumberEnv("ENERGY_PRICE_STALE_TTL_MS", 24 * 60 * 60 * 1000),
+    energyPriceTimeoutMs: positiveNumberEnv("ENERGY_PRICE_TIMEOUT_MS", 8000),
+    wascoApiBaseUrl: String(process.env.WASCO_API_BASE_URL || ""),
+    wascoApiKey: String(process.env.WASCO_API_KEY || ""),
+    wascoCustomerNumber: String(process.env.WASCO_CUSTOMER_NUMBER || ""),
+    wascoOrdersEnabled: booleanEnv("WASCO_ORDERS_ENABLED", false),
+    wascoTimeoutMs: positiveNumberEnv("WASCO_TIMEOUT_MS", 8000),
     objectStorageProvider: String(process.env.OBJECT_STORAGE_PROVIDER || "local").toLowerCase(),
     objectStorageRoot: String(process.env.OBJECT_STORAGE_ROOT || require("path").join(__dirname, "..", ".data", "objects")),
     objectStorageEndpoint: String(process.env.OBJECT_STORAGE_ENDPOINT || ""),
